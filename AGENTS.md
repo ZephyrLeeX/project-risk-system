@@ -283,14 +283,56 @@ NestJS 不应被加入新的 production Docker Compose runtime。
 
 ---
 
+## mise 与非交互 Shell
+
+本项目的 Python 工具链由 mise 管理。
+
+Codex Agent、CI、脚本或其他非交互 shell 不应假设 mise 管理的工具已经直接加入全局 `PATH`。
+
+执行 Python workspace validation 时，优先通过：
+
+`mise exec -- <command>`
+
+调用当前 repository / mise 配置中声明的工具。
+
+例如：
+
+- `mise exec -- uv sync --frozen`
+- `mise exec -- uv lock --check`
+- `mise exec -- uv run --frozen ruff check .`
+- `mise exec -- uv run --frozen mypy .`
+- `mise exec -- uv run --frozen pytest -ra`
+
+如果需要设置临时 uv cache：
+
+`UV_CACHE_DIR=/tmp/<task>-uv-cache mise exec -- uv ...`
+
+不要将某台机器中 mise 安装的 `uv` 绝对路径写入：
+
+- source code
+- Task definition
+- validation scripts
+- CI configuration
+- implementation report 的推荐命令
+
+绝对安装路径只能作为诊断环境问题时的临时 fallback，不应成为项目标准执行方式。
+
+如果 `mise` 本身不在 `PATH`：
+
+1. 可以使用当前执行环境中已知的 mise executable 路径调用 `mise exec`；
+2. 不要因此修改项目 architecture 或 Python dependency configuration；
+3. 如果 mise 本身不可用且无法执行 required validation，应报告执行环境问题。
+
+Implementation report 中记录标准 validation 命令时，优先记录 `mise exec -- ...` 形式。
+
 ## Python Validation
 
 开发过程中应运行与当前 Task 影响范围匹配的 validation。
 
 阶段验收通常包括：
 
-* `uv sync --frozen`
-* `uv lock --check`
+* `mise exec -- uv sync --frozen`
+* `mise exec -- uv lock --check`
 * Ruff
 * mypy
 * pytest
@@ -944,8 +986,8 @@ Integration 结果：PASS
 
 ## Validation
 
-- `uv sync --frozen`：PASS
-- `uv lock --check`：PASS
+- `mise exec -- uv sync --frozen`：PASS
+- `mise exec -- uv lock --check`：PASS
 - Ruff：PASS
 - mypy：PASS，共检查 16 个文件
 - pytest：PASS，共 2 个测试
