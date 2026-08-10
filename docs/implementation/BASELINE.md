@@ -40,3 +40,8 @@ Every task Agent must read, before editing: repository `AGENTS.md` if present; t
 ## Baseline changes
 
 Changes to approved architecture, business terminology, core lifecycle, scope semantics, retention policy, security boundary, deployment topology or public contracts require a new/updated ADR or explicit design addendum. Implementation discoveries are recorded as `DESIGN_GAP`; they are not silently resolved in code.
+
+## Task graph audit provenance
+
+- Audited implementation task graph commit: `fb83b05925d7cbae2421ac229b1b58e0759eb028` (`docs: audit implementation task graph`).
+- The SHA is recorded in the immediately following metadata commit because a Git commit cannot contain its own final SHA.
