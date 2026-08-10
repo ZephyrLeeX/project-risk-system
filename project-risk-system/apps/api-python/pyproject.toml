@@ -1,0 +1,49 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "risk-platform-api"
+version = "0.1.0"
+description = "FastAPI backend for the project risk management platform"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "alembic>=1.16,<2",
+  "celery>=5.5,<6",
+  "fastapi>=0.116,<1",
+  "psycopg[binary]>=3.2,<4",
+  "pydantic>=2.11,<3",
+  "redis>=6.2,<7",
+  "sqlalchemy>=2.0,<3",
+]
+
+[dependency-groups]
+dev = [
+  "mypy>=1.17,<2",
+  "pytest>=8.4,<9",
+  "ruff>=0.12,<1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/risk_platform"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src", "tests"]
+
+[tool.pytest.ini_options]
+addopts = ["--strict-config", "--strict-markers"]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["risk_platform"]
