@@ -22,6 +22,7 @@ from risk_platform.shared.outbound import (
     OutboundEndpointGuard,
     OutboundPolicy,
     OutboundSecurityError,
+    ResolvedEndpoint,
     provider_subresource_url,
 )
 
@@ -197,6 +198,33 @@ def test_approved_internal_provider_requires_hostname_and_network() -> None:
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize(
+    ("host", "address", "network"),
+    [
+        ("100.100.100.200", "100.100.100.200", "100.0.0.0/8"),
+        ("model.ai.internal", "100.100.100.200", "100.0.0.0/8"),
+        ("model.ai.internal", "::ffff:100.100.100.200", "100.0.0.0/8"),
+        ("168.63.129.16", "168.63.129.16", "168.0.0.0/8"),
+        ("model.ai.internal", "fd00:ec2::254", "fd00::/8"),
+    ],
+)
+def test_metadata_targets_cannot_be_overridden_by_internal_allowlist(
+    host: str, address: str, network: str
+) -> None:
+    async def scenario() -> None:
+        policy = OutboundPolicy(
+            approved_internal_hostnames=frozenset({host}),
+            approved_internal_networks=(ip_network(network),),
+        )
+        guard = OutboundEndpointGuard(policy, StaticResolver((address,)))
+
+        with pytest.raises(OutboundSecurityError) as error:
+            await guard.resolve_imap(host, 993)
+        assert str(error.value) == "OUTBOUND_DESTINATION_FORBIDDEN"
+
+    asyncio.run(scenario())
+
+
 def test_dns_rebinding_is_rejected_during_preconnect_revalidation() -> None:
     async def scenario() -> None:
         resolver = StaticResolver(("93.184.216.34",), ("127.0.0.1",))
@@ -224,6 +252,60 @@ def test_dns_answer_change_and_redirects_are_rejected() -> None:
         assert str(redirect.value) == "OUTBOUND_REDIRECT_FORBIDDEN"
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "http://api.example.com/models",
+        "https://api.example.com/models",
+        "//api.example.com/models",
+        "/models",
+        "../models",
+        "%2e%2e/models",
+        "models?next=http://metadata",
+        "models#fragment",
+    ],
+)
+def test_provider_subresource_rejects_non_relative_or_unsafe_paths(path: str) -> None:
+    endpoint = ResolvedEndpoint(
+        kind="provider",
+        hostname="api.example.com",
+        port=443,
+        addresses=(),
+        url="https://api.example.com/v1",
+    )
+
+    with pytest.raises(OutboundSecurityError) as error:
+        provider_subresource_url(endpoint, path)
+    assert str(error.value) == "INVALID_PROVIDER_PATH"
+
+
+def test_provider_subresource_rejects_https_downgrade_in_source_endpoint() -> None:
+    endpoint = ResolvedEndpoint(
+        kind="provider",
+        hostname="api.example.com",
+        port=443,
+        addresses=(),
+        url="http://api.example.com/v1",
+    )
+
+    with pytest.raises(OutboundSecurityError):
+        provider_subresource_url(endpoint, "models")
+
+
+def test_provider_subresource_uses_normalized_https_origin_and_effective_port() -> None:
+    endpoint = ResolvedEndpoint(
+        kind="provider",
+        hostname="api.example.com",
+        port=443,
+        addresses=(),
+        url="https://API.EXAMPLE.COM:443/v1",
+    )
+
+    assert provider_subresource_url(endpoint, "chat/completions") == (
+        "https://API.EXAMPLE.COM:443/v1/chat/completions"
+    )
 
 
 @pytest.mark.parametrize(

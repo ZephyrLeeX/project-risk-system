@@ -8,7 +8,7 @@ from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from ipaddress import IPv4Address, IPv6Address, ip_address
 from typing import Literal
-from urllib.parse import urljoin, urlsplit, urlunsplit
+from urllib.parse import unquote, urljoin, urlsplit, urlunsplit
 
 from risk_platform.config import IpNetwork
 
@@ -24,10 +24,19 @@ _FORBIDDEN_HOSTNAMES = frozenset(
         "instance-data",
     }
 )
-_FORBIDDEN_ADDRESSES = frozenset(
+# Approved threat model: cloud instance metadata and platform-service endpoints are
+# never valid business integration destinations.  This deny set is evaluated before
+# the configurable internal hostname/CIDR allowlist and includes both globally-routed
+# virtual IPs and addresses which are already covered by special-use classification.
+_NON_ALLOWLISTABLE_ADDRESSES = frozenset(
     {
+        ip_address("100.100.100.200"),  # Alibaba Cloud instance metadata
+        ip_address("168.63.129.16"),  # Azure platform virtual IP
         ip_address("169.254.169.254"),
+        ip_address("169.254.170.2"),  # AWS ECS task credentials
+        ip_address("169.254.170.23"),  # AWS container credentials
         ip_address("fd00:ec2::254"),
+        ip_address("fe80::a9fe:a9fe"),
     }
 )
 
@@ -153,8 +162,8 @@ class OutboundEndpointGuard:
         comparable = address.ipv4_mapped if isinstance(address, IPv6Address) else None
         checked = comparable or address
         if (
-            address in _FORBIDDEN_ADDRESSES
-            or checked in _FORBIDDEN_ADDRESSES
+            address in _NON_ALLOWLISTABLE_ADDRESSES
+            or checked in _NON_ALLOWLISTABLE_ADDRESSES
             or checked.is_loopback
             or checked.is_link_local
             or checked.is_unspecified
@@ -183,14 +192,45 @@ async def system_resolver(hostname: str, port: int) -> Sequence[str]:
 
 
 def provider_subresource_url(endpoint: ResolvedEndpoint, relative_path: str) -> str:
-    """Build a same-origin path without permitting authority replacement."""
+    """Build an HTTPS same-origin URL from a strict relative path."""
 
-    if endpoint.kind != "provider" or endpoint.url is None or relative_path.startswith("//"):
+    if endpoint.kind != "provider" or endpoint.url is None:
         raise OutboundSecurityError("INVALID_PROVIDER_PATH")
-    joined = urljoin(f"{endpoint.url.rstrip('/')}/", relative_path.lstrip("/"))
-    parsed = urlsplit(joined)
-    if parsed.hostname != endpoint.hostname or (parsed.port or 443) != endpoint.port:
-        raise OutboundSecurityError("INVALID_PROVIDER_PATH")
+    try:
+        source = urlsplit(endpoint.url)
+        source_port = 443 if source.port is None else source.port
+        relative = urlsplit(relative_path)
+        decoded_path = unquote(relative.path)
+        if (
+            source.scheme.lower() != "https"
+            or source.hostname is None
+            or _normalize_hostname(source.hostname) != endpoint.hostname
+            or source_port != endpoint.port
+            or source.username is not None
+            or source.password is not None
+            or relative.scheme
+            or relative.netloc
+            or not relative.path
+            or relative.path.startswith(("/", "\\"))
+            or relative.query
+            or relative.fragment
+            or "\\" in decoded_path
+            or any(part in {".", ".."} for part in decoded_path.split("/"))
+            or any(character.isspace() or ord(character) < 32 for character in decoded_path)
+        ):
+            raise ValueError
+        joined = urljoin(f"{endpoint.url.rstrip('/')}/", relative_path)
+        parsed = urlsplit(joined)
+        parsed_port = 443 if parsed.port is None else parsed.port
+        if (
+            parsed.scheme.lower() != "https"
+            or parsed.hostname is None
+            or _normalize_hostname(parsed.hostname) != endpoint.hostname
+            or parsed_port != endpoint.port
+        ):
+            raise ValueError
+    except (OutboundSecurityError, UnicodeError, ValueError):
+        raise OutboundSecurityError("INVALID_PROVIDER_PATH") from None
     return joined
 
 
