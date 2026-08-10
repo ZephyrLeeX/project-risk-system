@@ -285,45 +285,35 @@ NestJS 不应被加入新的 production Docker Compose runtime。
 
 ## mise 与非交互 Shell
 
-本项目的 Python 工具链由 mise 管理。
+本项目 Python 工具链由 mise 管理。
 
-Codex Agent、CI、脚本或其他非交互 shell 不应假设 mise 管理的工具已经直接加入全局 `PATH`。
+Codex Agent、CI 或其他非交互 shell 不得假设 `uv`、`python` 已直接存在于全局 `PATH`。
 
-执行 Python workspace validation 时，优先通过：
+执行 `project-risk-system/apps/api-python` 下的 Python validation 时，应优先通过 mise 显式选择 Python workspace 所需工具，避免加载父级配置中与当前 Task 无关的 Node/pnpm 等工具。
 
-`mise exec -- <command>`
+推荐形式：
 
-调用当前 repository / mise 配置中声明的工具。
+`mise exec uv@<configured-version> python@<configured-version> -- <command>`
 
 例如：
 
-- `mise exec -- uv sync --frozen`
-- `mise exec -- uv lock --check`
-- `mise exec -- uv run --frozen ruff check .`
-- `mise exec -- uv run --frozen mypy .`
-- `mise exec -- uv run --frozen pytest -ra`
+- `mise exec uv@<configured-version> python@<configured-version> -- uv sync --frozen`
+- `mise exec uv@<configured-version> python@<configured-version> -- uv lock --check`
+- `mise exec uv@<configured-version> python@<configured-version> -- uv run --frozen ruff check .`
+- `mise exec uv@<configured-version> python@<configured-version> -- uv run --frozen mypy .`
+- `mise exec uv@<configured-version> python@<configured-version> -- uv run --frozen pytest -ra`
 
-如果需要设置临时 uv cache：
+工具版本必须从 repository 当前 mise 配置或当前已批准执行环境中取得，不得根据旧报告永久硬编码。
 
-`UV_CACHE_DIR=/tmp/<task>-uv-cache mise exec -- uv ...`
+如果普通：
 
-不要将某台机器中 mise 安装的 `uv` 绝对路径写入：
+`mise exec -- ...`
 
-- source code
-- Task definition
-- validation scripts
-- CI configuration
-- implementation report 的推荐命令
+会导致 mise 尝试安装与当前 Python Task 无关的工具，例如 Node 或 pnpm，则不要继续使用该形式；应改用显式 tool selector。
 
-绝对安装路径只能作为诊断环境问题时的临时 fallback，不应成为项目标准执行方式。
+不得将某台机器上的 mise installation absolute path 固化到项目配置、Task definition 或 CI 中。
 
-如果 `mise` 本身不在 `PATH`：
-
-1. 可以使用当前执行环境中已知的 mise executable 路径调用 `mise exec`；
-2. 不要因此修改项目 architecture 或 Python dependency configuration；
-3. 如果 mise 本身不可用且无法执行 required validation，应报告执行环境问题。
-
-Implementation report 中记录标准 validation 命令时，优先记录 `mise exec -- ...` 形式。
+如果 required mise tool 本身不可用，应作为执行环境问题报告，不得通过改变 Python dependency configuration 或 architecture 绕过。
 
 ## Python Validation
 
