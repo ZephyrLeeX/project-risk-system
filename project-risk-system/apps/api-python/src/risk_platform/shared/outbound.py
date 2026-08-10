@@ -211,9 +211,11 @@ def provider_subresource_url(endpoint: ResolvedEndpoint, relative_path: str) -> 
             or relative.scheme
             or relative.netloc
             or not relative.path
+            or "%" in relative_path
             or relative.path.startswith(("/", "\\"))
             or relative.query
             or relative.fragment
+            or decoded_path.startswith(("/", "\\"))
             or "\\" in decoded_path
             or any(part in {".", ".."} for part in decoded_path.split("/"))
             or any(character.isspace() or ord(character) < 32 for character in decoded_path)
