@@ -1,0 +1,15 @@
+node_modules/
+dist/
+coverage/
+.local/
+.DS_Store
+.env
+.env.*
+!.env.example
+*.log
+apps/api/prisma/*.db
+apps/api/prisma/*.db-journal
+storage/excel/*
+storage/mail/*
+storage/backups/*
+!storage/**/.gitkeep

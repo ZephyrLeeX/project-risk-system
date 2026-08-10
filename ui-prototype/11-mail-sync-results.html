@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f4f9fd">
+  <meta
+    name="description"
+    content="项目风险管理平台风险管理员邮箱同步结果页面，用于查看邮件处理、风险提取、失败原因和同步批次。">
+  <title>邮箱同步结果｜项目风险管理平台</title>
+  <link rel="stylesheet" href="assets/ui.css">
+  <link rel="stylesheet" href="assets/dashboard.css">
+  <link rel="stylesheet" href="assets/mail-sync-results.css">
+</head>
+<body data-page="mail-sync-results">
+  <div class="sync-page-app">
+    <header class="app-header">
+      <a class="brand" href="02-dashboard.html" aria-label="返回项目风险管理平台首页">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span class="brand-copy">
+          <strong>项目风险管理</strong>
+          <small>PROJECT RISK INTELLIGENCE</small>
+        </span>
+      </a>
+
+      <nav class="primary-nav" aria-label="业务模块">
+        <a class="nav-item" href="02-dashboard.html">
+          <span class="nav-icon nav-icon-board" aria-hidden="true"></span>
+          Web 风险看板
+        </a>
+        <button id="agentEntry" class="nav-item" type="button">
+          <span class="nav-icon nav-icon-agent" aria-hidden="true"></span>
+          Agent 智能对话
+        </button>
+      </nav>
+
+      <div class="header-tools">
+        <div class="week-chip"><span aria-hidden="true"></span>2026年第27周</div>
+        <button id="noticeButton" class="icon-button notice-button" type="button" aria-label="查看通知">
+          <span aria-hidden="true"></span><b>3</b>
+        </button>
+        <button id="profileButton" class="profile-button" type="button" aria-expanded="false">
+          <span class="avatar" aria-hidden="true">风</span>
+          <span class="profile-copy"><strong>风险管理员</strong><small>全项目数据</small></span>
+          <span class="chevron" aria-hidden="true"></span>
+        </button>
+        <div id="profileMenu" class="profile-menu" hidden>
+          <a href="10-mailbox-settings.html">个人邮箱配置</a>
+          <a class="is-current" href="11-mail-sync-results.html" aria-current="page">邮箱同步结果</a>
+          <button type="button" data-profile-action="password">修改密码</button>
+          <a href="01-login.html">退出登录</a>
+        </div>
+      </div>
+    </header>
+
+    <main class="sync-page-main">
+      <nav class="sync-breadcrumb" aria-label="面包屑">
+        <a href="02-dashboard.html">Web 风险看板</a>
+        <span aria-hidden="true"></span>
+        <a href="10-mailbox-settings.html">个人邮箱配置</a>
+        <span aria-hidden="true"></span>
+        <strong>邮箱同步结果</strong>
+      </nav>
+
+      <section class="sync-page-heading" aria-labelledby="syncPageTitle">
+        <div>
+          <p class="sync-eyebrow">MAIL SYNC RESULTS</p>
+          <h1 id="syncPageTitle">邮箱同步结果</h1>
+          <p>查看每封周报邮件的同步、项目匹配和风险提取结果，处理失败任务与待确认线索。</p>
+          <div class="sync-scope-note">
+            <span aria-hidden="true">风</span>
+            <p><strong>当前邮箱：li***@example.com</strong><small>仅本人可以查看邮件内容、重试失败任务和确认风险线索。</small></p>
+          </div>
+        </div>
+        <div class="sync-heading-actions">
+          <a href="10-mailbox-settings.html" class="sync-outline-action">
+            <span class="settings-action-icon" aria-hidden="true"></span>
+            邮箱配置
+          </a>
+          <button id="syncNowButton" class="sync-primary-action" type="button">
+            <span class="refresh-action-icon" aria-hidden="true"></span>
+            同步最新周报
+          </button>
+        </div>
+      </section>
+
+      <section class="latest-batch-banner" aria-labelledby="latestBatchTitle">
+        <div class="latest-batch-main">
+          <span class="batch-success-icon" aria-hidden="true"></span>
+          <div>
+            <p>LATEST BATCH</p>
+            <h2 id="latestBatchTitle">最近一次同步已完成</h2>
+            <span>批次 SYNC-20260723-0922 · 手动同步 · 用时 1分36秒</span>
+          </div>
+        </div>
+        <div class="batch-timing">
+          <p><span>开始时间</span><strong>2026-07-23 09:22:04</strong></p>
+          <i aria-hidden="true"></i>
+          <p><span>完成时间</span><strong>2026-07-23 09:23:40</strong></p>
+        </div>
+        <span class="batch-complete-badge"><i></i>全部处理完成</span>
+      </section>
+
+      <section class="sync-metric-grid" aria-label="最近同步批次结果">
+        <button class="sync-metric-card is-blue" type="button" data-metric-filter="all">
+          <span class="metric-mail-icon" aria-hidden="true"></span>
+          <p>新增邮件</p>
+          <strong><b>5</b><small>封</small></strong>
+          <em>本批次扫描 9 封</em>
+        </button>
+        <button class="sync-metric-card is-green" type="button" data-metric-filter="completed">
+          <span class="metric-check-icon" aria-hidden="true"></span>
+          <p>分析成功</p>
+          <strong><b>5</b><small>封</small></strong>
+          <em>成功率 100%</em>
+        </button>
+        <button class="sync-metric-card is-indigo" type="button" data-metric-filter="risk">
+          <span class="metric-risk-icon" aria-hidden="true"></span>
+          <p>提取风险线索</p>
+          <strong><b>12</b><small>项</small></strong>
+          <em>其中待确认 3 项</em>
+        </button>
+        <button class="sync-metric-card is-orange" type="button" data-metric-filter="skipped">
+          <span class="metric-skip-icon" aria-hidden="true"></span>
+          <p>跳过邮件</p>
+          <strong><b>4</b><small>封</small></strong>
+          <em>重复 2 · 不符合规则 2</em>
+        </button>
+        <button class="sync-metric-card is-red" type="button" data-metric-filter="failed">
+          <span class="metric-fail-icon" aria-hidden="true">!</span>
+          <p>处理失败</p>
+          <strong><b>0</b><small>封</small></strong>
+          <em>历史批次待重试 1 封</em>
+        </button>
+      </section>
+
+      <section class="sync-workspace">
+        <header class="sync-workspace-tabs" role="tablist" aria-label="邮箱同步结果视图">
+          <button id="mailTab" class="is-active" type="button" role="tab" aria-selected="true" aria-controls="mailPanel" data-panel="mail">
+            <span class="tab-mail-icon" aria-hidden="true"></span>
+            邮件明细
+            <b id="mailTabCount">8</b>
+          </button>
+          <button id="batchTab" type="button" role="tab" aria-selected="false" aria-controls="batchPanel" data-panel="batch">
+            <span class="tab-batch-icon" aria-hidden="true"></span>
+            同步批次
+            <b>4</b>
+          </button>
+          <span class="tab-helper"><i></i>增量同步使用邮件 UID 游标，避免重复处理</span>
+        </header>
+
+        <div id="mailPanel" class="sync-tab-panel" role="tabpanel" aria-labelledby="mailTab">
+          <div class="panel-intro">
+            <div>
+              <p>MAIL PROCESSING DETAILS</p>
+              <h2>邮件处理明细</h2>
+              <span id="mailResultSummary">共8封邮件 · 包含1封历史失败邮件</span>
+            </div>
+            <button id="showPendingButton" class="pending-reminder" type="button">
+              <span aria-hidden="true">!</span>
+              <p><strong>1封历史邮件需要处理</strong><small>查看失败原因并重试</small></p>
+              <i aria-hidden="true"></i>
+            </button>
+          </div>
+
+          <div class="sync-filter-toolbar">
+            <label class="sync-search-field">
+              <span aria-hidden="true"></span>
+              <input id="mailSearch" type="search" placeholder="搜索邮件主题、发件人或项目名称">
+            </label>
+            <div class="sync-select" data-filter-select="status">
+              <button class="sync-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+                <span>全部状态</span><i aria-hidden="true"></i>
+              </button>
+              <div class="sync-select-menu" role="listbox" hidden>
+                <button type="button" role="option" aria-selected="true" data-value="all">全部状态</button>
+                <button type="button" role="option" aria-selected="false" data-value="completed">分析完成</button>
+                <button type="button" role="option" aria-selected="false" data-value="risk">含风险线索</button>
+                <button type="button" role="option" aria-selected="false" data-value="analyzing">分析中</button>
+                <button type="button" role="option" aria-selected="false" data-value="skipped">已跳过</button>
+                <button type="button" role="option" aria-selected="false" data-value="failed">处理失败</button>
+              </div>
+              <input id="statusFilter" type="hidden" value="all">
+            </div>
+            <div class="sync-select" data-filter-select="batch">
+              <button class="sync-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+                <span>全部同步批次</span><i aria-hidden="true"></i>
+              </button>
+              <div class="sync-select-menu" role="listbox" hidden>
+                <button type="button" role="option" aria-selected="true" data-value="all">全部同步批次</button>
+                <button type="button" role="option" aria-selected="false" data-value="SYNC-20260723-0922">SYNC-20260723-0922</button>
+                <button type="button" role="option" aria-selected="false" data-value="SYNC-20260721-1100">SYNC-20260721-1100</button>
+                <button type="button" role="option" aria-selected="false" data-value="SYNC-20260718-0900">SYNC-20260718-0900</button>
+                <button type="button" role="option" aria-selected="false" data-value="SYNC-20260716-1700">SYNC-20260716-1700</button>
+              </div>
+              <input id="batchFilter" type="hidden" value="all">
+            </div>
+            <button id="resetMailFilters" class="sync-reset-button" type="button">重置</button>
+          </div>
+
+          <div class="sync-table-scroll">
+            <table class="mail-result-table">
+              <thead>
+                <tr>
+                  <th>处理状态</th>
+                  <th>邮件主题 / 发件人</th>
+                  <th>发送时间</th>
+                  <th>匹配项目</th>
+                  <th>风险线索</th>
+                  <th>处理结果</th>
+                  <th aria-label="操作"></th>
+                </tr>
+              </thead>
+              <tbody id="mailResultTable"></tbody>
+            </table>
+          </div>
+          <div id="mailEmptyState" class="sync-empty-state" hidden>
+            <span aria-hidden="true"></span>
+            <strong>没有找到符合条件的邮件</strong>
+            <p>请调整搜索关键词或筛选条件后重试。</p>
+            <button type="button" data-reset-empty>清除筛选</button>
+          </div>
+          <footer class="table-footer">
+            <span id="tableFooterSummary">显示 1–8，共8封邮件</span>
+            <div><button type="button" disabled>上一页</button><b>1</b><button type="button" disabled>下一页</button></div>
+          </footer>
+        </div>
+
+        <div id="batchPanel" class="sync-tab-panel" role="tabpanel" aria-labelledby="batchTab" hidden>
+          <div class="panel-intro batch-panel-intro">
+            <div>
+              <p>SYNC BATCH HISTORY</p>
+              <h2>同步批次记录</h2>
+              <span>记录手动和定时同步的完整执行情况</span>
+            </div>
+            <div class="batch-legend"><span><i class="is-manual"></i>手动同步</span><span><i class="is-auto"></i>自动同步</span></div>
+          </div>
+          <div class="sync-table-scroll">
+            <table class="batch-result-table">
+              <thead>
+                <tr>
+                  <th>批次编号</th>
+                  <th>触发方式</th>
+                  <th>开始时间</th>
+                  <th>执行用时</th>
+                  <th>扫描 / 新增</th>
+                  <th>风险线索</th>
+                  <th>结果</th>
+                  <th aria-label="操作"></th>
+                </tr>
+              </thead>
+              <tbody id="batchResultTable"></tbody>
+            </table>
+          </div>
+          <footer class="table-footer">
+            <span>共4个同步批次</span>
+            <div><button type="button" disabled>上一页</button><b>1</b><button type="button" disabled>下一页</button></div>
+          </footer>
+        </div>
+      </section>
+    </main>
+
+    <footer class="sync-page-footer">
+      <span>项目风险管理平台 V2.0</span>
+      <span>数据来源：风险管理员个人邮箱 · 邮件内容按权限隔离</span>
+    </footer>
+  </div>
+
+  <div id="mailDetailOverlay" class="mail-detail-overlay" hidden>
+    <aside class="mail-detail-drawer" role="dialog" aria-modal="true" aria-labelledby="mailDetailTitle">
+      <header class="drawer-header">
+        <div>
+          <p>MAIL PROCESSING DETAIL</p>
+          <h2 id="mailDetailTitle">邮件处理详情</h2>
+          <span id="mailDetailSubtitle"></span>
+        </div>
+        <button id="closeMailDetail" type="button" aria-label="关闭邮件详情">×</button>
+      </header>
+      <div id="mailDetailContent" class="drawer-content"></div>
+      <footer class="drawer-footer">
+        <button class="drawer-secondary-action" type="button" data-close-drawer>关闭</button>
+        <button id="drawerRetryButton" class="drawer-retry-action" type="button" hidden>
+          <span aria-hidden="true"></span>重新处理
+        </button>
+        <button id="drawerRiskAction" class="drawer-primary-action" type="button">查看关联风险</button>
+      </footer>
+    </aside>
+  </div>
+
+  <div id="syncProgressDialog" class="sync-progress-dialog" hidden>
+    <section role="dialog" aria-modal="true" aria-labelledby="syncProgressTitle">
+      <span class="large-sync-spinner" aria-hidden="true"></span>
+      <p>MANUAL SYNC</p>
+      <h2 id="syncProgressTitle">正在同步最新周报</h2>
+      <span id="syncProgressLabel">正在检查新增邮件…</span>
+      <div><i id="syncProgressBar"></i></div>
+      <strong id="syncProgressPercent">25%</strong>
+    </section>
+  </div>
+
+  <div id="syncPageToast" class="sync-page-toast" role="status" aria-live="polite" hidden>
+    <span aria-hidden="true"></span><p></p>
+  </div>
+
+  <script src="assets/mail-sync-results.js"></script>
+</body>
+</html>

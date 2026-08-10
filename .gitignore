@@ -1,0 +1,5 @@
+.DS_Store
+.pnpm-store/
+artifacts/
+**/__pycache__/
+*.py[cod]

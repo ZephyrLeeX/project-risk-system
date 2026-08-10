@@ -1,0 +1,19 @@
+# T023 — Migrate personal mailbox configuration
+- **Task ID:** T023
+- **Title:** Migrate personal mailbox configuration
+- **Status:** READY / TODO
+- **Objective:** Implement per-user mailbox read/update/test/status and sync-request creation boundaries.
+- **Design baseline:** Design §§3,6,7.
+- **Authoritative source references:** legacy mailbox config/controller/policy/connection/DTO/tests; frontend mailbox API/view/contracts.
+- **Relevant ADR IDs:** 0007, 0008, 0011, 0014, 0015.
+- **Dependencies:** T002, T003, T006, T007, T010, T013.
+- **Scope:** Existing `/mailbox/me` operations, encrypted auth code, read-only IMAP test, owner/role policy; hand off sync to T024.
+- **Explicit out-of-scope:** Message ingestion, parsing, scheduler/worker processing.
+- **Expected read set:** Named mailbox/security sources.
+- **Expected write set:** Python mailbox config module/tests.
+- **Contracts/invariants:** Owner only; no auth-code echo; read-only folder; validated endpoint; explicit test failure.
+- **Acceptance criteria:** Contract/security/ownership/audit tests pass with fake IMAP server.
+- **Validation:** API/PostgreSQL/IMAP-fixture tests.
+- **Required deliverables:** Routes/service/schemas/tests and sync interface.
+- **Stop conditions:** Real credential would be needed for automated PASS.
+- **Known integration risks:** IMAP TLS variants and legacy ciphertext migration.

@@ -1,0 +1,19 @@
+# T001 — Bootstrap Python backend workspace
+- **Task ID:** T001
+- **Title:** Bootstrap Python backend workspace
+- **Status:** READY / TODO
+- **Objective:** Create the reproducible Python 3.12 FastAPI workspace and quality/test skeleton in `apps/api-python`.
+- **Design baseline:** `../BASELINE.md` and `../GLOBAL_CONSTRAINTS.md`; design §§4,10(1),11.
+- **Authoritative source references:** `docs/fastapi-backend-design.md`; `project-risk-system/package.json`, `mise.toml`, `.editorconfig`.
+- **Relevant ADR IDs:** 0001, 0010.
+- **Dependencies:** None.
+- **Scope:** pyproject, uv lock, source/test layout, module placeholders, Ruff/mypy/pytest configuration and workspace commands.
+- **Explicit out-of-scope:** Runtime endpoints, DB schema, Docker services, domain code.
+- **Expected read set:** Root/project manifests and target design/ADRs.
+- **Expected write set:** `project-risk-system/apps/api-python/**`; minimal root workspace command wiring if required.
+- **Contracts/invariants:** Exact approved toolchain; no SQLModel/SQLite; placeholders expose no invented API.
+- **Acceptance criteria:** Fresh `uv sync --frozen` succeeds; import/test/lint/typecheck skeleton passes; Python version is enforced.
+- **Validation:** `uv sync --frozen`; `uv run ruff check .`; `uv run mypy .`; `uv run pytest`.
+- **Required deliverables:** Locked environment, package layout, documented commands, smoke test.
+- **Stop conditions:** Dependency cannot be locked without changing the approved stack.
+- **Known integration risks:** Root pnpm commands and uv working directory may conflict; keep ownership explicit.

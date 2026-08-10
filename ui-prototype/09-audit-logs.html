@@ -1,0 +1,648 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f4f9fd">
+  <meta
+    name="description"
+    content="项目风险管理平台审计日志页面，用于只读查询登录、权限、邮箱、API Key、风险、Excel导入和系统配置操作记录。">
+  <title>审计日志｜项目风险管理平台</title>
+  <link rel="stylesheet" href="assets/ui.css">
+  <link rel="stylesheet" href="assets/admin.css">
+  <link rel="stylesheet" href="assets/audit-logs.css">
+</head>
+<body data-page="audit-logs">
+  <div class="admin-app">
+    <aside id="adminSidebar" class="admin-sidebar" aria-label="后台管理导航">
+      <div class="sidebar-brand">
+        <a class="admin-brand" href="03-admin-dashboard.html" aria-label="项目风险管理后台首页">
+          <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span class="brand-copy">
+            <strong>项目风险管理</strong>
+            <small>ADMIN CONSOLE</small>
+          </span>
+        </a>
+        <span class="console-badge">管理后台</span>
+      </div>
+
+      <nav class="sidebar-nav">
+        <p class="nav-group-label">工作台</p>
+        <a class="side-nav-item" href="03-admin-dashboard.html">
+          <span class="side-icon icon-overview" aria-hidden="true"></span>
+          <span>管理概览</span>
+        </a>
+
+        <p class="nav-group-label">组织与权限</p>
+        <a class="side-nav-item" href="04-user-management.html">
+          <span class="side-icon icon-users" aria-hidden="true"></span>
+          <span>用户管理</span>
+          <b>32</b>
+        </a>
+        <a class="side-nav-item" href="05-role-permissions.html">
+          <span class="side-icon icon-role" aria-hidden="true"></span>
+          <span>角色权限</span>
+        </a>
+
+        <p class="nav-group-label">数据与服务</p>
+        <a class="side-nav-item" href="06-project-import.html">
+          <span class="side-icon icon-import" aria-hidden="true"></span>
+          <span>项目数据导入</span>
+          <i class="nav-alert" aria-label="2项待确认">2</i>
+        </a>
+        <a class="side-nav-item" href="07-api-key-management.html">
+          <span class="side-icon icon-key" aria-hidden="true"></span>
+          <span>API Key 管理</span>
+          <i class="nav-alert" aria-label="1项即将到期">1</i>
+        </a>
+
+        <p class="nav-group-label">系统治理</p>
+        <a class="side-nav-item" href="08-system-config.html">
+          <span class="side-icon icon-setting" aria-hidden="true"></span>
+          <span>系统配置</span>
+        </a>
+        <a class="side-nav-item is-active" href="09-audit-logs.html" aria-current="page">
+          <span class="side-icon icon-audit" aria-hidden="true"></span>
+          <span>审计日志</span>
+        </a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <a class="back-business" href="02-dashboard.html">
+          <span aria-hidden="true"></span>
+          返回风险看板
+        </a>
+        <div class="environment">
+          <span></span>
+          <div>
+            <strong>审计服务正常</strong>
+            <small>只追加 · 脱敏存储</small>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <button id="sidebarBackdrop" class="sidebar-backdrop" type="button" aria-label="关闭导航" hidden></button>
+
+    <div class="admin-workspace">
+      <header class="admin-topbar">
+        <div class="topbar-left">
+          <button id="sidebarToggle" class="sidebar-toggle" type="button" aria-label="打开导航" aria-expanded="false">
+            <span></span><span></span><span></span>
+          </button>
+          <div class="breadcrumb" aria-label="当前位置">
+            <a href="03-admin-dashboard.html">后台管理</a>
+            <i aria-hidden="true"></i>
+            <strong>审计日志</strong>
+          </div>
+        </div>
+
+        <div class="topbar-tools">
+          <div class="secure-status">
+            <span aria-hidden="true"></span>
+            审计链路正常
+          </div>
+          <button id="noticeButton" class="top-icon-button" type="button" aria-label="查看后台通知">
+            <span class="bell-icon" aria-hidden="true"></span>
+            <b>2</b>
+          </button>
+          <button id="adminProfileButton" class="admin-profile" type="button" aria-expanded="false">
+            <span class="admin-avatar" aria-hidden="true">系</span>
+            <span>
+              <strong>系统管理员</strong>
+              <small>全部项目</small>
+            </span>
+            <i aria-hidden="true"></i>
+          </button>
+          <div id="adminProfileMenu" class="admin-profile-menu" hidden>
+            <button type="button" data-profile-action="security">账号安全</button>
+            <a href="02-dashboard.html">返回业务端</a>
+            <a href="01-login.html">退出登录</a>
+          </div>
+        </div>
+      </header>
+
+      <main class="admin-main audit-main">
+        <section class="audit-page-heading" aria-labelledby="auditPageTitle">
+          <div>
+            <p class="admin-eyebrow">SECURITY AUDIT &amp; TRACEABILITY</p>
+            <h1 id="auditPageTitle">审计日志</h1>
+            <p>统一追踪登录、权限、邮箱、AI服务、风险、Excel导入和系统配置操作，支持按授权范围查询与导出。</p>
+          </div>
+          <div class="audit-heading-actions">
+            <button id="refreshAuditButton" class="secondary-action" type="button">
+              <span class="refresh-action-icon" aria-hidden="true"></span>
+              刷新日志
+            </button>
+            <button id="exportAuditButton" class="primary-action" type="button">
+              <span class="export-action-icon" aria-hidden="true"></span>
+              导出筛选结果
+            </button>
+          </div>
+        </section>
+
+        <section class="integrity-banner" aria-label="审计安全说明">
+          <span class="integrity-icon" aria-hidden="true"><i></i></span>
+          <div>
+            <strong>审计记录只追加，不允许修改或删除</strong>
+            <p>密码、邮箱授权码、API Key及无关Excel内容不会写入日志；变更前后仅保存脱敏摘要。</p>
+          </div>
+          <span class="integrity-state"><i></i>完整性校验正常</span>
+        </section>
+
+        <section class="audit-summary-grid" aria-label="审计日志统计">
+          <button class="audit-summary-card summary-all is-filtering" type="button" data-summary-filter="all">
+            <span class="summary-card-icon" aria-hidden="true"></span>
+            <span><small>今日操作</small><strong>46<em>条</em></strong></span>
+            <i>较昨日 +8</i>
+          </button>
+          <button class="audit-summary-card summary-failed" type="button" data-summary-filter="FAILED">
+            <span class="summary-card-icon" aria-hidden="true"></span>
+            <span><small>失败记录</small><strong>3<em>条</em></strong></span>
+            <i>均已记录原因</i>
+          </button>
+          <button class="audit-summary-card summary-sensitive" type="button" data-summary-filter="SENSITIVE">
+            <span class="summary-card-icon" aria-hidden="true"></span>
+            <span><small>敏感操作</small><strong>7<em>条</em></strong></span>
+            <i>权限、密钥与回滚</i>
+          </button>
+          <button class="audit-summary-card summary-actors" type="button" data-summary-filter="ACTOR">
+            <span class="summary-card-icon" aria-hidden="true"></span>
+            <span><small>活跃操作人</small><strong>12<em>人</em></strong></span>
+            <i>系统管理员 2人</i>
+          </button>
+        </section>
+
+        <section class="audit-panel" aria-labelledby="auditListTitle">
+          <header class="audit-panel-heading">
+            <div>
+              <p>AUDIT EVENT STREAM</p>
+              <h2 id="auditListTitle">操作记录</h2>
+              <span>当前展示 <b id="visibleAuditCount">10</b> 条示例记录</span>
+            </div>
+            <div class="retention-note">
+              <span aria-hidden="true"></span>
+              <p><strong>日志保留策略</strong><small>首版长期保留，后续支持归档分区</small></p>
+            </div>
+          </header>
+
+          <div class="audit-toolbar">
+            <label class="audit-search">
+              <span aria-hidden="true"></span>
+              <input id="auditSearch" type="search" placeholder="搜索操作人、操作、资源ID或Trace ID">
+              <kbd>⌘ K</kbd>
+            </label>
+
+            <div class="audit-filter-select" data-filter="module">
+              <button class="audit-filter-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+                <span>全部模块</span><i aria-hidden="true"></i>
+              </button>
+              <div class="audit-filter-menu" role="listbox" hidden>
+                <button class="is-selected" type="button" role="option" aria-selected="true" data-value="all">全部模块</button>
+                <button type="button" role="option" aria-selected="false" data-value="AUTH">登录与账号</button>
+                <button type="button" role="option" aria-selected="false" data-value="PERMISSION">用户与权限</button>
+                <button type="button" role="option" aria-selected="false" data-value="MAILBOX">邮箱同步</button>
+                <button type="button" role="option" aria-selected="false" data-value="AI">API Key</button>
+                <button type="button" role="option" aria-selected="false" data-value="RISK">风险管理</button>
+                <button type="button" role="option" aria-selected="false" data-value="IMPORT">Excel导入</button>
+                <button type="button" role="option" aria-selected="false" data-value="CONFIG">系统配置</button>
+              </div>
+            </div>
+
+            <div class="audit-filter-select" data-filter="action">
+              <button class="audit-filter-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+                <span>全部操作</span><i aria-hidden="true"></i>
+              </button>
+              <div class="audit-filter-menu" role="listbox" hidden>
+                <button class="is-selected" type="button" role="option" aria-selected="true" data-value="all">全部操作</button>
+                <button type="button" role="option" aria-selected="false" data-value="CREATE">新增</button>
+                <button type="button" role="option" aria-selected="false" data-value="UPDATE">修改</button>
+                <button type="button" role="option" aria-selected="false" data-value="TEST">测试</button>
+                <button type="button" role="option" aria-selected="false" data-value="LOGIN">登录</button>
+                <button type="button" role="option" aria-selected="false" data-value="PUBLISH">发布</button>
+                <button type="button" role="option" aria-selected="false" data-value="ROLLBACK">回滚</button>
+              </div>
+            </div>
+
+            <div class="audit-filter-select" data-filter="result">
+              <button class="audit-filter-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+                <span>全部结果</span><i aria-hidden="true"></i>
+              </button>
+              <div class="audit-filter-menu" role="listbox" hidden>
+                <button class="is-selected" type="button" role="option" aria-selected="true" data-value="all">全部结果</button>
+                <button type="button" role="option" aria-selected="false" data-value="SUCCESS">成功</button>
+                <button type="button" role="option" aria-selected="false" data-value="FAILED">失败</button>
+              </div>
+            </div>
+
+            <button id="resetAuditFilters" class="reset-filter-button" type="button">重置</button>
+
+            <div class="audit-date-filter">
+              <button class="is-active" type="button" data-date-range="today">今天</button>
+              <button type="button" data-date-range="7days">近7天</button>
+              <button type="button" data-date-range="30days">近30天</button>
+              <button type="button" data-date-range="custom">自定义</button>
+            </div>
+          </div>
+
+          <div id="customDateRange" class="custom-date-range" hidden>
+            <label><span>开始日期</span><input id="auditStartDate" type="date" value="2026-07-20"></label>
+            <i aria-hidden="true"></i>
+            <label><span>结束日期</span><input id="auditEndDate" type="date" value="2026-07-26"></label>
+            <button id="applyDateRange" type="button">应用时间范围</button>
+          </div>
+
+          <div class="active-filter-row">
+            <span id="activeFilterSummary">今天 · 全部模块 · 全部操作 · 全部结果</span>
+            <small>查询权限：admin.audit.view</small>
+          </div>
+
+          <div class="audit-table-wrap">
+            <table class="audit-table">
+              <thead>
+                <tr>
+                  <th>时间</th>
+                  <th>模块 / 操作</th>
+                  <th>操作人</th>
+                  <th>资源与摘要</th>
+                  <th>客户端</th>
+                  <th>结果</th>
+                  <th>详情</th>
+                </tr>
+              </thead>
+              <tbody id="auditTableBody">
+                <tr
+                  data-module="CONFIG"
+                  data-action="PUBLISH"
+                  data-result="SUCCESS"
+                  data-sensitive="true"
+                  data-actor="系统管理员"
+                  data-time="2026-07-26 09:42:18"
+                  data-role="系统管理员"
+                  data-resource="system_config/V12.4"
+                  data-trace="trc_cfg_0726094218"
+                  data-ip="10.20.15.***"
+                  data-client="Chrome 138 · macOS"
+                  data-before="配置版本 V12.3；周报同步周期30分钟"
+                  data-after="配置版本 V12.4；新增主题关键词“项目风险跟踪”"
+                  data-context="通过保存并发布完成系统配置版本升级，历史版本保持可追溯。">
+                  <td><strong>09:42:18</strong><small>2026-07-26</small></td>
+                  <td><span class="module-badge is-config">系统配置</span><b>发布配置</b></td>
+                  <td><strong>系统管理员</strong><small>系统管理员</small></td>
+                  <td><strong>system_config / V12.4</strong><small>发布1项周报识别规则</small></td>
+                  <td><strong>10.20.15.***</strong><small>Chrome · macOS</small></td>
+                  <td><span class="result-badge is-success"><i></i>成功</span><small class="sensitive-mark">敏感操作</small></td>
+                  <td><button type="button" data-view-audit>查看</button></td>
+                </tr>
+                <tr
+                  data-module="IMPORT"
+                  data-action="ROLLBACK"
+                  data-result="SUCCESS"
+                  data-sensitive="true"
+                  data-actor="系统管理员"
+                  data-time="2026-07-26 09:18:06"
+                  data-role="系统管理员"
+                  data-resource="import_batch/IMP-20260726-003"
+                  data-trace="trc_imp_0726091806"
+                  data-ip="10.20.15.***"
+                  data-client="Chrome 138 · macOS"
+                  data-before="当前数据版本 V19，批次已发布149条记录"
+                  data-after="回滚至数据版本 V18，恢复上一个成功批次"
+                  data-context="回滚事务执行成功；Excel原文件内容未写入审计摘要。">
+                  <td><strong>09:18:06</strong><small>2026-07-26</small></td>
+                  <td><span class="module-badge is-import">Excel导入</span><b>回滚批次</b></td>
+                  <td><strong>系统管理员</strong><small>系统管理员</small></td>
+                  <td><strong>import_batch / IMP-20260726-003</strong><small>数据版本 V19 → V18</small></td>
+                  <td><strong>10.20.15.***</strong><small>Chrome · macOS</small></td>
+                  <td><span class="result-badge is-success"><i></i>成功</span><small class="sensitive-mark">敏感操作</small></td>
+                  <td><button type="button" data-view-audit>查看</button></td>
+                </tr>
+                <tr
+                  data-module="AI"
+                  data-action="TEST"
+                  data-result="FAILED"
+                  data-sensitive="true"
+                  data-actor="系统管理员"
+                  data-time="2026-07-26 08:56:37"
+                  data-role="系统管理员"
+                  data-resource="ai_provider/OpenAI兼容服务"
+                  data-trace="trc_ai_0726085637"
+                  data-ip="10.20.15.***"
+                  data-client="Edge 138 · Windows"
+                  data-before="服务状态：启用；密钥尾号：••••7K2M"
+                  data-after="连接测试失败；服务状态保持启用"
+                  data-context="上游接口返回401；错误信息已脱敏，未记录API Key和完整请求。">
+                  <td><strong>08:56:37</strong><small>2026-07-26</small></td>
+                  <td><span class="module-badge is-ai">API Key</span><b>连接测试</b></td>
+                  <td><strong>系统管理员</strong><small>系统管理员</small></td>
+                  <td><strong>ai_provider / OpenAI兼容服务</strong><small>上游返回401，错误已脱敏</small></td>
+                  <td><strong>10.20.15.***</strong><small>Edge · Windows</small></td>
+                  <td><span class="result-badge is-failed"><i></i>失败</span><small class="sensitive-mark">敏感操作</small></td>
+                  <td><button type="button" data-view-audit>查看</button></td>
+                </tr>
+                <tr
+                  data-module="MAILBOX"
+                  data-action="TEST"
+                  data-result="SUCCESS"
+                  data-sensitive="false"
+                  data-actor="刘峰"
+                  data-time="2026-07-26 08:41:20"
+                  data-role="风险管理员"
+                  data-resource="mailbox/mbx_1028"
+                  data-trace="trc_mail_0726084120"
+                  data-ip="10.20.18.***"
+                  data-client="Chrome 138 · Windows"
+                  data-before="邮箱状态：待测试；账号：li***@example.com"
+                  data-after="连接测试成功；IMAP服务器可访问"
+                  data-context="仅记录脱敏邮箱地址与测试结果，不记录邮箱授权码。">
+                  <td><strong>08:41:20</strong><small>2026-07-26</small></td>
+                  <td><span class="module-badge is-mail">邮箱同步</span><b>连接测试</b></td>
+                  <td><strong>刘峰</strong><small>风险管理员</small></td>
+                  <td><strong>mailbox / mbx_1028</strong><small>li***@example.com 连接成功</small></td>
+                  <td><strong>10.20.18.***</strong><small>Chrome · Windows</small></td>
+                  <td><span class="result-badge is-success"><i></i>成功</span></td>
+                  <td><button type="button" data-view-audit>查看</button></td>
+                </tr>
+                <tr
+                  data-module="PERMISSION"
+                  data-action="UPDATE"
+                  data-result="SUCCESS"
+                  data-sensitive="true"
+                  data-actor="系统管理员"
+                  data-time="2026-07-26 08:32:12"
+                  data-role="系统管理员"
+                  data-resource="role/RISK_ADMIN"
+                  data-trace="trc_role_0726083212"
+                  data-ip="10.20.15.***"
+                  data-client="Chrome 138 · macOS"
+                  data-before="风险管理员：13项权限"
+                  data-after="风险管理员：14项权限；新增邮箱手动同步"
+                  data-context="角色权限更新后对下一次业务请求生效。">
+                  <td><strong>08:32:12</strong><small>2026-07-26</small></td>
+                  <td><span class="module-badge is-permission">用户与权限</span><b>修改角色权限</b></td>
+                  <td><strong>系统管理员</strong><small>系统管理员</small></td>
+                  <td><strong>role / RISK_ADMIN</strong><small>新增 mailbox.sync_self</small></td>
+                  <td><strong>10.20.15.***</strong><small>Chrome · macOS</small></td>
+                  <td><span class="result-badge is-success"><i></i>成功</span><small class="sensitive-mark">敏感操作</small></td>
+                  <td><button type="button" data-view-audit>查看</button></td>
+                </tr>
+                <tr
+                  data-module="AUTH"
+                  data-action="LOGIN"
+                  data-result="FAILED"
+                  data-sensitive="false"
+                  data-actor="王绍华"
+                  data-time="2026-07-26 08:15:04"
+                  data-role="项目经理"
+                  data-resource="user/wangshaohua"
+                  data-trace="trc_auth_0726081504"
+                  data-ip="10.20.31.***"
+                  data-client="Chrome 138 · Windows"
+                  data-before="账号状态：启用；连续失败2次"
+                  data-after="登录失败；连续失败3次；账号未锁定"
+                  data-context="凭据校验失败，不记录提交的密码内容。">
+                  <td><strong>08:15:04</strong><small>2026-07-26</small></td>
+                  <td><span class="module-badge is-auth">登录与账号</span><b>登录失败</b></td>
+                  <td><strong>王绍华</strong><small>项目经理</small></td>
+                  <td><strong>user / wangshaohua</strong><small>凭据校验失败，第3次</small></td>
+                  <td><strong>10.20.31.***</strong><small>Chrome · Windows</small></td>
+                  <td><span class="result-badge is-failed"><i></i>失败</span></td>
+                  <td><button type="button" data-view-audit>查看</button></td>
+                </tr>
+                <tr
+                  data-module="RISK"
+                  data-action="UPDATE"
+                  data-result="SUCCESS"
+                  data-sensitive="false"
+                  data-actor="刘峰"
+                  data-time="2026-07-26 07:56:43"
+                  data-role="风险管理员"
+                  data-resource="risk/RISK-2026-0018"
+                  data-trace="trc_risk_0726075643"
+                  data-ip="10.20.18.***"
+                  data-client="Chrome 138 · Windows"
+                  data-before="风险等级：中；状态：有效"
+                  data-after="风险等级：高；状态：有效"
+                  data-context="锡山智慧城市一期供应商风险等级调整，风险正文保持不变。">
+                  <td><strong>07:56:43</strong><small>2026-07-26</small></td>
+                  <td><span class="module-badge is-risk">风险管理</span><b>调整风险等级</b></td>
+                  <td><strong>刘峰</strong><small>风险管理员</small></td>
+                  <td><strong>risk / RISK-2026-0018</strong><small>等级：中风险 → 高风险</small></td>
+                  <td><strong>10.20.18.***</strong><small>Chrome · Windows</small></td>
+                  <td><span class="result-badge is-success"><i></i>成功</span></td>
+                  <td><button type="button" data-view-audit>查看</button></td>
+                </tr>
+                <tr
+                  data-module="IMPORT"
+                  data-action="PUBLISH"
+                  data-result="FAILED"
+                  data-sensitive="true"
+                  data-actor="系统管理员"
+                  data-time="2026-07-26 07:42:08"
+                  data-role="系统管理员"
+                  data-resource="import_batch/IMP-20260726-002"
+                  data-trace="trc_imp_0726074208"
+                  data-ip="10.20.15.***"
+                  data-client="Chrome 138 · macOS"
+                  data-before="批次状态：待发布；2条歧义记录未确认"
+                  data-after="发布被阻止；当前数据版本保持V18"
+                  data-context="发布前置校验未通过，事务未开始，业务数据未发生变化。">
+                  <td><strong>07:42:08</strong><small>2026-07-26</small></td>
+                  <td><span class="module-badge is-import">Excel导入</span><b>发布批次</b></td>
+                  <td><strong>系统管理员</strong><small>系统管理员</small></td>
+                  <td><strong>import_batch / IMP-20260726-002</strong><small>存在2条未确认歧义记录</small></td>
+                  <td><strong>10.20.15.***</strong><small>Chrome · macOS</small></td>
+                  <td><span class="result-badge is-failed"><i></i>失败</span><small class="sensitive-mark">敏感操作</small></td>
+                  <td><button type="button" data-view-audit>查看</button></td>
+                </tr>
+                <tr
+                  data-module="PERMISSION"
+                  data-action="CREATE"
+                  data-result="SUCCESS"
+                  data-sensitive="true"
+                  data-actor="系统管理员"
+                  data-time="2026-07-26 07:25:31"
+                  data-role="系统管理员"
+                  data-resource="user/zhangzhe"
+                  data-trace="trc_user_0726072531"
+                  data-ip="10.20.15.***"
+                  data-client="Chrome 138 · macOS"
+                  data-before="用户不存在"
+                  data-after="新增用户张哲；角色：查看/审计员；范围：授权项目"
+                  data-context="系统生成一次性初始密码，密码内容未写入日志。">
+                  <td><strong>07:25:31</strong><small>2026-07-26</small></td>
+                  <td><span class="module-badge is-permission">用户与权限</span><b>新增用户</b></td>
+                  <td><strong>系统管理员</strong><small>系统管理员</small></td>
+                  <td><strong>user / zhangzhe</strong><small>角色：查看/审计员</small></td>
+                  <td><strong>10.20.15.***</strong><small>Chrome · macOS</small></td>
+                  <td><span class="result-badge is-success"><i></i>成功</span><small class="sensitive-mark">敏感操作</small></td>
+                  <td><button type="button" data-view-audit>查看</button></td>
+                </tr>
+                <tr
+                  data-module="AUTH"
+                  data-action="LOGIN"
+                  data-result="SUCCESS"
+                  data-sensitive="false"
+                  data-actor="系统管理员"
+                  data-time="2026-07-26 07:10:22"
+                  data-role="系统管理员"
+                  data-resource="session/ses_7f21"
+                  data-trace="trc_auth_0726071022"
+                  data-ip="10.20.15.***"
+                  data-client="Chrome 138 · macOS"
+                  data-before="会话不存在"
+                  data-after="登录成功；创建服务端会话ses_7f21"
+                  data-context="浏览器仅保存安全Cookie，日志不记录原始会话令牌。">
+                  <td><strong>07:10:22</strong><small>2026-07-26</small></td>
+                  <td><span class="module-badge is-auth">登录与账号</span><b>登录成功</b></td>
+                  <td><strong>系统管理员</strong><small>系统管理员</small></td>
+                  <td><strong>session / ses_7f21</strong><small>创建服务端会话</small></td>
+                  <td><strong>10.20.15.***</strong><small>Chrome · macOS</small></td>
+                  <td><span class="result-badge is-success"><i></i>成功</span></td>
+                  <td><button type="button" data-view-audit>查看</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div id="auditEmpty" class="audit-empty" hidden>
+            <span aria-hidden="true"></span>
+            <strong>没有符合条件的审计记录</strong>
+            <p>请调整搜索词、模块、操作或结果筛选条件。</p>
+            <button type="button" data-reset-empty>清除筛选</button>
+          </div>
+
+          <footer class="audit-list-footer">
+            <span>日志总数 2,846 条 · 当前为原型示例数据</span>
+            <nav class="audit-pagination" aria-label="审计日志分页">
+              <button type="button" disabled aria-label="上一页"><i></i></button>
+              <button class="is-current" type="button" aria-current="page">1</button>
+              <button type="button">2</button>
+              <button type="button">3</button>
+              <span>…</span>
+              <button type="button">285</button>
+              <button type="button" aria-label="下一页"><i></i></button>
+            </nav>
+          </footer>
+        </section>
+
+        <footer class="admin-footer">
+          <span>项目风险管理平台 V2.0</span>
+          <span>权限：admin.audit.view · 日志只读、脱敏、不可修改删除</span>
+        </footer>
+      </main>
+    </div>
+  </div>
+
+  <section id="auditDetailDrawer" class="audit-drawer" aria-labelledby="auditDetailTitle" hidden>
+    <button class="drawer-mask" type="button" data-close-audit-detail aria-label="关闭审计详情"></button>
+    <div class="drawer-panel">
+      <header class="drawer-heading">
+        <div><p>AUDIT EVENT DETAIL</p><h2 id="auditDetailTitle">审计事件详情</h2></div>
+        <button type="button" data-close-audit-detail aria-label="关闭">×</button>
+      </header>
+      <div class="drawer-body">
+        <section class="event-result-card">
+          <span id="detailResultIcon" class="event-result-icon is-success" aria-hidden="true"><i></i></span>
+          <div><strong id="detailActionTitle">发布系统配置</strong><p id="detailEventMeta">系统配置 · 2026-07-26 09:42:18</p></div>
+          <span id="detailResultBadge" class="result-badge is-success"><i></i>成功</span>
+        </section>
+
+        <section class="detail-section">
+          <header><span class="detail-section-icon is-user" aria-hidden="true"></span><h3>操作与客户端</h3></header>
+          <dl class="detail-grid">
+            <div><dt>操作人</dt><dd id="detailActor">系统管理员</dd></div>
+            <div><dt>角色</dt><dd id="detailRole">系统管理员</dd></div>
+            <div><dt>IP地址</dt><dd id="detailIp">10.20.15.***</dd></div>
+            <div><dt>客户端</dt><dd id="detailClient">Chrome 138 · macOS</dd></div>
+          </dl>
+        </section>
+
+        <section class="detail-section">
+          <header><span class="detail-section-icon is-resource" aria-hidden="true"></span><h3>资源与链路</h3></header>
+          <div class="copy-field">
+            <span><small>资源标识</small><code id="detailResource">system_config/V12.4</code></span>
+            <button type="button" data-copy-target="detailResource">复制</button>
+          </div>
+          <div class="copy-field">
+            <span><small>Trace ID</small><code id="detailTrace">trc_cfg_0726094218</code></span>
+            <button type="button" data-copy-target="detailTrace">复制</button>
+          </div>
+        </section>
+
+        <section class="detail-section">
+          <header><span class="detail-section-icon is-change" aria-hidden="true"></span><h3>脱敏变更摘要</h3></header>
+          <div class="change-comparison">
+            <article>
+              <span>变更前</span>
+              <p id="detailBefore">配置版本 V12.3；周报同步周期30分钟</p>
+            </article>
+            <i aria-hidden="true"></i>
+            <article>
+              <span>变更后</span>
+              <p id="detailAfter">配置版本 V12.4；新增主题关键词“项目风险跟踪”</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="detail-section">
+          <header><span class="detail-section-icon is-context" aria-hidden="true"></span><h3>事件说明</h3></header>
+          <p id="detailContext" class="detail-context">通过保存并发布完成系统配置版本升级，历史版本保持可追溯。</p>
+        </section>
+
+        <aside class="detail-security-note">
+          <span aria-hidden="true"></span>
+          <p><strong>安全边界</strong><small>此详情仅展示授权范围内的脱敏信息，不包含密码、邮箱授权码、API Key、完整会话令牌或无关Excel数据。</small></p>
+        </aside>
+      </div>
+      <footer class="drawer-footer">
+        <span>此审计记录不可编辑或删除</span>
+        <button type="button" data-close-audit-detail>关闭</button>
+      </footer>
+    </div>
+  </section>
+
+  <section id="exportAuditModal" class="audit-modal" role="dialog" aria-modal="true" aria-labelledby="exportAuditTitle" hidden>
+    <button class="modal-mask" type="button" data-close-export aria-label="关闭导出弹框"></button>
+    <div class="modal-card">
+      <header>
+        <span class="modal-heading-icon is-export" aria-hidden="true"></span>
+        <div><p>EXPORT AUDIT LOGS</p><h2 id="exportAuditTitle">导出审计日志</h2></div>
+        <button type="button" data-close-export aria-label="关闭">×</button>
+      </header>
+      <div class="modal-body">
+        <div class="export-scope-card">
+          <span aria-hidden="true"></span>
+          <div><strong id="exportResultCount">当前筛选结果：10条示例记录</strong><p id="exportScopeText">今天 · 全部模块 · 全部操作 · 全部结果</p></div>
+        </div>
+        <fieldset class="export-format">
+          <legend>导出格式</legend>
+          <label><input type="radio" name="exportFormat" value="xlsx" checked><span><strong>Excel工作簿</strong><small>.xlsx，适合进一步筛选与留档</small></span></label>
+          <label><input type="radio" name="exportFormat" value="csv"><span><strong>CSV文本</strong><small>.csv，适合系统间数据交换</small></span></label>
+        </fieldset>
+        <label class="export-reason">
+          <span>导出用途 <b>*</b></span>
+          <textarea id="exportReason" rows="3" maxlength="100" placeholder="请填写审计核查、问题追踪或归档等用途"></textarea>
+          <small><em id="exportReasonCount">0</em>/100</small>
+        </label>
+        <div class="export-policy-note">
+          <span>i</span>
+          <p>仅导出当前账号授权范围内的脱敏字段。导出操作本身也会生成一条审计记录。</p>
+        </div>
+      </div>
+      <footer>
+        <button class="modal-secondary-button" type="button" data-close-export>取消</button>
+        <button id="confirmExportButton" class="modal-primary-button" type="button" disabled>确认导出</button>
+      </footer>
+    </div>
+  </section>
+
+  <div id="auditToast" class="audit-toast" role="status" aria-live="polite" hidden>
+    <span aria-hidden="true"></span>
+    <p>审计日志已刷新</p>
+  </div>
+
+  <script src="assets/audit-logs.js"></script>
+</body>
+</html>

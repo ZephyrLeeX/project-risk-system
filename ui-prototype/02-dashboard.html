@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f4f9fd">
+  <meta
+    name="description"
+    content="项目风险管理平台Web风险看板，集中展示项目风险、回款、待办和周报洞察。">
+  <title>Web风险看板｜项目风险管理平台</title>
+  <link rel="stylesheet" href="assets/ui.css">
+  <link rel="stylesheet" href="assets/dashboard.css">
+</head>
+<body data-page="dashboard">
+  <div class="dashboard-app">
+    <header class="app-header">
+      <a class="brand" href="02-dashboard.html" aria-label="项目风险管理平台首页">
+        <span class="brand-mark" aria-hidden="true">
+          <i></i><i></i><i></i>
+        </span>
+        <span class="brand-copy">
+          <strong>项目风险管理</strong>
+          <small>PROJECT RISK INTELLIGENCE</small>
+        </span>
+      </a>
+
+      <nav class="primary-nav" aria-label="业务模块">
+        <a class="nav-item is-active" href="02-dashboard.html" aria-current="page">
+          <span class="nav-icon nav-icon-board" aria-hidden="true"></span>
+          Web 风险看板
+        </a>
+        <button id="agentEntry" class="nav-item" type="button">
+          <span class="nav-icon nav-icon-agent" aria-hidden="true"></span>
+          Agent 智能对话
+        </button>
+      </nav>
+
+      <div class="header-tools">
+        <div class="week-chip">
+          <span aria-hidden="true"></span>
+          2026年第27周
+        </div>
+        <button id="noticeButton" class="icon-button notice-button" type="button" aria-label="查看通知">
+          <span aria-hidden="true"></span>
+          <b>3</b>
+        </button>
+        <button id="profileButton" class="profile-button" type="button" aria-expanded="false">
+          <span class="avatar" aria-hidden="true">风</span>
+          <span class="profile-copy">
+            <strong>风险管理员</strong>
+            <small>全项目数据</small>
+          </span>
+          <span class="chevron" aria-hidden="true"></span>
+        </button>
+        <div id="profileMenu" class="profile-menu" hidden>
+          <a href="10-mailbox-settings.html">个人邮箱配置</a>
+          <a href="11-mail-sync-results.html">邮箱同步结果</a>
+          <button type="button" data-profile-action="password">修改密码</button>
+          <a href="01-login.html">退出登录</a>
+        </div>
+      </div>
+    </header>
+
+    <main class="dashboard-main">
+      <section class="page-heading" aria-labelledby="dashboardTitle">
+        <div>
+          <p class="eyebrow">RISK OVERVIEW</p>
+          <h1 id="dashboardTitle">Web 风险看板</h1>
+          <p>从项目清单、回款数据与周报线索中，快速识别本周关键风险。</p>
+        </div>
+        <div class="heading-actions">
+          <div class="data-status">
+            <span class="status-dot" aria-hidden="true"></span>
+            <div>
+              <strong>数据已更新</strong>
+              <small id="updatedAt">2026-07-23 09:30</small>
+            </div>
+          </div>
+          <button id="refreshButton" class="outline-button" type="button">
+            <span class="refresh-icon" aria-hidden="true"></span>
+            刷新数据
+          </button>
+        </div>
+      </section>
+
+      <section class="metric-grid" aria-label="关键指标">
+        <button class="metric-card metric-blue" type="button" data-detail="projects">
+          <span class="metric-icon metric-icon-project" aria-hidden="true"></span>
+          <span class="metric-label">项目总数</span>
+          <strong><b>131</b><small>个</small></strong>
+          <span class="metric-foot">在交付项目 <em>131</em></span>
+        </button>
+        <button class="metric-card metric-orange" type="button" data-detail="risks">
+          <span class="metric-icon metric-icon-risk" aria-hidden="true">!</span>
+          <span class="metric-label">风险总数</span>
+          <strong><b>12</b><small>项</small></strong>
+          <span class="metric-foot">涉及项目 <em>8</em></span>
+        </button>
+        <button class="metric-card metric-red" type="button" data-detail="highRisks">
+          <span class="metric-icon metric-icon-high" aria-hidden="true"></span>
+          <span class="metric-label">高风险</span>
+          <strong><b>4</b><small>项</small></strong>
+          <span class="metric-foot">本周新增 <em>2</em></span>
+        </button>
+        <button class="metric-card metric-indigo" type="button" data-detail="remaining">
+          <span class="metric-icon metric-icon-money" aria-hidden="true">¥</span>
+          <span class="metric-label">待回款金额 <small>风险项目</small></span>
+          <strong><b>5,326.30</b><small>万</small></strong>
+          <span class="metric-foot">数据完整项目 <em>6</em></span>
+        </button>
+        <button class="metric-card metric-green" type="button" data-detail="collected">
+          <span class="metric-icon metric-icon-collected" aria-hidden="true"></span>
+          <span class="metric-label">已回款 <small>风险项目</small></span>
+          <strong><b>5,410.23</b><small>万</small></strong>
+          <span class="metric-foot">风险项目完成率 <em>50.4%</em></span>
+        </button>
+      </section>
+
+      <section class="focus-panel" aria-labelledby="focusTitle">
+        <header>
+          <div>
+            <span class="focus-symbol" aria-hidden="true">!</span>
+            <div>
+              <p>WEEKLY FOCUS</p>
+              <h2 id="focusTitle">本周重点关注</h2>
+            </div>
+          </div>
+          <span>按风险等级、待回款金额与更新时间智能排序</span>
+        </header>
+        <div class="focus-list">
+          <button type="button" data-risk-id="1">
+            <span class="focus-level is-high">高</span>
+            <span class="focus-content">
+              <strong>锡山智慧城市一期</strong>
+              <small>供应商核减谈判陷入僵局，建议评估投诉或诉讼方案。</small>
+            </span>
+            <span class="focus-arrow" aria-hidden="true"></span>
+          </button>
+          <button type="button" data-risk-id="4">
+            <span class="focus-level is-high">高</span>
+            <span class="focus-content">
+              <strong>新吴城运数字底座</strong>
+              <small>质保款551.67万已延期，需尽快按既定计划推进回款。</small>
+            </span>
+            <span class="focus-arrow" aria-hidden="true"></span>
+          </button>
+          <button type="button" data-risk-id="7">
+            <span class="focus-level is-medium">中</span>
+            <span class="focus-content">
+              <strong>昆山鹿路通APP</strong>
+              <small>新增功能项目345万招标中，7月16日开标。</small>
+            </span>
+            <span class="focus-arrow" aria-hidden="true"></span>
+          </button>
+        </div>
+      </section>
+
+      <section class="workspace-card">
+        <div class="section-tabs" role="tablist" aria-label="风险业务视图">
+          <button id="tab-risk" class="is-active" type="button" role="tab" aria-selected="true" aria-controls="panel-risk" data-panel="risk">
+            <span class="tab-symbol tab-risk-symbol" aria-hidden="true"></span>
+            项目风险清单
+            <b>12</b>
+          </button>
+          <button id="tab-department" type="button" role="tab" aria-selected="false" aria-controls="panel-department" data-panel="department">
+            <span class="tab-symbol tab-chart-symbol" aria-hidden="true"></span>
+            部门回款汇总
+          </button>
+          <button id="tab-todo" type="button" role="tab" aria-selected="false" aria-controls="panel-todo" data-panel="todo">
+            <span class="tab-symbol tab-check-symbol" aria-hidden="true"></span>
+            管理者待办
+            <b>8</b>
+          </button>
+          <button id="tab-payment" type="button" role="tab" aria-selected="false" aria-controls="panel-payment" data-panel="payment">
+            <span class="tab-symbol tab-money-symbol" aria-hidden="true">¥</span>
+            应收与回款
+          </button>
+          <button id="tab-timeline" type="button" role="tab" aria-selected="false" aria-controls="panel-timeline" data-panel="timeline">
+            <span class="tab-symbol tab-time-symbol" aria-hidden="true"></span>
+            风险时间线
+          </button>
+          <button id="tab-resolved" type="button" role="tab" aria-selected="false" aria-controls="panel-resolved" data-panel="resolved">
+            <span class="tab-symbol tab-resolved-symbol" aria-hidden="true"></span>
+            已解除风险
+          </button>
+        </div>
+
+        <div id="panel-risk" class="tab-panel" role="tabpanel" aria-labelledby="tab-risk">
+          <div class="panel-heading">
+            <div>
+              <p class="panel-kicker">RISK REGISTER</p>
+              <h2>项目风险清单</h2>
+              <span id="riskResultCount">共12条风险</span>
+            </div>
+            <div class="source-note">
+              <span aria-hidden="true"></span>
+              周报邮件 + 日常上报 + 项目清单Excel
+            </div>
+          </div>
+
+          <div class="filter-toolbar">
+            <label class="search-field" for="riskSearch">
+              <span class="search-icon" aria-hidden="true"></span>
+              <input id="riskSearch" type="search" placeholder="搜索项目或风险描述">
+            </label>
+            <select id="levelFilter" aria-label="按风险等级筛选">
+              <option value="all">全部等级</option>
+              <option value="高风险">高风险</option>
+              <option value="中风险">中风险</option>
+              <option value="低风险">低风险</option>
+            </select>
+            <select id="categoryFilter" aria-label="按风险类别筛选">
+              <option value="all">全部类别</option>
+            </select>
+            <select id="ownerFilter" aria-label="按负责人筛选">
+              <option value="all">全部负责人</option>
+            </select>
+            <button id="resetFilters" class="reset-button" type="button">重置</button>
+          </div>
+
+          <div class="table-scroll risk-table-scroll">
+            <table class="risk-table">
+              <thead>
+                <tr>
+                  <th>等级</th>
+                  <th>项目</th>
+                  <th>类别</th>
+                  <th>风险描述</th>
+                  <th>上报人 / 来源</th>
+                  <th>周次</th>
+                </tr>
+              </thead>
+              <tbody id="riskTable"></tbody>
+            </table>
+          </div>
+          <div id="riskEmpty" class="empty-state" hidden>
+            <span aria-hidden="true"></span>
+            <strong>没有找到符合条件的风险</strong>
+            <p>请调整筛选条件后重试。</p>
+          </div>
+        </div>
+
+        <div id="panel-department" class="tab-panel" role="tabpanel" aria-labelledby="tab-department" hidden>
+          <div class="panel-heading">
+            <div>
+              <p class="panel-kicker">COLLECTION BY DEPARTMENT</p>
+              <h2>部门回款汇总</h2>
+              <span>金额单位：万元</span>
+            </div>
+            <div class="source-note">
+              <span aria-hidden="true"></span>
+              项目清单Excel · 批次 IMP-20260723-01
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>部门</th>
+                  <th>计划回款</th>
+                  <th>已回款</th>
+                  <th>剩余待回款</th>
+                  <th>完成率</th>
+                </tr>
+              </thead>
+              <tbody id="departmentTable"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="panel-todo" class="tab-panel" role="tabpanel" aria-labelledby="tab-todo" hidden>
+          <div class="panel-heading">
+            <div>
+              <p class="panel-kicker">MANAGEMENT ACTIONS</p>
+              <h2>管理者周待办事项</h2>
+              <span>由风险建议与责任人自动形成</span>
+            </div>
+            <select id="todoOwnerFilter" class="compact-select" aria-label="按待办负责人筛选">
+              <option value="all">全部负责人</option>
+            </select>
+          </div>
+          <div class="todo-layout">
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>紧急度</th>
+                    <th>项目</th>
+                    <th>待办事项</th>
+                    <th>负责人</th>
+                    <th>类型</th>
+                  </tr>
+                </thead>
+                <tbody id="todoTable"></tbody>
+              </table>
+            </div>
+            <aside class="schedule-card" aria-labelledby="scheduleTitle">
+              <span class="schedule-date" aria-hidden="true">W27</span>
+              <h3 id="scheduleTitle">本周日程建议</h3>
+              <ol>
+                <li><b>周一</b><span>核实锡山项目集团领导沟通结果</span></li>
+                <li><b>周二</b><span>法务会议评估供应商投诉/诉讼</span></li>
+                <li><b>周三</b><span>新吴城运回款策略会议</span></li>
+                <li><b>周五前</b><span>完成市数据局审计配合沟通</span></li>
+              </ol>
+            </aside>
+          </div>
+        </div>
+
+        <div id="panel-payment" class="tab-panel" role="tabpanel" aria-labelledby="tab-payment" hidden>
+          <div class="panel-heading">
+            <div>
+              <p class="panel-kicker">RISK COLLECTION</p>
+              <h2>应收账款与回款</h2>
+              <span>仅统计当前存在风险的项目</span>
+            </div>
+            <div class="source-note">
+              <span aria-hidden="true"></span>
+              项目清单Excel + 周报回款线索
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>项目</th>
+                  <th>计划金额</th>
+                  <th>已回款</th>
+                  <th>待回款</th>
+                  <th>下一笔回款</th>
+                  <th>进度</th>
+                </tr>
+              </thead>
+              <tbody id="paymentTable"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="panel-timeline" class="tab-panel" role="tabpanel" aria-labelledby="tab-timeline" hidden>
+          <div class="panel-heading">
+            <div>
+              <p class="panel-kicker">RISK TIMELINE</p>
+              <h2>风险进展时间线</h2>
+              <span>按发生时间倒序展示最近7条记录</span>
+            </div>
+          </div>
+          <div id="timelineList" class="timeline-list"></div>
+        </div>
+
+        <div id="panel-resolved" class="tab-panel" role="tabpanel" aria-labelledby="tab-resolved" hidden>
+          <div class="panel-heading">
+            <div>
+              <p class="panel-kicker">RESOLVED RISKS</p>
+              <h2>已解除风险</h2>
+              <span>日常解除后自动进入历史记录</span>
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>风险描述</th>
+                  <th>项目</th>
+                  <th>原等级</th>
+                  <th>原类别</th>
+                  <th>解除时间</th>
+                  <th>解除原因</th>
+                </tr>
+              </thead>
+              <tbody id="resolvedTable"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="reports-card" aria-labelledby="reportsTitle">
+        <div class="panel-heading">
+          <div>
+            <p class="panel-kicker">WEEKLY REPORTS</p>
+            <h2 id="reportsTitle">本周周报邮件汇总</h2>
+            <span>已同步5封 · 已完成AI分析5封</span>
+          </div>
+          <button id="syncReportsButton" class="outline-button" type="button">
+            <span class="sync-icon" aria-hidden="true"></span>
+            同步周报
+          </button>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>同步状态</th>
+                <th>发件人</th>
+                <th>日期</th>
+                <th>涉及项目</th>
+                <th>关键要点</th>
+              </tr>
+            </thead>
+            <tbody id="reportsTable"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <footer class="dashboard-footer">
+        <span>项目风险管理平台 V2.0</span>
+        <span>数据来源：项目清单Excel、回款数据、风险管理员邮箱及日常上报</span>
+      </footer>
+    </main>
+  </div>
+
+  <div id="modalOverlay" class="detail-overlay" hidden>
+    <section
+      class="detail-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="modalTitle">
+      <header>
+        <div>
+          <p id="modalKicker">DETAIL</p>
+          <h2 id="modalTitle">详情</h2>
+        </div>
+        <button id="closeModal" class="modal-close" type="button" aria-label="关闭详情"></button>
+      </header>
+      <div id="modalContent" class="detail-content"></div>
+    </section>
+  </div>
+
+  <div id="agentOverlay" class="agent-overlay" hidden>
+    <aside class="agent-drawer" aria-labelledby="agentTitle">
+      <header>
+        <div class="agent-heading">
+          <span class="agent-logo" aria-hidden="true"></span>
+          <div>
+            <p>AI PROJECT ASSISTANT</p>
+            <h2 id="agentTitle">Agent 智能对话</h2>
+          </div>
+        </div>
+        <button id="closeAgent" class="modal-close" type="button" aria-label="关闭智能对话"></button>
+      </header>
+      <div id="agentMessages" class="agent-messages" aria-live="polite">
+        <div class="agent-message">
+          <span class="message-avatar" aria-hidden="true">AI</span>
+          <div>
+            <p>你好，我可以帮你查询项目风险、回款、待办和周报，也可以协助上报或解除风险。</p>
+            <div class="quick-prompts">
+              <button type="button">当前有哪些高风险？</button>
+              <button type="button">查看管理者待办</button>
+              <button type="button">风险项目待回款多少？</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <form id="agentForm" class="agent-input">
+        <label for="agentInput">输入你的问题</label>
+        <textarea id="agentInput" rows="2" placeholder="例如：锡山项目目前有哪些风险？"></textarea>
+        <button type="submit" aria-label="发送消息">
+          <span aria-hidden="true"></span>
+        </button>
+      </form>
+    </aside>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="assets/dashboard.js"></script>
+</body>
+</html>

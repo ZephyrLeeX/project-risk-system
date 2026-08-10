@@ -1,0 +1,704 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f4f9fd">
+  <meta
+    name="description"
+    content="项目风险管理平台API Key管理页面，用于配置、测试和治理系统AI服务及加密凭据。">
+  <title>API Key 管理｜项目风险管理平台</title>
+  <link rel="stylesheet" href="assets/ui.css">
+  <link rel="stylesheet" href="assets/admin.css">
+  <link rel="stylesheet" href="assets/api-keys.css">
+</head>
+<body data-page="api-key-management">
+  <div class="admin-app">
+    <aside id="adminSidebar" class="admin-sidebar" aria-label="后台管理导航">
+      <div class="sidebar-brand">
+        <a class="admin-brand" href="03-admin-dashboard.html" aria-label="项目风险管理后台首页">
+          <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span class="brand-copy">
+            <strong>项目风险管理</strong>
+            <small>ADMIN CONSOLE</small>
+          </span>
+        </a>
+        <span class="console-badge">管理后台</span>
+      </div>
+
+      <nav class="sidebar-nav">
+        <p class="nav-group-label">工作台</p>
+        <a class="side-nav-item" href="03-admin-dashboard.html">
+          <span class="side-icon icon-overview" aria-hidden="true"></span>
+          <span>管理概览</span>
+        </a>
+
+        <p class="nav-group-label">组织与权限</p>
+        <a class="side-nav-item" href="04-user-management.html">
+          <span class="side-icon icon-users" aria-hidden="true"></span>
+          <span>用户管理</span>
+          <b>32</b>
+        </a>
+        <a class="side-nav-item" href="05-role-permissions.html">
+          <span class="side-icon icon-role" aria-hidden="true"></span>
+          <span>角色权限</span>
+        </a>
+
+        <p class="nav-group-label">数据与服务</p>
+        <a class="side-nav-item" href="06-project-import.html">
+          <span class="side-icon icon-import" aria-hidden="true"></span>
+          <span>项目数据导入</span>
+          <i class="nav-alert" aria-label="2项待确认">2</i>
+        </a>
+        <a class="side-nav-item is-active" href="07-api-key-management.html" aria-current="page">
+          <span class="side-icon icon-key" aria-hidden="true"></span>
+          <span>API Key 管理</span>
+          <i id="sidebarExpiryBadge" class="nav-alert" aria-label="1项即将到期">1</i>
+        </a>
+
+        <p class="nav-group-label">系统治理</p>
+        <a class="side-nav-item" href="08-system-config.html">
+          <span class="side-icon icon-setting" aria-hidden="true"></span>
+          <span>系统配置</span>
+        </a>
+        <a class="side-nav-item" href="09-audit-logs.html">
+          <span class="side-icon icon-audit" aria-hidden="true"></span>
+          <span>审计日志</span>
+        </a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <a class="back-business" href="02-dashboard.html">
+          <span aria-hidden="true"></span>
+          返回风险看板
+        </a>
+        <div class="environment">
+          <span></span>
+          <div>
+            <strong>系统运行正常</strong>
+            <small>V2.0 · 生产环境</small>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <button id="sidebarBackdrop" class="sidebar-backdrop" type="button" aria-label="关闭导航" hidden></button>
+
+    <div class="admin-workspace">
+      <header class="admin-topbar">
+        <div class="topbar-left">
+          <button id="sidebarToggle" class="sidebar-toggle" type="button" aria-label="打开导航" aria-expanded="false">
+            <span></span><span></span><span></span>
+          </button>
+          <div class="breadcrumb" aria-label="当前位置">
+            <a href="03-admin-dashboard.html">后台管理</a>
+            <i aria-hidden="true"></i>
+            <strong>API Key 管理</strong>
+          </div>
+        </div>
+
+        <div class="topbar-tools">
+          <div class="secure-status">
+            <span aria-hidden="true"></span>
+            敏感配置加密
+          </div>
+          <button id="noticeButton" class="top-icon-button" type="button" aria-label="查看后台通知">
+            <span class="bell-icon" aria-hidden="true"></span>
+            <b>1</b>
+          </button>
+          <button id="adminProfileButton" class="admin-profile" type="button" aria-expanded="false">
+            <span class="admin-avatar" aria-hidden="true">系</span>
+            <span>
+              <strong>系统管理员</strong>
+              <small>全部项目</small>
+            </span>
+            <i aria-hidden="true"></i>
+          </button>
+          <div id="adminProfileMenu" class="admin-profile-menu" hidden>
+            <button type="button" data-profile-action="security">账号安全</button>
+            <a href="02-dashboard.html">返回业务端</a>
+            <a href="01-login.html">退出登录</a>
+          </div>
+        </div>
+      </header>
+
+      <main class="admin-main api-main">
+        <section class="api-page-heading" aria-labelledby="apiPageTitle">
+          <div>
+            <p class="admin-eyebrow">AI SERVICE &amp; CREDENTIAL GOVERNANCE</p>
+            <h1 id="apiPageTitle">API Key 管理</h1>
+            <p>统一管理周报分析与 Agent 使用的 AI 服务。密钥加密保存，页面、接口和日志均不回显完整值。</p>
+          </div>
+          <div class="api-heading-actions">
+            <button id="testAllButton" class="secondary-action" type="button">
+              <span class="action-test-icon" aria-hidden="true"></span>
+              测试全部服务
+            </button>
+            <button id="addProviderButton" class="primary-action" type="button">
+              <span class="action-plus-icon" aria-hidden="true"></span>
+              新增 AI 服务
+            </button>
+          </div>
+        </section>
+
+        <section class="api-security-banner" aria-label="密钥安全说明">
+          <span class="security-shield" aria-hidden="true"></span>
+          <div>
+            <strong>密钥由服务端使用 AES-256-GCM 加密</strong>
+            <p>保存后仅展示掩码与尾号；更新密钥时不会回显旧值，测试与启停操作将写入审计日志。</p>
+          </div>
+          <button id="securityDetailButton" type="button">查看安全规则</button>
+        </section>
+
+        <section class="api-summary-grid" aria-label="AI服务统计">
+          <button class="api-summary-card summary-services" type="button" data-summary-filter="all">
+            <span class="summary-icon" aria-hidden="true"></span>
+            <span><small>AI 服务</small><strong id="providerTotalCount">2<em>项</em></strong></span>
+            <i>1项默认 · 1项备用</i>
+          </button>
+          <button class="api-summary-card summary-healthy" type="button" data-summary-filter="ACTIVE">
+            <span class="summary-icon" aria-hidden="true"></span>
+            <span><small>运行正常</small><strong id="healthyProviderCount">2<em>项</em></strong></span>
+            <i>最近测试全部通过</i>
+          </button>
+          <button class="api-summary-card summary-expiry" type="button" data-summary-filter="EXPIRING">
+            <span class="summary-icon" aria-hidden="true"></span>
+            <span><small>30天内到期</small><strong id="expiringProviderCount">1<em>项</em></strong></span>
+            <i>生产分析服务 · 剩25天</i>
+          </button>
+          <div class="api-summary-card summary-success">
+            <span class="summary-icon" aria-hidden="true"></span>
+            <span><small>近7日成功率</small><strong>98.7<em>%</em></strong></span>
+            <i>2,846次调用</i>
+          </div>
+        </section>
+
+        <div class="api-content-grid">
+          <section class="provider-panel" aria-labelledby="providerListTitle">
+            <header class="panel-heading">
+              <div>
+                <p>AI SERVICE CONFIGURATIONS</p>
+                <div><h2 id="providerListTitle">AI 服务配置</h2><span id="providerListCount">2项服务</span></div>
+              </div>
+              <div class="provider-toolbar">
+                <label class="provider-search">
+                  <span aria-hidden="true"></span>
+                  <input id="providerSearch" type="search" placeholder="搜索服务名称、地址或模型" autocomplete="off">
+                </label>
+                <div class="provider-filters" aria-label="服务状态筛选">
+                  <button class="is-active" type="button" data-provider-filter="all">全部</button>
+                  <button type="button" data-provider-filter="ACTIVE">已启用</button>
+                  <button type="button" data-provider-filter="DISABLED">已停用</button>
+                </div>
+              </div>
+            </header>
+
+            <div id="providerList" class="provider-list">
+              <article
+                class="provider-card is-default is-expiring"
+                data-provider-id="provider-primary"
+                data-provider-name="生产分析服务"
+                data-provider-status="ACTIVE"
+                data-provider-expiring="true"
+                data-provider-url="https://ai-gateway.example.com/v1"
+                data-provider-model="risk-analysis-v2"
+                data-provider-timeout="60"
+                data-provider-retries="2"
+                data-provider-expiry="2026-08-18">
+                <header>
+                  <div class="provider-identity">
+                    <span class="provider-logo provider-logo-blue" aria-hidden="true">AI</span>
+                    <div>
+                      <div class="provider-name-row">
+                        <h3>生产分析服务</h3>
+                        <span class="default-badge">默认服务</span>
+                        <span class="provider-status is-active"><i></i>已启用</span>
+                      </div>
+                      <p>OpenAI-compatible · 公司统一 AI 网关</p>
+                    </div>
+                  </div>
+                  <div class="provider-actions">
+                    <button type="button" data-test-provider>连接测试</button>
+                    <button type="button" data-edit-provider>编辑</button>
+                    <button class="more-button" type="button" data-provider-more aria-label="更多操作" aria-expanded="false">•••</button>
+                    <div class="provider-more-menu" hidden>
+                      <button type="button" data-set-default>设为默认服务</button>
+                      <button type="button" data-rotate-key>更新 API Key</button>
+                      <button type="button" data-toggle-provider>停用服务</button>
+                    </div>
+                  </div>
+                </header>
+
+                <div class="provider-config-grid">
+                  <div class="config-field config-url">
+                    <span>接口地址</span>
+                    <strong>https://ai-gateway.example.com/v1</strong>
+                  </div>
+                  <div class="config-field">
+                    <span>模型</span>
+                    <strong>risk-analysis-v2</strong>
+                  </div>
+                  <div class="config-field config-key">
+                    <span>API Key</span>
+                    <strong>sk-proj-••••••••••••9A7K</strong>
+                    <small>仅显示尾号</small>
+                  </div>
+                  <div class="config-field">
+                    <span>超时 / 重试</span>
+                    <strong>60秒 / 2次</strong>
+                  </div>
+                </div>
+
+                <footer>
+                  <div class="test-state is-success">
+                    <span aria-hidden="true"></span>
+                    <p><strong>最近测试通过</strong><small>2026-07-24 08:45 · 1.18秒</small></p>
+                  </div>
+                  <div class="expiry-state is-warning">
+                    <span aria-hidden="true"></span>
+                    <p><strong>2026-08-18 到期</strong><small>剩余25天，建议尽快轮换</small></p>
+                  </div>
+                  <div class="provider-usage">
+                    <span>近7日调用</span>
+                    <strong>2,431次</strong>
+                    <i><b style="width: 86%"></b></i>
+                  </div>
+                </footer>
+              </article>
+
+              <article
+                class="provider-card"
+                data-provider-id="provider-backup"
+                data-provider-name="备用分析服务"
+                data-provider-status="ACTIVE"
+                data-provider-expiring="false"
+                data-provider-url="https://ai-backup.example.com/v1"
+                data-provider-model="general-chat"
+                data-provider-timeout="45"
+                data-provider-retries="1"
+                data-provider-expiry="2027-03-31">
+                <header>
+                  <div class="provider-identity">
+                    <span class="provider-logo provider-logo-violet" aria-hidden="true">AI</span>
+                    <div>
+                      <div class="provider-name-row">
+                        <h3>备用分析服务</h3>
+                        <span class="priority-badge">备用 1</span>
+                        <span class="provider-status is-active"><i></i>已启用</span>
+                      </div>
+                      <p>OpenAI-compatible · 灾备服务通道</p>
+                    </div>
+                  </div>
+                  <div class="provider-actions">
+                    <button type="button" data-test-provider>连接测试</button>
+                    <button type="button" data-edit-provider>编辑</button>
+                    <button class="more-button" type="button" data-provider-more aria-label="更多操作" aria-expanded="false">•••</button>
+                    <div class="provider-more-menu" hidden>
+                      <button type="button" data-set-default>设为默认服务</button>
+                      <button type="button" data-rotate-key>更新 API Key</button>
+                      <button type="button" data-toggle-provider>停用服务</button>
+                    </div>
+                  </div>
+                </header>
+
+                <div class="provider-config-grid">
+                  <div class="config-field config-url">
+                    <span>接口地址</span>
+                    <strong>https://ai-backup.example.com/v1</strong>
+                  </div>
+                  <div class="config-field">
+                    <span>模型</span>
+                    <strong>general-chat</strong>
+                  </div>
+                  <div class="config-field config-key">
+                    <span>API Key</span>
+                    <strong>sk-backup-••••••••••••3H2M</strong>
+                    <small>仅显示尾号</small>
+                  </div>
+                  <div class="config-field">
+                    <span>超时 / 重试</span>
+                    <strong>45秒 / 1次</strong>
+                  </div>
+                </div>
+
+                <footer>
+                  <div class="test-state is-success">
+                    <span aria-hidden="true"></span>
+                    <p><strong>最近测试通过</strong><small>2026-07-23 17:20 · 1.92秒</small></p>
+                  </div>
+                  <div class="expiry-state">
+                    <span aria-hidden="true"></span>
+                    <p><strong>2027-03-31 到期</strong><small>有效期正常</small></p>
+                  </div>
+                  <div class="provider-usage">
+                    <span>近7日调用</span>
+                    <strong>415次</strong>
+                    <i><b style="width: 22%"></b></i>
+                  </div>
+                </footer>
+              </article>
+            </div>
+
+            <div id="providerEmpty" class="provider-empty" hidden>
+              <span aria-hidden="true"></span>
+              <strong>没有符合条件的AI服务</strong>
+              <p>请调整搜索词或状态筛选。</p>
+              <button type="button" data-clear-provider-filter>清除筛选</button>
+            </div>
+          </section>
+
+          <aside class="api-side-column">
+            <section class="strategy-card" aria-labelledby="strategyTitle">
+              <header>
+                <div><p>CALL STRATEGY</p><h2 id="strategyTitle">调用策略</h2></div>
+                <button id="strategyHelpButton" type="button" aria-label="查看调用策略说明">?</button>
+              </header>
+              <p class="strategy-copy">默认服务不可用时，按顺序切换到已启用的备用服务；401/403密钥错误不自动重试。</p>
+              <div id="strategyList" class="strategy-list">
+                <div class="strategy-item is-primary" data-strategy-provider="provider-primary">
+                  <span class="strategy-order">默认</span>
+                  <div><strong>生产分析服务</strong><small>周报分析 · Agent问答</small></div>
+                  <i class="strategy-health" title="运行正常"></i>
+                </div>
+                <div class="strategy-connector"><span></span><small>失败自动切换</small></div>
+                <div class="strategy-item" data-strategy-provider="provider-backup">
+                  <span class="strategy-order">备用1</span>
+                  <div><strong>备用分析服务</strong><small>仅默认服务不可用时调用</small></div>
+                  <i class="strategy-health" title="运行正常"></i>
+                </div>
+              </div>
+              <footer>
+                <span><i></i>策略已生效</span>
+                <small>更新于07-16 16:32</small>
+              </footer>
+            </section>
+
+            <section class="expiry-card" aria-labelledby="expiryTitle">
+              <header>
+                <div><p>KEY LIFECYCLE</p><h2 id="expiryTitle">密钥有效期</h2></div>
+                <span>1项提醒</span>
+              </header>
+              <div class="expiry-progress">
+                <div><span>生产分析服务</span><strong>剩25天</strong></div>
+                <i><b></b></i>
+                <small>到期日：2026-08-18</small>
+              </div>
+              <button id="rotatePrimaryButton" type="button">立即更新密钥</button>
+            </section>
+          </aside>
+        </div>
+
+        <section class="usage-panel" aria-labelledby="usageTitle">
+          <header class="panel-heading">
+            <div>
+              <p>AI USAGE &amp; HEALTH</p>
+              <div><h2 id="usageTitle">近7日调用概览</h2><span>2026-07-18 至 2026-07-24</span></div>
+            </div>
+            <div class="usage-tabs" role="tablist" aria-label="调用场景">
+              <button class="is-active" type="button" data-usage-scene="all">全部</button>
+              <button type="button" data-usage-scene="weekly">周报分析</button>
+              <button type="button" data-usage-scene="agent">Agent问答</button>
+              <button type="button" data-usage-scene="risk">风险提取</button>
+            </div>
+          </header>
+
+          <div class="usage-grid">
+            <div class="usage-chart-card">
+              <div class="usage-metrics">
+                <div><small>调用次数</small><strong id="usageCalls">2,846</strong><span class="trend-up">较上周 +12.6%</span></div>
+                <div><small>Token用量</small><strong id="usageTokens">3.28M</strong><span>输入2.41M · 输出0.87M</span></div>
+                <div><small>平均耗时</small><strong id="usageLatency">1.46s</strong><span>95分位2.82s</span></div>
+                <div><small>失败次数</small><strong id="usageErrors">37</strong><span class="trend-down">较上周 -8.4%</span></div>
+              </div>
+              <div class="usage-chart" aria-label="近7日AI调用次数柱状图">
+                <div class="chart-y-axis"><span>600</span><span>400</span><span>200</span><span>0</span></div>
+                <div class="chart-bars">
+                  <div><span style="height: 56%"></span><small>07-18</small></div>
+                  <div><span style="height: 68%"></span><small>07-19</small></div>
+                  <div><span style="height: 49%"></span><small>07-20</small></div>
+                  <div><span style="height: 73%"></span><small>07-21</small></div>
+                  <div><span style="height: 88%"></span><small>07-22</small></div>
+                  <div><span style="height: 78%"></span><small>07-23</small></div>
+                  <div class="is-today"><span style="height: 92%"></span><small>今天</small></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="scene-distribution">
+              <h3>调用场景分布</h3>
+              <div class="donut-wrap">
+                <div class="donut-chart"><strong>2,846</strong><small>总调用</small></div>
+                <ul>
+                  <li><i class="scene-weekly"></i><span>周报分析</span><strong>1,482</strong><small>52.1%</small></li>
+                  <li><i class="scene-agent"></i><span>Agent问答</span><strong>923</strong><small>32.4%</small></li>
+                  <li><i class="scene-risk"></i><span>风险提取</span><strong>441</strong><small>15.5%</small></li>
+                </ul>
+              </div>
+              <div class="health-summary">
+                <span><i></i>成功 2,809</span>
+                <span><i></i>失败 37</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="call-log-panel" aria-labelledby="callLogTitle">
+          <header class="panel-heading">
+            <div>
+              <p>RECENT CALL METADATA</p>
+              <div><h2 id="callLogTitle">最近调用状态</h2><span>只保留调用元数据与脱敏错误摘要</span></div>
+            </div>
+            <div class="log-filters" aria-label="调用结果筛选">
+              <button class="is-active" type="button" data-log-filter="all">全部</button>
+              <button type="button" data-log-filter="SUCCESS">成功</button>
+              <button type="button" data-log-filter="FAILED">失败</button>
+            </div>
+          </header>
+          <div class="call-log-table-wrap">
+            <table class="call-log-table">
+              <thead>
+                <tr>
+                  <th>时间 / Trace ID</th>
+                  <th>服务与模型</th>
+                  <th>调用场景</th>
+                  <th>Token</th>
+                  <th>耗时</th>
+                  <th>结果</th>
+                  <th>错误摘要</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="callLogBody">
+                <tr data-log-status="SUCCESS">
+                  <td><span class="log-time"><strong>07-24 09:31:26</strong><code>tr_8c2…19af</code></span></td>
+                  <td><span class="log-provider"><strong>生产分析服务</strong><small>risk-analysis-v2</small></span></td>
+                  <td><span class="scene-tag is-weekly">周报分析</span></td>
+                  <td>1,842</td>
+                  <td>1.18s</td>
+                  <td><span class="call-result is-success"><i></i>成功</span></td>
+                  <td><span class="no-error">—</span></td>
+                  <td><button type="button" data-call-detail>详情</button></td>
+                </tr>
+                <tr data-log-status="SUCCESS">
+                  <td><span class="log-time"><strong>07-24 09:28:04</strong><code>tr_7a1…e42c</code></span></td>
+                  <td><span class="log-provider"><strong>生产分析服务</strong><small>risk-analysis-v2</small></span></td>
+                  <td><span class="scene-tag is-agent">Agent问答</span></td>
+                  <td>936</td>
+                  <td>0.96s</td>
+                  <td><span class="call-result is-success"><i></i>成功</span></td>
+                  <td><span class="no-error">—</span></td>
+                  <td><button type="button" data-call-detail>详情</button></td>
+                </tr>
+                <tr data-log-status="FAILED">
+                  <td><span class="log-time"><strong>07-24 09:12:47</strong><code>tr_41d…8bb3</code></span></td>
+                  <td><span class="log-provider"><strong>生产分析服务</strong><small>risk-analysis-v2</small></span></td>
+                  <td><span class="scene-tag is-risk">风险提取</span></td>
+                  <td>0</td>
+                  <td>10.02s</td>
+                  <td><span class="call-result is-failed"><i></i>失败</span></td>
+                  <td><span class="error-summary">上游网关连接超时，已重试2次</span></td>
+                  <td><button type="button" data-call-detail>详情</button></td>
+                </tr>
+                <tr data-log-status="SUCCESS">
+                  <td><span class="log-time"><strong>07-24 08:59:15</strong><code>tr_193…7f6a</code></span></td>
+                  <td><span class="log-provider"><strong>备用分析服务</strong><small>general-chat</small></span></td>
+                  <td><span class="scene-tag is-weekly">周报分析</span></td>
+                  <td>2,106</td>
+                  <td>1.92s</td>
+                  <td><span class="call-result is-success"><i></i>成功</span></td>
+                  <td><span class="no-error">—</span></td>
+                  <td><button type="button" data-call-detail>详情</button></td>
+                </tr>
+              </tbody>
+            </table>
+            <div id="callLogEmpty" class="table-empty" hidden>
+              <strong>没有符合条件的调用记录</strong>
+              <p>请切换其他结果状态查看。</p>
+            </div>
+          </div>
+          <footer class="table-pagination">
+            <span>显示第1–4条，共2,846条元数据记录</span>
+            <div><button type="button" disabled>上一页</button><button class="is-current" type="button">1</button><button type="button">2</button><button type="button">3</button><button type="button">下一页</button></div>
+          </footer>
+        </section>
+
+        <footer class="admin-footer">
+          <span>项目风险管理平台 V2.0</span>
+          <span>权限：admin.ai.manage · 密钥明文仅在服务端解密并短时使用</span>
+        </footer>
+      </main>
+    </div>
+  </div>
+
+  <div id="providerDrawer" class="provider-drawer" role="dialog" aria-modal="true" aria-labelledby="providerDrawerTitle" hidden>
+    <button class="drawer-mask" type="button" data-close-provider-drawer aria-label="关闭AI服务配置"></button>
+    <aside class="provider-drawer-panel">
+      <header>
+        <div>
+          <p id="providerDrawerEyebrow">NEW AI SERVICE</p>
+          <h2 id="providerDrawerTitle">新增 AI 服务</h2>
+        </div>
+        <button class="drawer-close" type="button" data-close-provider-drawer aria-label="关闭"></button>
+      </header>
+      <form id="providerForm">
+        <div class="drawer-content">
+          <section class="form-section">
+            <div class="form-section-heading"><span>01</span><div><strong>基础配置</strong><small>首版统一使用OpenAI-compatible协议</small></div></div>
+            <div class="form-grid">
+              <label class="field-full">
+                <span>服务名称 <b>*</b></span>
+                <input id="providerNameInput" type="text" maxlength="40" placeholder="例如：生产分析服务" required>
+                <small>用于后台识别，不会发送给AI服务。</small>
+              </label>
+              <label>
+                <span>接口协议</span>
+                <input type="text" value="OpenAI-compatible" disabled>
+              </label>
+              <label>
+                <span>服务用途</span>
+                <input type="text" value="周报分析、风险提取、Agent问答" disabled>
+              </label>
+              <label class="field-full">
+                <span>接口地址 <b>*</b></span>
+                <input id="providerUrlInput" type="url" placeholder="https://ai-gateway.example.com/v1" required>
+                <small>必须使用HTTPS；不允许回环、链路本地或未授权内网地址。</small>
+              </label>
+              <label class="field-full">
+                <span>模型名称 <b>*</b></span>
+                <input id="providerModelInput" type="text" placeholder="例如：risk-analysis-v2" required>
+              </label>
+            </div>
+          </section>
+
+          <section class="form-section">
+            <div class="form-section-heading"><span>02</span><div><strong>凭据与有效期</strong><small>保存后API Key不再完整回显</small></div></div>
+            <div class="form-grid">
+              <label class="field-full">
+                <span id="keyFieldLabel">API Key <b>*</b></span>
+                <div class="secret-input-wrap">
+                  <input id="providerKeyInput" type="password" autocomplete="new-password" placeholder="请输入新的API Key">
+                  <button id="toggleKeyVisibility" type="button" aria-label="临时显示正在输入的密钥"><span></span></button>
+                </div>
+                <small id="keyFieldHint">仅在本次提交时使用明文，浏览器不会保存。</small>
+              </label>
+              <label>
+                <span>Key到期日</span>
+                <input id="providerExpiryInput" type="date">
+              </label>
+              <label>
+                <span>到期提醒</span>
+                <input type="text" value="提前30天" disabled>
+              </label>
+            </div>
+          </section>
+
+          <section class="form-section">
+            <div class="form-section-heading"><span>03</span><div><strong>调用参数</strong><small>网络错误、429和5xx可自动重试</small></div></div>
+            <div class="form-grid">
+              <label>
+                <span>请求超时</span>
+                <div class="number-suffix"><input id="providerTimeoutInput" type="number" min="5" max="180" value="60"><em>秒</em></div>
+              </label>
+              <label>
+                <span>最大重试</span>
+                <div class="number-suffix"><input id="providerRetriesInput" type="number" min="0" max="5" value="2"><em>次</em></div>
+              </label>
+            </div>
+            <div class="retry-note"><span>!</span><p>401/403密钥错误、结构校验失败和已停用服务不会自动重试。</p></div>
+          </section>
+        </div>
+        <footer>
+          <button type="button" data-close-provider-drawer>取消</button>
+          <button id="testDraftButton" type="button">保存前测试</button>
+          <button id="saveProviderButton" type="submit">保存配置</button>
+        </footer>
+      </form>
+    </aside>
+  </div>
+
+  <div id="testModal" class="api-modal" role="dialog" aria-modal="true" aria-labelledby="testModalTitle" hidden>
+    <button class="modal-mask" type="button" data-close-test aria-label="关闭连接测试"></button>
+    <section class="test-dialog">
+      <header>
+        <span id="testIcon" class="test-dialog-icon" aria-hidden="true"></span>
+        <div><p>CONNECTION TEST</p><h2 id="testModalTitle">测试 AI 服务连接</h2></div>
+        <button class="drawer-close" type="button" data-close-test aria-label="关闭"></button>
+      </header>
+      <div class="test-dialog-content">
+        <div class="test-target">
+          <span class="provider-logo provider-logo-blue" aria-hidden="true">AI</span>
+          <div><strong id="testProviderName">生产分析服务</strong><small id="testProviderMeta">risk-analysis-v2 · ai-gateway.example.com</small></div>
+          <span id="testOverallStatus" class="test-overall is-testing"><i></i>测试中</span>
+        </div>
+        <ol id="testSteps" class="test-step-list">
+          <li class="is-running"><span></span><div><strong>接口地址与TLS校验</strong><small>验证HTTPS地址和证书</small></div><em>检测中</em></li>
+          <li><span></span><div><strong>凭据权限校验</strong><small>验证密钥可调用指定模型</small></div><em>等待</em></li>
+          <li><span></span><div><strong>模型响应校验</strong><small>发送最小测试请求并验证结构</small></div><em>等待</em></li>
+        </ol>
+        <div id="testResultNote" class="test-result-note" hidden>
+          <strong>连接测试通过</strong>
+          <p>模型响应正常，总耗时1.21秒；测试内容与结果不会写入业务数据。</p>
+        </div>
+      </div>
+      <footer><button type="button" data-close-test>关闭</button><button id="runTestAgainButton" type="button">重新测试</button></footer>
+    </section>
+  </div>
+
+  <div id="defaultModal" class="api-modal" role="dialog" aria-modal="true" aria-labelledby="defaultModalTitle" hidden>
+    <button class="modal-mask" type="button" data-close-default aria-label="关闭默认服务确认"></button>
+    <section class="confirm-dialog">
+      <span class="confirm-switch-icon" aria-hidden="true"></span>
+      <h2 id="defaultModalTitle">切换默认 AI 服务</h2>
+      <p>确认将 <strong id="defaultProviderName">备用分析服务</strong> 设为默认服务？后续周报分析与Agent请求将优先调用该服务。</p>
+      <div class="confirm-notice"><span>i</span><p>切换操作使用事务保存，并记录变更前后服务名称，不记录任何API Key。</p></div>
+      <footer><button type="button" data-close-default>取消</button><button id="confirmDefaultButton" type="button">确认切换</button></footer>
+    </section>
+  </div>
+
+  <div id="securityModal" class="api-modal" role="dialog" aria-modal="true" aria-labelledby="securityModalTitle" hidden>
+    <button class="modal-mask" type="button" data-close-security aria-label="关闭安全规则"></button>
+    <section class="security-dialog">
+      <header>
+        <div><p>CREDENTIAL SECURITY</p><h2 id="securityModalTitle">API Key 安全规则</h2></div>
+        <button class="drawer-close" type="button" data-close-security aria-label="关闭"></button>
+      </header>
+      <div class="security-rule-list">
+        <article><span>01</span><div><strong>加密存储</strong><p>API Key使用AES-256-GCM保存，加密主密钥不进入数据库和代码仓库。</p></div></article>
+        <article><span>02</span><div><strong>禁止回显</strong><p>保存后页面仅展示掩码与尾号；编辑时密钥输入框保持空白。</p></div></article>
+        <article><span>03</span><div><strong>最小化使用</strong><p>密钥仅在服务端解密并短时用于调用，不写入提示词、浏览器或业务数据。</p></div></article>
+        <article><span>04</span><div><strong>日志脱敏</strong><p>配置、测试、启停和默认服务切换均记录审计，但不会记录完整密钥和原始响应。</p></div></article>
+      </div>
+      <footer><button type="button" data-close-security>我已了解</button></footer>
+    </section>
+  </div>
+
+  <div id="callDetailModal" class="api-modal" role="dialog" aria-modal="true" aria-labelledby="callDetailTitle" hidden>
+    <button class="modal-mask" type="button" data-close-call-detail aria-label="关闭调用详情"></button>
+    <section class="call-detail-dialog">
+      <header>
+        <div><p>CALL METADATA DETAIL</p><h2 id="callDetailTitle">AI调用元数据</h2></div>
+        <button class="drawer-close" type="button" data-close-call-detail aria-label="关闭"></button>
+      </header>
+      <dl>
+        <div><dt>Trace ID</dt><dd id="detailTraceId">tr_8c2…19af</dd></div>
+        <div><dt>调用时间</dt><dd id="detailCallTime">2026-07-24 09:31:26</dd></div>
+        <div><dt>服务 / 模型</dt><dd id="detailCallProvider">生产分析服务 / risk-analysis-v2</dd></div>
+        <div><dt>调用场景</dt><dd id="detailCallScene">周报分析</dd></div>
+        <div><dt>Token / 耗时</dt><dd id="detailCallUsage">1,842 / 1.18s</dd></div>
+        <div><dt>调用结果</dt><dd id="detailCallResult"><span class="call-result is-success"><i></i>成功</span></dd></div>
+        <div class="detail-full"><dt>脱敏错误摘要</dt><dd id="detailCallError">无</dd></div>
+        <div class="detail-full"><dt>数据保护说明</dt><dd>不保存API Key，不默认保存完整邮件、提示词和模型原始响应。</dd></div>
+      </dl>
+      <footer><button type="button" data-close-call-detail>关闭</button></footer>
+    </section>
+  </div>
+
+  <div id="apiToast" class="admin-toast" role="status" aria-live="polite" hidden>
+    <span aria-hidden="true"></span>
+    <p></p>
+  </div>
+
+  <script src="assets/api-keys.js"></script>
+</body>
+</html>

@@ -1,0 +1,30 @@
+{
+  "name": "project-risk-system",
+  "version": "0.1.0",
+  "private": true,
+  "description": "项目风险管理平台正式工程",
+  "license": "UNLICENSED",
+  "packageManager": "pnpm@11.9.0",
+  "engines": {
+    "node": ">=20.11.0 <25",
+    "pnpm": ">=10"
+  },
+  "scripts": {
+    "env:init": "node scripts/init-local-env.mjs",
+    "db:up": "docker compose --env-file .env -f infra/docker-compose.yml up -d postgres",
+    "db:down": "docker compose --env-file .env -f infra/docker-compose.yml down",
+    "db:status": "docker compose --env-file .env -f infra/docker-compose.yml ps",
+    "db:logs": "docker compose --env-file .env -f infra/docker-compose.yml logs --tail=100 postgres",
+    "dev": "pnpm --parallel --filter @risk-platform/web --filter @risk-platform/api dev",
+    "dev:web": "pnpm --filter @risk-platform/web dev",
+    "dev:api": "pnpm --filter @risk-platform/api dev",
+    "build": "pnpm -r --if-present build",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm -r --if-present test",
+    "check": "pnpm typecheck && pnpm test && pnpm build",
+    "prisma:generate": "pnpm --filter @risk-platform/api prisma:generate",
+    "prisma:migrate:dev": "pnpm --filter @risk-platform/api prisma:migrate:dev",
+    "prisma:seed": "pnpm --filter @risk-platform/api prisma:seed",
+    "prisma:studio": "pnpm --filter @risk-platform/api prisma:studio"
+  }
+}

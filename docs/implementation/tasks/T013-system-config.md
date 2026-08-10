@@ -1,0 +1,19 @@
+# T013 — Migrate versioned system configuration
+- **Task ID:** T013
+- **Title:** Migrate versioned system configuration
+- **Status:** READY / TODO
+- **Objective:** Implement configuration overview, project options, publish history/detail and rollback-compatible version snapshots.
+- **Design baseline:** Design §§3,5; global audit/transaction rules.
+- **Authoritative source references:** legacy `system-config/**`, Prisma config/category/level/alias models, frontend API/view/contracts.
+- **Relevant ADR IDs:** 0004, 0008, 0011, 0015.
+- **Dependencies:** T003, T006, T010.
+- **Scope:** Existing config endpoints, strict snapshot validation, alias normalization, atomic publish and audit.
+- **Explicit out-of-scope:** Retention fields absent from approved contract; mailbox/provider execution.
+- **Expected read set:** Named sources/migration/tests.
+- **Expected write set:** Python system_config module/tests.
+- **Contracts/invariants:** Risk levels remain HIGH/MEDIUM/LOW; versions immutable; aliases unique after approved normalization.
+- **Acceptance criteria:** Existing contract parity and publish rollback/failure atomicity tests pass.
+- **Validation:** API/PostgreSQL tests; Ruff/mypy/pytest.
+- **Required deliverables:** Routes/services/schemas/repositories/tests.
+- **Stop conditions:** A requested setting has no approved public contract.
+- **Known integration risks:** Snapshot and normalized table divergence.

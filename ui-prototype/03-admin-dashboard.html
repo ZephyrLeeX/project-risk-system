@@ -1,0 +1,535 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f4f9fd">
+  <meta
+    name="description"
+    content="项目风险管理平台后台管理首页，集中展示用户、角色权限、数据导入、API Key、系统配置与审计状态。">
+  <title>后台管理首页｜项目风险管理平台</title>
+  <link rel="stylesheet" href="assets/ui.css">
+  <link rel="stylesheet" href="assets/admin.css">
+</head>
+<body data-page="admin-dashboard">
+  <div class="admin-app">
+    <aside id="adminSidebar" class="admin-sidebar" aria-label="后台管理导航">
+      <div class="sidebar-brand">
+        <a class="admin-brand" href="03-admin-dashboard.html" aria-label="项目风险管理后台首页">
+          <span class="brand-mark" aria-hidden="true">
+            <i></i><i></i><i></i>
+          </span>
+          <span class="brand-copy">
+            <strong>项目风险管理</strong>
+            <small>ADMIN CONSOLE</small>
+          </span>
+        </a>
+        <span class="console-badge">管理后台</span>
+      </div>
+
+      <nav class="sidebar-nav">
+        <p class="nav-group-label">工作台</p>
+        <button class="side-nav-item is-active" type="button" aria-current="page">
+          <span class="side-icon icon-overview" aria-hidden="true"></span>
+          <span>管理概览</span>
+        </button>
+
+        <p class="nav-group-label">组织与权限</p>
+        <a class="side-nav-item" href="04-user-management.html">
+          <span class="side-icon icon-users" aria-hidden="true"></span>
+          <span>用户管理</span>
+          <b>32</b>
+        </a>
+        <a class="side-nav-item" href="05-role-permissions.html">
+          <span class="side-icon icon-role" aria-hidden="true"></span>
+          <span>角色权限</span>
+        </a>
+
+        <p class="nav-group-label">数据与服务</p>
+        <a class="side-nav-item" href="06-project-import.html">
+          <span class="side-icon icon-import" aria-hidden="true"></span>
+          <span>项目数据导入</span>
+          <i class="nav-alert" aria-label="2项待确认">2</i>
+        </a>
+        <a class="side-nav-item" href="07-api-key-management.html">
+          <span class="side-icon icon-key" aria-hidden="true"></span>
+          <span>API Key 管理</span>
+        </a>
+
+        <p class="nav-group-label">系统治理</p>
+        <a class="side-nav-item" href="08-system-config.html">
+          <span class="side-icon icon-setting" aria-hidden="true"></span>
+          <span>系统配置</span>
+        </a>
+        <a class="side-nav-item" href="09-audit-logs.html">
+          <span class="side-icon icon-audit" aria-hidden="true"></span>
+          <span>审计日志</span>
+        </a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <a class="back-business" href="02-dashboard.html">
+          <span aria-hidden="true"></span>
+          返回风险看板
+        </a>
+        <div class="environment">
+          <span></span>
+          <div>
+            <strong>系统运行正常</strong>
+            <small>V2.0 · 生产环境</small>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <button id="sidebarBackdrop" class="sidebar-backdrop" type="button" aria-label="关闭导航" hidden></button>
+
+    <div class="admin-workspace">
+      <header class="admin-topbar">
+        <div class="topbar-left">
+          <button id="sidebarToggle" class="sidebar-toggle" type="button" aria-label="打开导航" aria-expanded="false">
+            <span></span><span></span><span></span>
+          </button>
+          <div class="breadcrumb" aria-label="当前位置">
+            <span>后台管理</span>
+            <i aria-hidden="true"></i>
+            <strong>管理概览</strong>
+          </div>
+        </div>
+
+        <div class="topbar-tools">
+          <div class="secure-status">
+            <span aria-hidden="true"></span>
+            安全连接
+          </div>
+          <button id="noticeButton" class="top-icon-button" type="button" aria-label="查看后台通知">
+            <span class="bell-icon" aria-hidden="true"></span>
+            <b>3</b>
+          </button>
+          <button id="adminProfileButton" class="admin-profile" type="button" aria-expanded="false">
+            <span class="admin-avatar" aria-hidden="true">系</span>
+            <span>
+              <strong>系统管理员</strong>
+              <small>全部项目</small>
+            </span>
+            <i aria-hidden="true"></i>
+          </button>
+          <div id="adminProfileMenu" class="admin-profile-menu" hidden>
+            <button type="button" data-profile-action="security">账号安全</button>
+            <a href="02-dashboard.html">返回业务端</a>
+            <a href="01-login.html">退出登录</a>
+          </div>
+        </div>
+      </header>
+
+      <main class="admin-main">
+        <section class="admin-page-heading" aria-labelledby="adminPageTitle">
+          <div>
+            <p class="admin-eyebrow">ADMINISTRATION OVERVIEW</p>
+            <h1 id="adminPageTitle">管理概览</h1>
+            <p>集中管理系统账号、权限边界、基础数据和 AI 服务配置。</p>
+          </div>
+          <div class="heading-actions">
+            <div class="update-note">
+              <span></span>
+              <div>
+                <strong>系统状态已更新</strong>
+                <small id="systemUpdatedAt">2026-07-23 09:36</small>
+              </div>
+            </div>
+            <button id="refreshAdminButton" class="admin-outline-button" type="button">
+              <span class="admin-refresh-icon" aria-hidden="true"></span>
+              刷新状态
+            </button>
+          </div>
+        </section>
+
+        <section class="admin-metric-grid" aria-label="后台关键指标">
+          <button class="admin-metric metric-blue" type="button" data-module="users">
+            <span class="metric-symbol symbol-users" aria-hidden="true"></span>
+            <span class="metric-name">系统用户</span>
+            <strong>32<small>人</small></strong>
+            <span class="metric-note"><em>29</em> 人当前启用</span>
+          </button>
+          <button class="admin-metric metric-violet" type="button" data-module="roles">
+            <span class="metric-symbol symbol-shield" aria-hidden="true"></span>
+            <span class="metric-name">角色与权限</span>
+            <strong>4<small>个角色</small></strong>
+            <span class="metric-note">覆盖 <em>46</em> 个权限点</span>
+          </button>
+          <button class="admin-metric metric-green" type="button" data-module="imports">
+            <span class="metric-symbol symbol-sheet" aria-hidden="true"></span>
+            <span class="metric-name">数据导入批次</span>
+            <strong>18<small>批</small></strong>
+            <span class="metric-note">本月成功率 <em>94.4%</em></span>
+          </button>
+          <button class="admin-metric metric-orange" type="button" data-module="apikey">
+            <span class="metric-symbol symbol-key" aria-hidden="true"></span>
+            <span class="metric-name">AI 服务</span>
+            <strong>2<small>项</small></strong>
+            <span class="metric-note"><em>1</em> 个 Key 即将到期</span>
+          </button>
+        </section>
+
+        <section class="health-panel" aria-labelledby="healthTitle">
+          <header class="panel-title-row">
+            <div>
+              <p>SYSTEM HEALTH</p>
+              <h2 id="healthTitle">系统运行状态</h2>
+            </div>
+            <span class="all-normal"><i></i>全部核心服务正常</span>
+          </header>
+          <div class="health-grid">
+            <button type="button" data-module="roles">
+              <span class="health-icon health-auth" aria-hidden="true"></span>
+              <span>
+                <strong>身份与权限服务</strong>
+                <small>用户登录、角色鉴权正常</small>
+              </span>
+              <em>正常</em>
+            </button>
+            <button type="button" data-module="imports">
+              <span class="health-icon health-data" aria-hidden="true"></span>
+              <span>
+                <strong>项目数据服务</strong>
+                <small>最新批次 09:12 完成</small>
+              </span>
+              <em>正常</em>
+            </button>
+            <button type="button" data-module="apikey">
+              <span class="health-icon health-ai" aria-hidden="true">AI</span>
+              <span>
+                <strong>AI 分析服务</strong>
+                <small>默认服务连接成功</small>
+              </span>
+              <em>正常</em>
+            </button>
+            <button type="button" data-module="audit">
+              <span class="health-icon health-log" aria-hidden="true"></span>
+              <span>
+                <strong>审计记录服务</strong>
+                <small>日志链路完整可追溯</small>
+              </span>
+              <em>正常</em>
+            </button>
+          </div>
+        </section>
+
+        <div class="admin-content-grid">
+          <section class="management-panel" aria-labelledby="managementTitle">
+            <header class="panel-title-row">
+              <div>
+                <p>MANAGEMENT CENTER</p>
+                <h2 id="managementTitle">管理中心</h2>
+              </div>
+              <span class="panel-helper">按后台职责集中配置</span>
+            </header>
+
+            <div class="management-grid">
+              <button class="management-entry" type="button" data-module="users">
+                <span class="entry-icon entry-users" aria-hidden="true"></span>
+                <span class="entry-content">
+                  <strong>用户管理</strong>
+                  <small>维护账号、状态、部门和项目数据范围</small>
+                </span>
+                <span class="entry-meta">32名用户</span>
+                <i class="entry-arrow" aria-hidden="true"></i>
+              </button>
+              <button class="management-entry" type="button" data-module="roles">
+                <span class="entry-icon entry-roles" aria-hidden="true"></span>
+                <span class="entry-content">
+                  <strong>角色权限</strong>
+                  <small>配置角色能力、菜单权限与数据范围</small>
+                </span>
+                <span class="entry-meta">4个角色</span>
+                <i class="entry-arrow" aria-hidden="true"></i>
+              </button>
+              <button class="management-entry" type="button" data-module="imports">
+                <span class="entry-icon entry-imports" aria-hidden="true"></span>
+                <span class="entry-content">
+                  <strong>项目数据导入</strong>
+                  <small>导入项目清单与回款 Excel，校验并发布批次</small>
+                </span>
+                <span class="entry-meta is-warn">2项待确认</span>
+                <i class="entry-arrow" aria-hidden="true"></i>
+              </button>
+              <button class="management-entry" type="button" data-module="apikey">
+                <span class="entry-icon entry-api" aria-hidden="true"></span>
+                <span class="entry-content">
+                  <strong>API Key 管理</strong>
+                  <small>维护 AI 服务接入凭据、有效期和默认服务</small>
+                </span>
+                <span class="entry-meta is-warn">1项即将到期</span>
+                <i class="entry-arrow" aria-hidden="true"></i>
+              </button>
+              <button class="management-entry" type="button" data-module="configs">
+                <span class="entry-icon entry-configs" aria-hidden="true"></span>
+                <span class="entry-content">
+                  <strong>系统配置</strong>
+                  <small>配置风险等级、分类字典与通知规则</small>
+                </span>
+                <span class="entry-meta">18项配置</span>
+                <i class="entry-arrow" aria-hidden="true"></i>
+              </button>
+              <button class="management-entry" type="button" data-module="audit">
+                <span class="entry-icon entry-audit" aria-hidden="true"></span>
+                <span class="entry-content">
+                  <strong>审计日志</strong>
+                  <small>追踪登录、配置、权限和数据变更记录</small>
+                </span>
+                <span class="entry-meta">今日46条</span>
+                <i class="entry-arrow" aria-hidden="true"></i>
+              </button>
+            </div>
+          </section>
+
+          <section class="attention-panel" aria-labelledby="attentionTitle">
+            <header class="panel-title-row">
+              <div>
+                <p>REQUIRES ATTENTION</p>
+                <h2 id="attentionTitle">待处理事项</h2>
+              </div>
+              <b>3</b>
+            </header>
+            <div class="attention-list">
+              <button type="button" data-module="imports">
+                <span class="attention-level is-high">紧急</span>
+                <span>
+                  <strong>项目导入存在2条匹配歧义</strong>
+                  <small>需确认项目负责人后再发布数据</small>
+                </span>
+                <time>09:12</time>
+              </button>
+              <button type="button" data-module="apikey">
+                <span class="attention-level is-medium">提醒</span>
+                <span>
+                  <strong>1个 API Key 将在30天内到期</strong>
+                  <small>建议提前更新并完成连通性测试</small>
+                </span>
+                <time>08:45</time>
+              </button>
+              <button type="button" data-module="users">
+                <span class="attention-level is-low">关注</span>
+                <span>
+                  <strong>3名用户连续90天未登录</strong>
+                  <small>请复核账号是否仍需保留</small>
+                </span>
+                <time>昨日</time>
+              </button>
+            </div>
+            <button class="view-all-button" type="button" data-module="audit">查看全部待处理事项</button>
+          </section>
+        </div>
+
+        <div class="admin-content-grid admin-content-grid-bottom">
+          <section class="imports-panel" aria-labelledby="importsTitle">
+            <header class="panel-title-row">
+              <div>
+                <p>DATA IMPORTS</p>
+                <h2 id="importsTitle">最近导入批次</h2>
+              </div>
+              <button class="text-button" type="button" data-module="imports">进入数据导入</button>
+            </header>
+            <div class="admin-table-wrap">
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th>导入文件</th>
+                    <th>批次号</th>
+                    <th>数据结果</th>
+                    <th>操作人</th>
+                    <th>完成时间</th>
+                    <th>状态</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr tabindex="0" data-batch="IMP-20260723-01">
+                    <td>
+                      <span class="file-cell">
+                        <i aria-hidden="true">X</i>
+                        <span><strong>项目清单.xlsx</strong><small>项目清单 + 回款数据</small></span>
+                      </span>
+                    </td>
+                    <td><code>IMP-20260723-01</code></td>
+                    <td><strong>131</strong> 个项目 · <strong>16</strong> 条回款</td>
+                    <td>系统管理员</td>
+                    <td>07-23 09:12</td>
+                    <td><span class="status-tag is-warning">待确认</span></td>
+                  </tr>
+                  <tr tabindex="0" data-batch="IMP-20260716-02">
+                    <td>
+                      <span class="file-cell">
+                        <i aria-hidden="true">X</i>
+                        <span><strong>项目清单_0716.xlsx</strong><small>项目清单 + 回款数据</small></span>
+                      </span>
+                    </td>
+                    <td><code>IMP-20260716-02</code></td>
+                    <td><strong>128</strong> 个项目 · <strong>15</strong> 条回款</td>
+                    <td>系统管理员</td>
+                    <td>07-16 16:28</td>
+                    <td><span class="status-tag is-success">已发布</span></td>
+                  </tr>
+                  <tr tabindex="0" data-batch="IMP-20260709-01">
+                    <td>
+                      <span class="file-cell">
+                        <i aria-hidden="true">X</i>
+                        <span><strong>项目清单_0709.xlsx</strong><small>项目清单 + 回款数据</small></span>
+                      </span>
+                    </td>
+                    <td><code>IMP-20260709-01</code></td>
+                    <td><strong>126</strong> 个项目 · <strong>15</strong> 条回款</td>
+                    <td>系统管理员</td>
+                    <td>07-09 10:05</td>
+                    <td><span class="status-tag is-success">已发布</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="audit-panel" aria-labelledby="auditTitle">
+            <header class="panel-title-row">
+              <div>
+                <p>AUDIT ACTIVITY</p>
+                <h2 id="auditTitle">最近审计动态</h2>
+              </div>
+              <button class="text-button" type="button" data-module="audit">全部日志</button>
+            </header>
+            <ol class="audit-list">
+              <li>
+                <span class="audit-dot is-blue" aria-hidden="true"></span>
+                <div>
+                  <strong>系统管理员</strong>
+                  <p>提交项目清单导入批次 <code>IMP-20260723-01</code></p>
+                  <time>今天 09:12</time>
+                </div>
+              </li>
+              <li>
+                <span class="audit-dot is-green" aria-hidden="true"></span>
+                <div>
+                  <strong>系统管理员</strong>
+                  <p>完成默认 AI 服务连通性测试</p>
+                  <time>今天 08:45</time>
+                </div>
+              </li>
+              <li>
+                <span class="audit-dot is-violet" aria-hidden="true"></span>
+                <div>
+                  <strong>系统管理员</strong>
+                  <p>将张哲的数据范围调整为“被授权项目”</p>
+                  <time>昨天 17:26</time>
+                </div>
+              </li>
+              <li>
+                <span class="audit-dot is-orange" aria-hidden="true"></span>
+                <div>
+                  <strong>风险管理员 刘峰</strong>
+                  <p>完成个人邮箱同步测试</p>
+                  <time>昨天 16:40</time>
+                </div>
+              </li>
+            </ol>
+          </section>
+        </div>
+
+        <footer class="admin-footer">
+          <span>项目风险管理平台 V2.0</span>
+          <span>后台权限范围：全部项目 · 用户、角色、数据与系统配置</span>
+        </footer>
+      </main>
+    </div>
+  </div>
+
+  <div id="moduleModal" class="admin-modal" role="dialog" aria-modal="true" aria-labelledby="moduleModalTitle" hidden>
+    <button class="modal-mask" type="button" data-close-modal aria-label="关闭弹框"></button>
+    <section class="module-dialog">
+      <header>
+        <div class="modal-title-wrap">
+          <span id="moduleModalIcon" class="modal-module-icon" aria-hidden="true"></span>
+          <div>
+            <p>MODULE OVERVIEW</p>
+            <h2 id="moduleModalTitle">模块概览</h2>
+          </div>
+        </div>
+        <button class="admin-modal-close" type="button" data-close-modal aria-label="关闭"></button>
+      </header>
+      <div class="module-dialog-body">
+        <p id="moduleModalDescription" class="module-description"></p>
+        <div class="module-summary">
+          <div>
+            <span>访问角色</span>
+            <strong id="moduleModalRole"></strong>
+          </div>
+          <div>
+            <span>数据范围</span>
+            <strong id="moduleModalScope"></strong>
+          </div>
+          <div>
+            <span>当前状态</span>
+            <strong id="moduleModalStatus"></strong>
+          </div>
+        </div>
+        <section class="capability-box">
+          <h3>主要能力</h3>
+          <ul id="moduleModalCapabilities"></ul>
+        </section>
+        <div id="moduleModalNotice" class="module-notice"></div>
+      </div>
+      <footer>
+        <button class="secondary-button" type="button" data-close-modal>关闭</button>
+        <button id="modulePrimaryAction" class="primary-button" type="button">进入管理</button>
+      </footer>
+    </section>
+  </div>
+
+  <div id="batchModal" class="admin-modal" role="dialog" aria-modal="true" aria-labelledby="batchModalTitle" hidden>
+    <button class="modal-mask" type="button" data-close-batch aria-label="关闭批次详情"></button>
+    <section class="batch-dialog">
+      <header>
+        <div>
+          <p>IMPORT DETAIL</p>
+          <h2 id="batchModalTitle">导入批次详情</h2>
+        </div>
+        <button class="admin-modal-close" type="button" data-close-batch aria-label="关闭"></button>
+      </header>
+      <div class="batch-dialog-body">
+        <div class="batch-main-info">
+          <span class="batch-file-icon" aria-hidden="true">X</span>
+          <div>
+            <strong id="batchFileName">项目清单.xlsx</strong>
+            <small id="batchNumber">IMP-20260723-01</small>
+          </div>
+          <span id="batchStatus" class="status-tag is-warning">待确认</span>
+        </div>
+        <dl class="batch-meta">
+          <div><dt>工作表</dt><dd>项目清单、回款数据</dd></div>
+          <div><dt>读取数据</dt><dd>149 条</dd></div>
+          <div><dt>通过校验</dt><dd>147 条</dd></div>
+          <div><dt>待确认</dt><dd>2 条</dd></div>
+          <div><dt>操作人</dt><dd>系统管理员</dd></div>
+          <div><dt>完成时间</dt><dd>2026-07-23 09:12</dd></div>
+        </dl>
+        <div class="validation-warning">
+          <span aria-hidden="true">!</span>
+          <div>
+            <strong>发现2条项目负责人匹配歧义</strong>
+            <p>数据暂未发布，请完成确认后再更新业务端项目与回款数据。</p>
+          </div>
+        </div>
+      </div>
+      <footer>
+        <button class="secondary-button" type="button" data-close-batch>关闭</button>
+        <button class="primary-button" type="button" data-module="imports">处理待确认数据</button>
+      </footer>
+    </section>
+  </div>
+
+  <div id="adminToast" class="admin-toast" role="status" aria-live="polite" hidden>
+    <span aria-hidden="true"></span>
+    <p></p>
+  </div>
+
+  <script src="assets/admin.js"></script>
+</body>
+</html>

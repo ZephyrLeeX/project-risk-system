@@ -1,0 +1,31 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: project-risk-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-project_risk}
+      POSTGRES_USER: ${POSTGRES_USER:-project_risk}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required; run pnpm env:init and use pnpm db:up}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - project-risk-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U ${POSTGRES_USER:-project_risk} -d ${POSTGRES_DB:-project_risk}
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - project-risk-network
+
+networks:
+  project-risk-network:
+    name: project-risk-network
+
+volumes:
+  project-risk-postgres-data:
+    name: project-risk-postgres-data

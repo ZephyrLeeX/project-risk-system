@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f4f9fd">
+  <meta
+    name="description"
+    content="项目风险管理平台风险管理员个人邮箱配置页面，用于安全连接个人邮箱并同步项目周报。">
+  <title>个人邮箱配置｜项目风险管理平台</title>
+  <link rel="stylesheet" href="assets/ui.css">
+  <link rel="stylesheet" href="assets/dashboard.css">
+  <link rel="stylesheet" href="assets/mailbox.css">
+</head>
+<body data-page="mailbox-settings">
+  <div class="mailbox-app">
+    <header class="app-header">
+      <a class="brand" href="02-dashboard.html" aria-label="返回项目风险管理平台首页">
+        <span class="brand-mark" aria-hidden="true">
+          <i></i><i></i><i></i>
+        </span>
+        <span class="brand-copy">
+          <strong>项目风险管理</strong>
+          <small>PROJECT RISK INTELLIGENCE</small>
+        </span>
+      </a>
+
+      <nav class="primary-nav" aria-label="业务模块">
+        <a class="nav-item" href="02-dashboard.html">
+          <span class="nav-icon nav-icon-board" aria-hidden="true"></span>
+          Web 风险看板
+        </a>
+        <button id="agentEntry" class="nav-item" type="button">
+          <span class="nav-icon nav-icon-agent" aria-hidden="true"></span>
+          Agent 智能对话
+        </button>
+      </nav>
+
+      <div class="header-tools">
+        <div class="week-chip">
+          <span aria-hidden="true"></span>
+          2026年第27周
+        </div>
+        <button id="noticeButton" class="icon-button notice-button" type="button" aria-label="查看通知">
+          <span aria-hidden="true"></span>
+          <b>3</b>
+        </button>
+        <button id="profileButton" class="profile-button" type="button" aria-expanded="false">
+          <span class="avatar" aria-hidden="true">风</span>
+          <span class="profile-copy">
+            <strong>风险管理员</strong>
+            <small>全项目数据</small>
+          </span>
+          <span class="chevron" aria-hidden="true"></span>
+        </button>
+        <div id="profileMenu" class="profile-menu" hidden>
+          <a class="is-current" href="10-mailbox-settings.html" aria-current="page">个人邮箱配置</a>
+          <a href="11-mail-sync-results.html">邮箱同步结果</a>
+          <button type="button" data-profile-action="password">修改密码</button>
+          <a href="01-login.html">退出登录</a>
+        </div>
+      </div>
+    </header>
+
+    <main class="mailbox-main">
+      <nav class="breadcrumb" aria-label="面包屑">
+        <a href="02-dashboard.html">Web 风险看板</a>
+        <span aria-hidden="true"></span>
+        <strong>个人邮箱配置</strong>
+      </nav>
+
+      <section class="mailbox-heading" aria-labelledby="mailboxTitle">
+        <div class="heading-copy">
+          <p class="mailbox-eyebrow">PERSONAL MAILBOX</p>
+          <h1 id="mailboxTitle">个人邮箱配置</h1>
+          <p>连接本人用于接收项目周报的邮箱，为风险看板和 Agent 提供经过授权的周报数据。</p>
+          <div class="role-boundary">
+            <span class="boundary-icon" aria-hidden="true">风</span>
+            <p><strong>仅风险管理员可配置本人邮箱</strong><small>系统管理员只能查看连接状态，不能代配邮箱或读取授权码。</small></p>
+          </div>
+        </div>
+        <div class="heading-actions">
+          <a class="back-dashboard-button" href="11-mail-sync-results.html">
+            <span class="mailbox-results-icon" aria-hidden="true"></span>
+            查看同步结果
+          </a>
+          <a class="back-dashboard-button" href="02-dashboard.html">
+            <span aria-hidden="true"></span>
+            返回风险看板
+          </a>
+        </div>
+      </section>
+
+      <section class="mailbox-overview" aria-label="邮箱运行概览">
+        <article class="overview-card status-card">
+          <span class="overview-icon connection-icon" aria-hidden="true"></span>
+          <div>
+            <p>连接状态</p>
+            <strong id="connectionStatusText"><i></i>连接正常</strong>
+            <small id="connectionTestAt">最近测试：2026-07-23 09:18</small>
+          </div>
+        </article>
+        <article class="overview-card">
+          <span class="overview-icon sync-icon" aria-hidden="true"></span>
+          <div>
+            <p>最近同步</p>
+            <strong id="lastSyncAt">2026-07-23 09:22</strong>
+            <small id="lastSyncSummary">新增5封 · 提取12项风险线索</small>
+          </div>
+        </article>
+        <article class="overview-card">
+          <span class="overview-icon schedule-icon" aria-hidden="true"></span>
+          <div>
+            <p>自动同步</p>
+            <strong id="scheduleStatus">已开启 · 每2小时</strong>
+            <small id="nextSyncAt">下次执行：今天 11:00</small>
+          </div>
+        </article>
+        <article class="overview-card protection-card">
+          <span class="overview-icon shield-icon" aria-hidden="true"></span>
+          <div>
+            <p>凭据保护</p>
+            <strong>AES-256-GCM 加密</strong>
+            <small>授权码不回显、不进入日志</small>
+          </div>
+        </article>
+      </section>
+
+      <div class="mailbox-layout">
+        <form id="mailboxForm" class="mailbox-form-card" novalidate>
+          <header class="card-header">
+            <div>
+              <p>MAILBOX AUTHORIZATION</p>
+              <h2>邮箱授权与连接</h2>
+              <span>当前配置：li***@example.com</span>
+            </div>
+            <span id="formState" class="saved-state"><i></i>配置已保存</span>
+          </header>
+
+          <section class="form-section" aria-labelledby="providerHeading">
+            <div class="section-title">
+              <span>01</span>
+              <div>
+                <h3 id="providerHeading">选择邮箱类型</h3>
+                <p>QQ邮箱自动带入推荐参数，其他企业邮箱请选择通用 IMAP。</p>
+              </div>
+            </div>
+            <div class="provider-options" role="radiogroup" aria-label="邮箱类型">
+              <label class="provider-card is-selected">
+                <input type="radio" name="provider" value="qq" checked>
+                <span class="provider-check" aria-hidden="true"></span>
+                <span class="provider-logo qq-logo" aria-hidden="true">Q</span>
+                <span>
+                  <strong>QQ 邮箱</strong>
+                  <small>推荐 · 自动配置 IMAP 参数</small>
+                </span>
+              </label>
+              <label class="provider-card">
+                <input type="radio" name="provider" value="imap">
+                <span class="provider-check" aria-hidden="true"></span>
+                <span class="provider-logo imap-logo" aria-hidden="true">IM</span>
+                <span>
+                  <strong>通用 IMAP</strong>
+                  <small>企业邮箱及其他支持 IMAP 的邮箱</small>
+                </span>
+              </label>
+            </div>
+          </section>
+
+          <section class="form-section" aria-labelledby="accountHeading">
+            <div class="section-title">
+              <span>02</span>
+              <div>
+                <h3 id="accountHeading">账号与服务器</h3>
+                <p>平台使用邮箱授权码建立安全连接，不保存邮箱登录密码。</p>
+              </div>
+            </div>
+
+            <div class="form-grid">
+              <label class="mail-field">
+                <span>邮箱地址 <em>*</em></span>
+                <input id="emailAddress" type="email" autocomplete="email" value="liufeng@example.com" placeholder="请输入用于接收周报的邮箱">
+                <small class="field-error" data-error-for="emailAddress"></small>
+              </label>
+              <label class="mail-field">
+                <span>邮箱授权码 <em>*</em></span>
+                <span class="password-shell">
+                  <input id="authCode" type="password" autocomplete="new-password" placeholder="已保存，如需修改请重新输入">
+                  <button id="toggleAuthCode" type="button" aria-label="显示授权码" aria-pressed="false">
+                    <i aria-hidden="true"></i>
+                  </button>
+                </span>
+                <small>已保存的授权码不会在页面中回显</small>
+              </label>
+              <label class="mail-field">
+                <span>IMAP 服务器 <em>*</em></span>
+                <input id="imapHost" type="text" value="imap.qq.com" placeholder="例如：imap.example.com">
+                <small class="field-error" data-error-for="imapHost"></small>
+              </label>
+              <label class="mail-field">
+                <span>端口 <em>*</em></span>
+                <input id="imapPort" type="number" min="1" max="65535" value="993" inputmode="numeric">
+                <small class="field-error" data-error-for="imapPort"></small>
+              </label>
+              <div class="mail-field">
+                <span>加密方式 <em>*</em></span>
+                <div class="mail-select" data-select="encryption">
+                  <button class="mail-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+                    <span>SSL / TLS</span><i aria-hidden="true"></i>
+                  </button>
+                  <div class="mail-select-menu" role="listbox" hidden>
+                    <button type="button" role="option" aria-selected="true" data-value="ssl">SSL / TLS</button>
+                    <button type="button" role="option" aria-selected="false" data-value="starttls">STARTTLS</button>
+                  </div>
+                  <input type="hidden" id="encryption" value="ssl">
+                </div>
+                <small>建议使用 SSL / TLS 加密连接</small>
+              </div>
+              <div class="mail-field">
+                <span>邮件文件夹 <em>*</em></span>
+                <div class="mail-select" data-select="folder">
+                  <button class="mail-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+                    <span>收件箱（INBOX）</span><i aria-hidden="true"></i>
+                  </button>
+                  <div class="mail-select-menu" role="listbox" hidden>
+                    <button type="button" role="option" aria-selected="true" data-value="INBOX">收件箱（INBOX）</button>
+                    <button type="button" role="option" aria-selected="false" data-value="REPORTS">周报文件夹（REPORTS）</button>
+                    <button type="button" role="option" aria-selected="false" data-value="OTHER">其他文件夹</button>
+                  </div>
+                  <input type="hidden" id="mailFolder" value="INBOX">
+                </div>
+                <small>只读取所选文件夹内符合规则的邮件</small>
+              </div>
+            </div>
+
+            <div id="qqGuide" class="provider-guide">
+              <span aria-hidden="true">i</span>
+              <p><strong>QQ邮箱需先开启 IMAP/SMTP 服务</strong><small>请在QQ邮箱设置中生成授权码。这里填写授权码，不要填写QQ密码。</small></p>
+              <button id="showGuideButton" type="button">查看开启说明</button>
+            </div>
+
+            <div id="connectionResult" class="connection-result" role="status" hidden>
+              <span class="result-icon" aria-hidden="true"></span>
+              <p><strong>连接测试通过</strong><small>登录验证、文件夹访问和加密连接均正常。</small></p>
+              <time id="connectionResultTime">刚刚</time>
+            </div>
+          </section>
+
+          <section class="form-section" aria-labelledby="ruleHeading">
+            <div class="section-title">
+              <span>03</span>
+              <div>
+                <h3 id="ruleHeading">周报识别规则</h3>
+                <p>系统仅同步符合关键词、发件人和时间范围的项目周报。</p>
+              </div>
+            </div>
+
+            <div class="rule-block">
+              <div class="rule-label">
+                <span>主题关键词 <em>*</em></span>
+                <small>邮件主题包含任一关键词时进入周报分析</small>
+              </div>
+              <div id="keywordEditor" class="keyword-editor">
+                <div id="keywordList" class="keyword-list" aria-label="当前主题关键词">
+                  <span class="keyword-chip">项目周报<button type="button" aria-label="删除关键词 项目周报">×</button></span>
+                  <span class="keyword-chip">工作周报<button type="button" aria-label="删除关键词 工作周报">×</button></span>
+                  <span class="keyword-chip">风险周报<button type="button" aria-label="删除关键词 风险周报">×</button></span>
+                </div>
+                <label>
+                  <input id="keywordInput" type="text" maxlength="20" placeholder="输入关键词后按回车">
+                  <button id="addKeywordButton" type="button">添加</button>
+                </label>
+              </div>
+            </div>
+
+            <div class="rule-grid">
+              <div class="mail-field">
+                <span>首次同步范围</span>
+                <div class="mail-select" data-select="range">
+                  <button class="mail-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+                    <span>最近4周</span><i aria-hidden="true"></i>
+                  </button>
+                  <div class="mail-select-menu" role="listbox" hidden>
+                    <button type="button" role="option" aria-selected="false" data-value="1">最近1周</button>
+                    <button type="button" role="option" aria-selected="true" data-value="4">最近4周</button>
+                    <button type="button" role="option" aria-selected="false" data-value="8">最近8周</button>
+                    <button type="button" role="option" aria-selected="false" data-value="12">最近12周</button>
+                  </div>
+                  <input type="hidden" id="syncRange" value="4">
+                </div>
+                <small>后续同步将使用UID游标，只读取新增邮件</small>
+              </div>
+              <label class="mail-field">
+                <span>发件人范围</span>
+                <input id="senderRule" type="text" placeholder="选填，例如：@example.com">
+                <small>留空表示不限制发件人</small>
+              </label>
+            </div>
+
+            <div class="switch-list">
+              <label class="switch-row">
+                <span class="switch-copy">
+                  <strong>读取正文及常见附件</strong>
+                  <small>支持 .txt、.docx、.pdf、.xlsx；不会执行宏、脚本或外部链接。</small>
+                </span>
+                <input id="readAttachments" type="checkbox" checked>
+                <span class="switch-control" aria-hidden="true"></span>
+              </label>
+              <label class="switch-row">
+                <span class="switch-copy">
+                  <strong>同步后进行 AI 风险提取</strong>
+                  <small>识别显式及隐含风险，低置信结果进入风险管理员确认，不直接发布。</small>
+                </span>
+                <input id="enableAiAnalysis" type="checkbox" checked>
+                <span class="switch-control" aria-hidden="true"></span>
+              </label>
+            </div>
+          </section>
+
+          <footer class="form-actions">
+            <button id="discardButton" class="secondary-button" type="button">取消修改</button>
+            <button id="testConnectionButton" class="outline-primary-button" type="button">
+              <span class="test-icon" aria-hidden="true"></span>
+              测试连接
+            </button>
+            <button id="saveMailboxButton" class="primary-button" type="submit">
+              <span class="save-icon" aria-hidden="true"></span>
+              保存配置
+            </button>
+          </footer>
+        </form>
+
+        <aside class="mailbox-side">
+          <section class="sync-control-card" aria-labelledby="syncControlHeading">
+            <header>
+              <div>
+                <p>SYNC CONTROL</p>
+                <h2 id="syncControlHeading">同步控制</h2>
+              </div>
+              <span id="mailboxActiveBadge" class="active-badge"><i></i>运行中</span>
+            </header>
+            <div class="sync-illustration" aria-hidden="true">
+              <span class="mail-node"><i></i></span>
+              <span class="sync-line"><i></i><i></i><i></i></span>
+              <span class="risk-node"><i></i><i></i><i></i></span>
+            </div>
+            <p class="sync-description">手动同步与定时同步使用同一套安全规则，每次只运行一个同步任务。</p>
+            <button id="manualSyncButton" class="sync-now-button" type="button">
+              <span aria-hidden="true"></span>
+              立即同步最新周报
+            </button>
+            <div id="syncProgress" class="sync-progress" role="status" hidden>
+              <span><i></i></span>
+              <p><strong>正在同步邮箱</strong><small id="syncProgressText">正在检查新增邮件…</small></p>
+              <b id="syncPercent">30%</b>
+            </div>
+            <div id="syncResult" class="sync-result" hidden>
+              <header><span aria-hidden="true"></span><p><strong>同步完成</strong><small id="syncFinishedAt">刚刚</small></p></header>
+              <div>
+                <p><strong>5</strong><small>新增邮件</small></p>
+                <p><strong>5</strong><small>分析成功</small></p>
+                <p><strong>12</strong><small>风险线索</small></p>
+                <p><strong>0</strong><small>失败</small></p>
+              </div>
+              <a id="syncResultLink" href="11-mail-sync-results.html">查看完整同步结果</a>
+            </div>
+            <button id="toggleMailboxButton" class="disable-mailbox-button" type="button">停用此邮箱</button>
+          </section>
+
+          <section class="sync-flow-card" aria-labelledby="syncFlowHeading">
+            <header>
+              <p>DATA FLOW</p>
+              <h2 id="syncFlowHeading">数据如何进入看板</h2>
+            </header>
+            <ol class="sync-flow">
+              <li class="is-complete">
+                <span>1</span>
+                <p><strong>读取授权周报</strong><small>仅处理符合识别规则的新邮件</small></p>
+              </li>
+              <li class="is-complete">
+                <span>2</span>
+                <p><strong>项目名称匹配</strong><small>与已导入的标准项目清单关联</small></p>
+              </li>
+              <li class="is-current">
+                <span>3</span>
+                <p><strong>AI 提取风险线索</strong><small>生成类别、等级和处置建议</small></p>
+              </li>
+              <li>
+                <span>4</span>
+                <p><strong>风险管理员确认</strong><small>低置信或歧义结果需要人工确认</small></p>
+              </li>
+              <li>
+                <span>5</span>
+                <p><strong>更新风险看板</strong><small>确认后进入周报汇总和风险清单</small></p>
+              </li>
+            </ol>
+          </section>
+
+          <section class="security-card">
+            <span class="security-icon" aria-hidden="true"></span>
+            <div>
+              <h2>安全与权限说明</h2>
+              <ul>
+                <li>授权码加密保存，页面、接口和日志均不回显。</li>
+                <li>仅本人可以修改、测试、同步或停用此邮箱。</li>
+                <li>系统只读取授权文件夹内符合规则的项目周报。</li>
+              </ul>
+            </div>
+          </section>
+        </aside>
+      </div>
+    </main>
+
+    <footer class="mailbox-footer">
+      <span>项目风险管理平台 V2.0</span>
+      <span>个人邮箱仅用于项目周报同步与风险分析</span>
+    </footer>
+  </div>
+
+  <div id="guideDialog" class="mail-dialog" hidden>
+    <section role="dialog" aria-modal="true" aria-labelledby="guideDialogTitle">
+      <header>
+        <div><p>QQ MAIL GUIDE</p><h2 id="guideDialogTitle">开启QQ邮箱 IMAP 服务</h2></div>
+        <button type="button" data-close-dialog aria-label="关闭说明">×</button>
+      </header>
+      <ol class="guide-steps">
+        <li><span>1</span><p><strong>进入QQ邮箱设置</strong><small>登录QQ邮箱网页版，打开“设置 → 账号”。</small></p></li>
+        <li><span>2</span><p><strong>开启 IMAP/SMTP 服务</strong><small>在账号安全区域开启服务，并按邮箱要求完成身份验证。</small></p></li>
+        <li><span>3</span><p><strong>生成并复制授权码</strong><small>授权码只显示一次，请复制后填写到本页，不要填写QQ密码。</small></p></li>
+        <li><span>4</span><p><strong>测试并保存</strong><small>点击“测试连接”，通过后再保存配置。</small></p></li>
+      </ol>
+      <div class="dialog-security-note"><span aria-hidden="true"></span><p><strong>请妥善保管授权码</strong><small>平台不会在保存后再次显示完整授权码。</small></p></div>
+      <footer><button type="button" data-close-dialog>我知道了</button></footer>
+    </section>
+  </div>
+
+  <div id="disableDialog" class="mail-dialog" hidden>
+    <section class="compact-dialog" role="alertdialog" aria-modal="true" aria-labelledby="disableDialogTitle" aria-describedby="disableDialogDesc">
+      <header>
+        <div><p>PAUSE MAILBOX</p><h2 id="disableDialogTitle">确认停用此邮箱？</h2></div>
+        <button type="button" data-close-dialog aria-label="关闭确认">×</button>
+      </header>
+      <div class="compact-dialog-body">
+        <span class="warning-icon" aria-hidden="true">!</span>
+        <p id="disableDialogDesc">停用后系统将停止自动同步，风险看板不会再从此邮箱获取新周报。历史同步记录和已确认风险不会删除。</p>
+      </div>
+      <footer>
+        <button class="dialog-cancel-button" type="button" data-close-dialog>取消</button>
+        <button id="confirmDisableButton" class="dialog-danger-button" type="button">确认停用</button>
+      </footer>
+    </section>
+  </div>
+
+  <div id="mailToast" class="mail-toast" role="status" aria-live="polite" hidden>
+    <span aria-hidden="true"></span>
+    <p></p>
+  </div>
+
+  <script src="assets/mailbox.js"></script>
+</body>
+</html>

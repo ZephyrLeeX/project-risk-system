@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f3fbff">
+  <meta
+    name="description"
+    content="项目风险管理平台登录页，提供风险看板、智能对话和周报洞察能力。">
+  <title>登录｜项目风险管理平台</title>
+  <link rel="stylesheet" href="assets/ui.css">
+</head>
+<body data-page="login">
+  <div class="login-page">
+    <div class="ambient ambient-top" aria-hidden="true"></div>
+    <div class="ambient ambient-bottom" aria-hidden="true"></div>
+
+    <main class="login-layout" aria-labelledby="page-title">
+      <section class="login-intro" aria-label="平台简介">
+        <p class="product-kicker">
+          <span class="kicker-dot" aria-hidden="true"></span>
+          PROJECT RISK INTELLIGENCE
+        </p>
+
+        <h1 id="page-title">
+          <span class="gradient-title">AI驱动的</span>
+          <span>项目风险协同平台</span>
+        </h1>
+
+        <p class="intro-copy">
+          汇聚项目、回款与周报线索，让风险识别更早一步，
+          让每一次协同都有依据。
+        </p>
+
+        <ul class="capability-list" aria-label="平台核心能力">
+          <li>风险看板</li>
+          <li>智能对话</li>
+          <li>周报洞察</li>
+        </ul>
+      </section>
+
+      <section class="login-panel" aria-label="账号登录">
+        <div class="login-card">
+          <div class="card-accent" aria-hidden="true"></div>
+
+          <header class="login-card-header">
+            <p class="login-kicker">WELCOME BACK</p>
+            <h2>登录平台</h2>
+            <p>请输入系统管理员分配的账号信息</p>
+          </header>
+
+          <form id="loginForm" class="login-form" novalidate>
+            <div class="form-field">
+              <label for="account">账号</label>
+              <div class="input-shell">
+                <span class="field-icon field-icon-user" aria-hidden="true"></span>
+                <input
+                  id="account"
+                  name="account"
+                  type="text"
+                  autocomplete="username"
+                  placeholder="请输入账号"
+                  aria-describedby="accountError"
+                  required>
+              </div>
+              <p id="accountError" class="field-error" role="alert" hidden>
+                请输入账号
+              </p>
+            </div>
+
+            <div class="form-field">
+              <label for="password">密码</label>
+              <div class="input-shell">
+                <span class="field-icon field-icon-lock" aria-hidden="true"></span>
+                <input
+                  id="password"
+                  name="password"
+                  type="password"
+                  autocomplete="current-password"
+                  placeholder="请输入密码"
+                  aria-describedby="passwordError"
+                  required>
+                <button
+                  id="passwordToggle"
+                  class="password-toggle"
+                  type="button"
+                  aria-label="显示密码"
+                  aria-pressed="false">
+                  <span class="eye-icon" aria-hidden="true"></span>
+                </button>
+              </div>
+              <p id="passwordError" class="field-error" role="alert" hidden>
+                请输入密码
+              </p>
+            </div>
+
+            <div class="form-options">
+              <label class="remember-option" for="remember">
+                <input id="remember" name="remember" type="checkbox">
+                <span class="custom-checkbox" aria-hidden="true"></span>
+                <span>记住账号</span>
+              </label>
+
+              <button
+                id="forgotPassword"
+                class="text-button"
+                type="button">
+                忘记密码
+              </button>
+            </div>
+
+            <button id="loginButton" class="primary-button" type="submit">
+              <span class="button-label">登 录</span>
+              <span class="button-spinner" aria-hidden="true"></span>
+            </button>
+
+            <div class="security-note">
+              <span class="note-icon" aria-hidden="true">i</span>
+              <p>
+                为保障账号安全，首次登录后需修改初始密码。
+                <small>原型验收：账号填写 admin 进入管理后台，其他账号进入风险看板。</small>
+              </p>
+            </div>
+          </form>
+
+          <p class="login-footer">项目风险管理平台 · 安全访问</p>
+        </div>
+
+        <p class="mobile-capabilities" aria-hidden="true">
+          风险看板 · 智能对话 · 周报洞察
+        </p>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="forgotDialog" class="message-dialog" aria-labelledby="forgotTitle">
+    <div class="dialog-icon" aria-hidden="true">?</div>
+    <h2 id="forgotTitle">忘记密码</h2>
+    <p>
+      当前版本由系统管理员统一管理账号。请联系系统管理员重置密码，
+      重置后首次登录需要重新设置新密码。
+    </p>
+    <button id="closeForgotDialog" class="secondary-button" type="button">
+      我知道了
+    </button>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="assets/prototype.js"></script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+# T039 — Complete external E2E and cutover evidence
+- **Task ID:** T039
+- **Title:** Complete external E2E and cutover evidence
+- **Status:** BLOCKED_EXTERNAL_INPUTS plus inherited design gaps / TODO
+- **Objective:** Demonstrate real mailbox-to-risk and Agent flows, restore readiness, frontend E2E and Python-only production release.
+- **Design baseline:** Design §§11,12.
+- **Authoritative source references:** Approved design/addenda; T036-T038 reports; provided mailbox/Provider/TLS/outbound/backup inputs.
+- **Relevant ADR IDs:** 0001, 0003, 0005-0016.
+- **Dependencies:** T038; all design gaps resolved; external materials supplied.
+- **Scope:** Real IMAP and Provider flows, candidate publish, weekly aggregate, Agent query/confirm, degraded AI behavior, restore/audit verification, Compose cutover checklist.
+- **Explicit out-of-scope:** Production data migration, NestJS dual run, architecture change.
+- **Expected read set:** Full release candidate, runbooks and external test plan.
+- **Expected write set:** Acceptance evidence/runbooks/config templates only; never credentials.
+- **Contracts/invariants:** Non-AI functions survive AI failure; production Compose contains only Python API; evidence is redacted.
+- **Acceptance criteria:** All design §11 completion items and approved thresholds PASS; rollback/cutover checklist signed.
+- **Validation:** Real browser/API/external integration and isolated restore drill.
+- **Required deliverables:** Final traceable report, logs/screenshots redacted, release/cutover checklist.
+- **Stop conditions:** Missing real inputs or any prerequisite FAIL.
+- **Known integration risks:** External rate limits, mailbox content sensitivity and TLS/outbound policy.

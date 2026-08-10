@@ -1,0 +1,19 @@
+# T006 — Enforce append-only audit chain
+- **Task ID:** T006
+- **Title:** Enforce append-only audit chain
+- **Status:** READY / TODO
+- **Objective:** Implement PostgreSQL-enforced immutable chained audit records and a transaction-aware audit service.
+- **Design baseline:** Design §7; global audit constraints.
+- **Authoritative source references:** Prisma `AuditLog`; legacy `audit/**`; migration `20260803000200_audit_log_management`.
+- **Relevant ADR IDs:** 0008, 0014, 0015.
+- **Dependencies:** T003.
+- **Scope:** Trigger/functions, hash canonicalization, insert API, redaction, integrity verifier, success/failure primitives.
+- **Explicit out-of-scope:** Search/export HTTP endpoints; module-specific event calls.
+- **Expected read set:** Named schema/migration/service/policy/tests.
+- **Expected write set:** Audit module, Alembic revision, audit tests.
+- **Contracts/invariants:** UPDATE/DELETE rejected in DB; chain break is reported and never repaired; snapshots are redacted.
+- **Acceptance criteria:** Concurrent inserts form valid chain; mutation attempts fail; deterministic verifier detects tampering.
+- **Validation:** PostgreSQL integration/concurrency tests plus Ruff/mypy/pytest.
+- **Required deliverables:** DB enforcement, service, verifier, redaction tests.
+- **Stop conditions:** Hash canonicalization cannot preserve current stored fields without a design change.
+- **Known integration risks:** Transaction ordering and high-write concurrency.
