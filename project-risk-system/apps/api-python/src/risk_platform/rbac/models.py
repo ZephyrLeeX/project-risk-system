@@ -18,6 +18,7 @@ from sqlalchemy.dialects.postgresql import TIMESTAMP
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from risk_platform.model_types import new_uuid, utc_now
 from risk_platform.models import Base
 
 UUIDType = PG_UUID
@@ -37,7 +38,9 @@ class Role(Base):
         Index("roles_enabled_idx", "enabled"),
         Index("roles_code_key", "code", unique=True),
     )
-    id: Mapped[UUID] = mapped_column(UUIDType(as_uuid=True), primary_key=True, nullable=False)
+    id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True), primary_key=True, nullable=False, default=new_uuid
+    )
     code: Mapped[str] = mapped_column(String(64), nullable=False)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     description: Mapped[str | None] = mapped_column(String(500), nullable=True)
@@ -54,7 +57,10 @@ class Role(Base):
         server_default=text("CURRENT_TIMESTAMP"),
     )
     updatedAt: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True, precision=3), nullable=False
+        TIMESTAMP(timezone=True, precision=3),
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
     )
 
 
@@ -64,7 +70,9 @@ class Permission(Base):
         Index("permissions_module_idx", "module"),
         Index("permissions_code_key", "code", unique=True),
     )
-    id: Mapped[UUID] = mapped_column(UUIDType(as_uuid=True), primary_key=True, nullable=False)
+    id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True), primary_key=True, nullable=False, default=new_uuid
+    )
     code: Mapped[str] = mapped_column(String(128), nullable=False)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     module: Mapped[str] = mapped_column(String(64), nullable=False)

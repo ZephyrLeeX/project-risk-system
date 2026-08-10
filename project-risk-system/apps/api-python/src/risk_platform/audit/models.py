@@ -18,6 +18,7 @@ from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from risk_platform.model_types import JSONValue, new_uuid
 from risk_platform.models import Base
 
 UUIDType = PG_UUID
@@ -38,7 +39,9 @@ class AuditLog(Base):
         Index("audit_logs_createdAt_idx", "createdAt"),
         Index("audit_logs_isSensitive_createdAt_idx", "isSensitive", "createdAt"),
     )
-    id: Mapped[UUID] = mapped_column(UUIDType(as_uuid=True), primary_key=True, nullable=False)
+    id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True), primary_key=True, nullable=False, default=new_uuid
+    )
     actorUserId: Mapped[UUID | None] = mapped_column(
         UUIDType(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL", onupdate="CASCADE"),
@@ -54,8 +57,8 @@ class AuditLog(Base):
     traceId: Mapped[str] = mapped_column(String(64), nullable=False)
     clientIp: Mapped[str | None] = mapped_column(String(64), nullable=True)
     userAgent: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    beforeSnapshot: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
-    afterSnapshot: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    beforeSnapshot: Mapped[JSONValue | None] = mapped_column(JSONB, nullable=True)
+    afterSnapshot: Mapped[JSONValue | None] = mapped_column(JSONB, nullable=True)
     errorCode: Mapped[str | None] = mapped_column(String(128), nullable=True)
     summary: Mapped[str | None] = mapped_column(String(500), nullable=True)
     isSensitive: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("FALSE"))

@@ -15,6 +15,7 @@ from sqlalchemy.dialects.postgresql import TIMESTAMP
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from risk_platform.model_types import new_uuid
 from risk_platform.models import Base
 
 UUIDType = PG_UUID
@@ -27,7 +28,9 @@ class Session(Base):
         Index("sessions_expiresAt_idx", "expiresAt"),
         Index("sessions_tokenHash_key", "tokenHash", unique=True),
     )
-    id: Mapped[UUID] = mapped_column(UUIDType(as_uuid=True), primary_key=True, nullable=False)
+    id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True), primary_key=True, nullable=False, default=new_uuid
+    )
     tokenHash: Mapped[str] = mapped_column(String(255), nullable=False)
     userId: Mapped[UUID] = mapped_column(
         UUIDType(as_uuid=True),

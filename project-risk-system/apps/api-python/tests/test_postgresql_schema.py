@@ -12,7 +12,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
-from sqlalchemy import Connection, Enum, create_engine, inspect, text
+from sqlalchemy import Connection, Enum, create_engine, inspect, select, text
 from sqlalchemy.dialects.postgresql.base import PGInspector
 from sqlalchemy.schema import PrimaryKeyConstraint
 
@@ -23,6 +23,7 @@ from risk_platform.db import (
     transaction,
 )
 from risk_platform.models import metadata
+from risk_platform.system_config.models import ProjectRiskLevel, RiskLevelRule
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -179,3 +180,72 @@ def test_request_and_worker_transactions_commit_rollback_and_dispose(
         migrated_postgresql_schema.rollback()
         migrated_postgresql_schema.execute(text("DROP TABLE IF EXISTS t003_transaction_probe"))
         migrated_postgresql_schema.commit()
+
+
+def test_orm_uuid_updated_at_and_recursive_json_roundtrip(
+    migrated_postgresql_schema: Connection,
+) -> None:
+    schema = migrated_postgresql_schema.scalar(text("SELECT current_schema()"))
+    assert isinstance(schema, str)
+    url = os.environ["TEST_DATABASE_URL"]
+    async_url = re.sub(r"^postgresql(?:\+psycopg)?://", "postgresql+psycopg://", url)
+    engine = create_database_engine(
+        f"{async_url}?options=-csearch_path%3D{schema}", pool_pre_ping=False
+    )
+    factory = create_session_factory(engine)
+
+    async def exercise() -> None:
+        rows = [
+            RiskLevelRule(
+                level=ProjectRiskLevel.HIGH,
+                displayName="高",
+                colorToken="#f00",
+                criteria="initial",
+                keywords=["数组", {"nested": [1, True, None]}],
+            ),
+            RiskLevelRule(
+                level=ProjectRiskLevel.MEDIUM,
+                displayName="中",
+                colorToken="#fa0",
+                criteria="scalar",
+                keywords="标量",
+            ),
+            RiskLevelRule(
+                level=ProjectRiskLevel.LOW,
+                displayName="低",
+                colorToken="#0a0",
+                criteria="null",
+                keywords=None,
+            ),
+        ]
+        async with transaction(factory) as session:
+            session.add_all(rows)
+            await session.flush()
+            assert all(row.id is not None for row in rows)
+            assert all(row.updatedAt.utcoffset() is not None for row in rows)
+            first_id = rows[0].id
+            initial_updated_at = rows[0].updatedAt
+
+        await asyncio.sleep(0.01)
+        async with transaction(factory) as session:
+            first = await session.get(RiskLevelRule, first_id)
+            assert first is not None
+            first.criteria = "updated"
+            await session.flush()
+            assert first.updatedAt > initial_updated_at
+
+        async with transaction(factory) as session:
+            result = list(
+                (
+                    await session.scalars(
+                        select(RiskLevelRule).order_by(RiskLevelRule.sortOrder, RiskLevelRule.level)
+                    )
+                ).all()
+            )
+            assert result[0].keywords == ["数组", {"nested": [1, True, None]}]
+            assert result[1].keywords == "标量"
+            assert result[2].keywords is None
+
+        await dispose_database_engine(engine)
+
+    asyncio.run(exercise())

@@ -64,3 +64,22 @@ def test_no_runtime_create_all() -> None:
     source_root = Path(__file__).resolve().parents[1] / "src"
     for path in source_root.rglob("*.py"):
         assert ".create_all(" not in path.read_text(encoding="utf-8")
+
+
+def test_prisma_python_side_defaults_are_complete_without_ddl_drift() -> None:
+    uuid_default_columns = [
+        table.c.id
+        for table in metadata.tables.values()
+        if "id" in table.c and len(table.primary_key.columns) == 1
+    ]
+    assert len(uuid_default_columns) == 25
+    assert all(column.default is not None for column in uuid_default_columns)
+    assert all(column.server_default is None for column in uuid_default_columns)
+
+    updated_at_columns = [
+        table.c.updatedAt for table in metadata.tables.values() if "updatedAt" in table.c
+    ]
+    assert len(updated_at_columns) == 17
+    assert all(column.default is not None for column in updated_at_columns)
+    assert all(column.onupdate is not None for column in updated_at_columns)
+    assert all(column.server_default is None for column in updated_at_columns)

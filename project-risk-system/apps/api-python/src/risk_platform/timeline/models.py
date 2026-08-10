@@ -18,6 +18,7 @@ from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from risk_platform.model_types import JSONValue, new_uuid
 from risk_platform.models import Base
 
 UUIDType = PG_UUID
@@ -44,7 +45,9 @@ class RiskTimelineEvent(Base):
         Index("risk_timeline_events_eventType_occurredAt_idx", "eventType", "occurredAt"),
         Index("risk_timeline_events_sourceBatchId_idx", "sourceBatchId"),
     )
-    id: Mapped[UUID] = mapped_column(UUIDType(as_uuid=True), primary_key=True, nullable=False)
+    id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True), primary_key=True, nullable=False, default=new_uuid
+    )
     projectId: Mapped[UUID] = mapped_column(
         UUIDType(as_uuid=True),
         ForeignKey("projects.id", ondelete="CASCADE", onupdate="CASCADE"),
@@ -83,7 +86,7 @@ class RiskTimelineEvent(Base):
         nullable=False,
         server_default=text("CURRENT_TIMESTAMP"),
     )
-    metadata_: Mapped[dict[str, object] | None] = mapped_column("metadata", JSONB, nullable=True)
+    metadata_: Mapped[JSONValue | None] = mapped_column("metadata", JSONB, nullable=True)
     createdAt: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True, precision=3),
         nullable=False,

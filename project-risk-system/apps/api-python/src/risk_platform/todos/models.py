@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 from uuid import UUID
 
@@ -19,6 +19,7 @@ from sqlalchemy.dialects.postgresql import TIMESTAMP
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from risk_platform.model_types import new_uuid, utc_now
 from risk_platform.models import Base
 
 UUIDType = PG_UUID
@@ -51,7 +52,9 @@ class ActionItem(Base):
         Index("action_items_urgency_status_idx", "urgency", "status"),
         Index("action_items_dueDate_idx", "dueDate"),
     )
-    id: Mapped[UUID] = mapped_column(UUIDType(as_uuid=True), primary_key=True, nullable=False)
+    id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True), primary_key=True, nullable=False, default=new_uuid
+    )
     riskId: Mapped[UUID | None] = mapped_column(
         UUIDType(as_uuid=True),
         ForeignKey("risks.id", ondelete="CASCADE", onupdate="CASCADE"),
@@ -83,7 +86,7 @@ class ActionItem(Base):
         nullable=True,
     )
     assigneeNameSource: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    dueDate: Mapped[datetime | None] = mapped_column(Date, nullable=True)
+    dueDate: Mapped[date | None] = mapped_column(Date, nullable=True)
     completionNote: Mapped[str | None] = mapped_column(Text, nullable=True)
     createdById: Mapped[UUID | None] = mapped_column(
         UUIDType(as_uuid=True),
@@ -104,5 +107,8 @@ class ActionItem(Base):
         server_default=text("CURRENT_TIMESTAMP"),
     )
     updatedAt: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True, precision=3), nullable=False
+        TIMESTAMP(timezone=True, precision=3),
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
     )

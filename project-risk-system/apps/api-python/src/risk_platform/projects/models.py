@@ -22,6 +22,7 @@ from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from risk_platform.model_types import JSONValue, new_uuid, utc_now
 from risk_platform.models import Base
 
 UUIDType = PG_UUID
@@ -50,7 +51,9 @@ class Project(Base):
         Index("projects_status_idx", "status"),
         Index("projects_importKey_key", "importKey", unique=True),
     )
-    id: Mapped[UUID] = mapped_column(UUIDType(as_uuid=True), primary_key=True, nullable=False)
+    id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True), primary_key=True, nullable=False, default=new_uuid
+    )
     externalCode: Mapped[str | None] = mapped_column(String(128), nullable=True)
     importKey: Mapped[str | None] = mapped_column(String(64), nullable=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -74,8 +77,8 @@ class Project(Base):
     annualPlanAmount: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
     actualCollectedAmount: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
     remainingAmount: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
-    monthlyCollections: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
-    monthAttributes: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    monthlyCollections: Mapped[JSONValue | None] = mapped_column(JSONB, nullable=True)
+    monthAttributes: Mapped[JSONValue | None] = mapped_column(JSONB, nullable=True)
     collectionRiskLevel: Mapped[ProjectRiskLevel] = mapped_column(
         Enum(ProjectRiskLevel, name="ProjectRiskLevel", native_enum=True),
         nullable=False,
@@ -92,7 +95,10 @@ class Project(Base):
         server_default=text("CURRENT_TIMESTAMP"),
     )
     updatedAt: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True, precision=3), nullable=False
+        TIMESTAMP(timezone=True, precision=3),
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
     )
 
 
@@ -102,7 +108,9 @@ class ProjectAlias(Base):
         Index("project_aliases_projectId_isActive_idx", "projectId", "isActive"),
         Index("project_aliases_normalizedAlias_key", "normalizedAlias", unique=True),
     )
-    id: Mapped[UUID] = mapped_column(UUIDType(as_uuid=True), primary_key=True, nullable=False)
+    id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True), primary_key=True, nullable=False, default=new_uuid
+    )
     projectId: Mapped[UUID] = mapped_column(
         UUIDType(as_uuid=True),
         ForeignKey("projects.id", ondelete="CASCADE", onupdate="CASCADE"),
@@ -125,5 +133,8 @@ class ProjectAlias(Base):
         server_default=text("CURRENT_TIMESTAMP"),
     )
     updatedAt: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True, precision=3), nullable=False
+        TIMESTAMP(timezone=True, precision=3),
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
     )

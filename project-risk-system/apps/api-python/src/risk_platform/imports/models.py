@@ -21,6 +21,7 @@ from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from risk_platform.model_types import JSONValue, new_uuid, utc_now
 from risk_platform.models import Base
 
 UUIDType = PG_UUID
@@ -40,7 +41,9 @@ class ImportBatch(Base):
         Index("import_batches_status_createdAt_idx", "status", "createdAt"),
         Index("import_batches_uploadedById_idx", "uploadedById"),
     )
-    id: Mapped[UUID] = mapped_column(UUIDType(as_uuid=True), primary_key=True, nullable=False)
+    id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True), primary_key=True, nullable=False, default=new_uuid
+    )
     fileName: Mapped[str] = mapped_column(String(255), nullable=False)
     fileHash: Mapped[str] = mapped_column(String(64), nullable=False)
     storageKey: Mapped[str] = mapped_column(String(500), nullable=False)
@@ -50,7 +53,7 @@ class ImportBatch(Base):
         server_default=text("'PREVIEWED'"),
     )
     sheetName: Mapped[str] = mapped_column(String(128), nullable=False)
-    sourceMeta: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    sourceMeta: Mapped[JSONValue | None] = mapped_column(JSONB, nullable=True)
     totalRows: Mapped[int] = mapped_column(Integer, nullable=False)
     readyRows: Mapped[int] = mapped_column(Integer, nullable=False)
     warningRows: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -143,7 +146,9 @@ class ProjectImportRow(Base):
         Index("project_import_rows_matchedProjectId_idx", "matchedProjectId"),
         Index("project_import_rows_committedProjectId_idx", "committedProjectId"),
     )
-    id: Mapped[UUID] = mapped_column(UUIDType(as_uuid=True), primary_key=True, nullable=False)
+    id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True), primary_key=True, nullable=False, default=new_uuid
+    )
     batchId: Mapped[UUID] = mapped_column(
         UUIDType(as_uuid=True),
         ForeignKey("import_batches.id", ondelete="CASCADE", onupdate="CASCADE"),
@@ -164,17 +169,17 @@ class ProjectImportRow(Base):
     annualPlanAmount: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
     actualCollectedAmount: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
     remainingAmount: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
-    monthlyCollections: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
-    monthAttributes: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    monthlyCollections: Mapped[JSONValue | None] = mapped_column(JSONB, nullable=True)
+    monthAttributes: Mapped[JSONValue | None] = mapped_column(JSONB, nullable=True)
     collectionRiskLevel: Mapped[ProjectRiskLevel] = mapped_column(
         Enum(ProjectRiskLevel, name="ProjectRiskLevel", native_enum=True),
         nullable=False,
         server_default=text("'UNKNOWN'"),
     )
     collectionProgress: Mapped[str | None] = mapped_column(Text, nullable=True)
-    sourceSnapshot: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
-    warnings: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
-    errors: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    sourceSnapshot: Mapped[JSONValue] = mapped_column(JSONB, nullable=False)
+    warnings: Mapped[JSONValue | None] = mapped_column(JSONB, nullable=True)
+    errors: Mapped[JSONValue | None] = mapped_column(JSONB, nullable=True)
     matchedProjectId: Mapped[UUID | None] = mapped_column(
         UUIDType(as_uuid=True),
         ForeignKey("projects.id", ondelete="SET NULL", onupdate="CASCADE"),
@@ -185,18 +190,21 @@ class ProjectImportRow(Base):
         ForeignKey("projects.id", ondelete="SET NULL", onupdate="CASCADE"),
         nullable=True,
     )
-    beforeSnapshot: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
-    afterSnapshot: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    beforeSnapshot: Mapped[JSONValue | None] = mapped_column(JSONB, nullable=True)
+    afterSnapshot: Mapped[JSONValue | None] = mapped_column(JSONB, nullable=True)
     committedRiskId: Mapped[UUID | None] = mapped_column(UUIDType(as_uuid=True), nullable=True)
-    beforeRiskSnapshot: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
-    afterRiskSnapshot: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    beforeRiskSnapshot: Mapped[JSONValue | None] = mapped_column(JSONB, nullable=True)
+    afterRiskSnapshot: Mapped[JSONValue | None] = mapped_column(JSONB, nullable=True)
     createdAt: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True, precision=3),
         nullable=False,
         server_default=text("CURRENT_TIMESTAMP"),
     )
     updatedAt: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True, precision=3), nullable=False
+        TIMESTAMP(timezone=True, precision=3),
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
     )
 
 
@@ -220,7 +228,9 @@ class SupplementalCollectionRow(Base):
         Index("supplemental_collection_rows_projectId_idx", "projectId"),
         Index("supplemental_collection_rows_sourceKey_idx", "sourceKey"),
     )
-    id: Mapped[UUID] = mapped_column(UUIDType(as_uuid=True), primary_key=True, nullable=False)
+    id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True), primary_key=True, nullable=False, default=new_uuid
+    )
     batchId: Mapped[UUID] = mapped_column(
         UUIDType(as_uuid=True),
         ForeignKey("import_batches.id", ondelete="CASCADE", onupdate="CASCADE"),
@@ -262,19 +272,22 @@ class SupplementalCollectionRow(Base):
         nullable=False,
         server_default=text("'UNKNOWN'"),
     )
-    monthlyCollections: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
-    monthAttributes: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    monthlyCollections: Mapped[JSONValue | None] = mapped_column(JSONB, nullable=True)
+    monthAttributes: Mapped[JSONValue | None] = mapped_column(JSONB, nullable=True)
     afterYearAmount: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
-    sourceSnapshot: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
-    warnings: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
-    errors: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    sourceSnapshot: Mapped[JSONValue] = mapped_column(JSONB, nullable=False)
+    warnings: Mapped[JSONValue | None] = mapped_column(JSONB, nullable=True)
+    errors: Mapped[JSONValue | None] = mapped_column(JSONB, nullable=True)
     createdAt: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True, precision=3),
         nullable=False,
         server_default=text("CURRENT_TIMESTAMP"),
     )
     updatedAt: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True, precision=3), nullable=False
+        TIMESTAMP(timezone=True, precision=3),
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
     )
 
 
@@ -293,7 +306,9 @@ class LegalMatterRow(Base):
         Index("legal_matter_rows_projectId_idx", "projectId"),
         Index("legal_matter_rows_sourceKey_idx", "sourceKey"),
     )
-    id: Mapped[UUID] = mapped_column(UUIDType(as_uuid=True), primary_key=True, nullable=False)
+    id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True), primary_key=True, nullable=False, default=new_uuid
+    )
     batchId: Mapped[UUID] = mapped_column(
         UUIDType(as_uuid=True),
         ForeignKey("import_batches.id", ondelete="CASCADE", onupdate="CASCADE"),
@@ -328,19 +343,22 @@ class LegalMatterRow(Base):
         server_default=text("'UNKNOWN'"),
     )
     legalProgress: Mapped[str | None] = mapped_column(Text, nullable=True)
-    monthlyCollections: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
-    monthAttributes: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
-    sourceSnapshot: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
-    warnings: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
-    errors: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    monthlyCollections: Mapped[JSONValue | None] = mapped_column(JSONB, nullable=True)
+    monthAttributes: Mapped[JSONValue | None] = mapped_column(JSONB, nullable=True)
+    sourceSnapshot: Mapped[JSONValue] = mapped_column(JSONB, nullable=False)
+    warnings: Mapped[JSONValue | None] = mapped_column(JSONB, nullable=True)
+    errors: Mapped[JSONValue | None] = mapped_column(JSONB, nullable=True)
     committedRiskId: Mapped[UUID | None] = mapped_column(UUIDType(as_uuid=True), nullable=True)
-    beforeRiskSnapshot: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
-    afterRiskSnapshot: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    beforeRiskSnapshot: Mapped[JSONValue | None] = mapped_column(JSONB, nullable=True)
+    afterRiskSnapshot: Mapped[JSONValue | None] = mapped_column(JSONB, nullable=True)
     createdAt: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True, precision=3),
         nullable=False,
         server_default=text("CURRENT_TIMESTAMP"),
     )
     updatedAt: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True, precision=3), nullable=False
+        TIMESTAMP(timezone=True, precision=3),
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
     )

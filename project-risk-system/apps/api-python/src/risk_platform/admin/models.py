@@ -19,6 +19,7 @@ from sqlalchemy.dialects.postgresql import TIMESTAMP
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from risk_platform.model_types import new_uuid, utc_now
 from risk_platform.models import Base
 
 UUIDType = PG_UUID
@@ -30,7 +31,9 @@ class Department(Base):
         Index("departments_parentId_idx", "parentId"),
         Index("departments_code_key", "code", unique=True),
     )
-    id: Mapped[UUID] = mapped_column(UUIDType(as_uuid=True), primary_key=True, nullable=False)
+    id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True), primary_key=True, nullable=False, default=new_uuid
+    )
     code: Mapped[str] = mapped_column(String(64), nullable=False)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     parentId: Mapped[UUID | None] = mapped_column(
@@ -46,7 +49,10 @@ class Department(Base):
         server_default=text("CURRENT_TIMESTAMP"),
     )
     updatedAt: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True, precision=3), nullable=False
+        TIMESTAMP(timezone=True, precision=3),
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
     )
 
 
@@ -64,7 +70,9 @@ class User(Base):
         Index("users_username_lower_key", text('lower("username")'), unique=True),
         Index("users_username_key", "username", unique=True),
     )
-    id: Mapped[UUID] = mapped_column(UUIDType(as_uuid=True), primary_key=True, nullable=False)
+    id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True), primary_key=True, nullable=False, default=new_uuid
+    )
     username: Mapped[str] = mapped_column(String(64), nullable=False)
     passwordHash: Mapped[str] = mapped_column(String(255), nullable=False)
     displayName: Mapped[str] = mapped_column(String(128), nullable=False)
@@ -92,7 +100,10 @@ class User(Base):
         server_default=text("CURRENT_TIMESTAMP"),
     )
     updatedAt: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True, precision=3), nullable=False
+        TIMESTAMP(timezone=True, precision=3),
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
     )
     passwordChangedAt: Mapped[datetime | None] = mapped_column(
         TIMESTAMP(timezone=True, precision=3), nullable=True

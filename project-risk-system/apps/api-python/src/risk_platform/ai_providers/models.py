@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 from uuid import UUID
 
@@ -21,6 +21,7 @@ from sqlalchemy.dialects.postgresql import TIMESTAMP
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from risk_platform.model_types import new_uuid, utc_now
 from risk_platform.models import Base
 
 UUIDType = PG_UUID
@@ -40,7 +41,9 @@ class AiProviderConfig(Base):
         Index("ai_provider_configs_expiresAt_idx", "expiresAt"),
         Index("ai_provider_configs_name_key", "name", unique=True),
     )
-    id: Mapped[UUID] = mapped_column(UUIDType(as_uuid=True), primary_key=True, nullable=False)
+    id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True), primary_key=True, nullable=False, default=new_uuid
+    )
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     vendor: Mapped[str] = mapped_column(String(128), nullable=False)
     endpoint: Mapped[str] = mapped_column(String(500), nullable=False)
@@ -49,7 +52,7 @@ class AiProviderConfig(Base):
     keyIv: Mapped[str] = mapped_column(String(64), nullable=False)
     keyAuthTag: Mapped[str] = mapped_column(String(64), nullable=False)
     keyLast4: Mapped[str] = mapped_column(String(16), nullable=False)
-    expiresAt: Mapped[datetime | None] = mapped_column(Date, nullable=True)
+    expiresAt: Mapped[date | None] = mapped_column(Date, nullable=True)
     timeoutSeconds: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("60"))
     retryCount: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("2"))
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("TRUE"))
@@ -81,7 +84,10 @@ class AiProviderConfig(Base):
         server_default=text("CURRENT_TIMESTAMP"),
     )
     updatedAt: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True, precision=3), nullable=False
+        TIMESTAMP(timezone=True, precision=3),
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
     )
 
 
@@ -106,7 +112,9 @@ class AiCallLog(Base):
         Index("ai_call_logs_actorUserId_createdAt_idx", "actorUserId", "createdAt"),
         Index("ai_call_logs_traceId_key", "traceId", unique=True),
     )
-    id: Mapped[UUID] = mapped_column(UUIDType(as_uuid=True), primary_key=True, nullable=False)
+    id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True), primary_key=True, nullable=False, default=new_uuid
+    )
     traceId: Mapped[str] = mapped_column(String(64), nullable=False)
     providerId: Mapped[UUID | None] = mapped_column(
         UUIDType(as_uuid=True),

@@ -20,6 +20,7 @@ from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from risk_platform.model_types import JSONValue, new_uuid, utc_now
 from risk_platform.models import Base
 
 UUIDType = PG_UUID
@@ -38,10 +39,12 @@ class RiskCategory(Base):
         Index("risk_categories_isActive_sortOrder_idx", "isActive", "sortOrder"),
         Index("risk_categories_code_key", "code", unique=True),
     )
-    id: Mapped[UUID] = mapped_column(UUIDType(as_uuid=True), primary_key=True, nullable=False)
+    id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True), primary_key=True, nullable=False, default=new_uuid
+    )
     code: Mapped[str] = mapped_column(String(64), nullable=False)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
-    keywords: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    keywords: Mapped[JSONValue | None] = mapped_column(JSONB, nullable=True)
     colorToken: Mapped[str] = mapped_column(
         String(16), nullable=False, server_default=text("'#4C8FE8'")
     )
@@ -57,7 +60,10 @@ class RiskCategory(Base):
         server_default=text("CURRENT_TIMESTAMP"),
     )
     updatedAt: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True, precision=3), nullable=False
+        TIMESTAMP(timezone=True, precision=3),
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
     )
 
 
@@ -83,7 +89,9 @@ class Risk(Base):
         Index("risks_detectedAt_idx", "detectedAt"),
         Index("risks_dedupeFingerprint_key", "dedupeFingerprint", unique=True),
     )
-    id: Mapped[UUID] = mapped_column(UUIDType(as_uuid=True), primary_key=True, nullable=False)
+    id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True), primary_key=True, nullable=False, default=new_uuid
+    )
     projectId: Mapped[UUID] = mapped_column(
         UUIDType(as_uuid=True),
         ForeignKey("projects.id", ondelete="CASCADE", onupdate="CASCADE"),
@@ -143,5 +151,8 @@ class Risk(Base):
         server_default=text("CURRENT_TIMESTAMP"),
     )
     updatedAt: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True, precision=3), nullable=False
+        TIMESTAMP(timezone=True, precision=3),
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
     )

@@ -22,6 +22,7 @@ from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
+from risk_platform.model_types import JSONValue, new_uuid, utc_now
 from risk_platform.models import Base
 
 UUIDType = PG_UUID
@@ -60,7 +61,9 @@ class MailboxConfig(Base):
         CheckConstraint('"imapPort" BETWEEN 1 AND 65535', name="port_check"),
         CheckConstraint('"initialSyncWeeks" IN (1, 4, 8, 12)', name="weeks_check"),
     )
-    id: Mapped[UUID] = mapped_column(UUIDType(as_uuid=True), primary_key=True, nullable=False)
+    id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True), primary_key=True, nullable=False, default=new_uuid
+    )
     userId: Mapped[UUID] = mapped_column(
         UUIDType(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE", onupdate="CASCADE"),
@@ -80,7 +83,7 @@ class MailboxConfig(Base):
     authCodeIv: Mapped[str] = mapped_column(String(64), nullable=False)
     authCodeTag: Mapped[str] = mapped_column(String(64), nullable=False)
     authCodeLast4: Mapped[str] = mapped_column(String(16), nullable=False)
-    subjectKeywords: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    subjectKeywords: Mapped[JSONValue] = mapped_column(JSONB, nullable=False)
     senderRule: Mapped[str | None] = mapped_column(String(255), nullable=True)
     initialSyncWeeks: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("4"))
     readAttachments: Mapped[bool] = mapped_column(
@@ -127,7 +130,10 @@ class MailboxConfig(Base):
         server_default=text("CURRENT_TIMESTAMP"),
     )
     updatedAt: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True, precision=3), nullable=False
+        TIMESTAMP(timezone=True, precision=3),
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
     )
 
 
@@ -147,7 +153,9 @@ class MailSyncBatch(Base):
         Index("mail_sync_batches_targetMessageId_idx", "targetMessageId"),
         Index("mail_sync_batches_code_key", "code", unique=True),
     )
-    id: Mapped[UUID] = mapped_column(UUIDType(as_uuid=True), primary_key=True, nullable=False)
+    id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True), primary_key=True, nullable=False, default=new_uuid
+    )
     code: Mapped[str] = mapped_column(String(64), nullable=False)
     mailboxConfigId: Mapped[UUID] = mapped_column(
         UUIDType(as_uuid=True),
@@ -206,7 +214,10 @@ class MailSyncBatch(Base):
         server_default=text("CURRENT_TIMESTAMP"),
     )
     updatedAt: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True, precision=3), nullable=False
+        TIMESTAMP(timezone=True, precision=3),
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
     )
 
 
@@ -233,7 +244,9 @@ class MailMessage(Base):
         Index("mail_messages_mailboxConfigId_sentAt_idx", "mailboxConfigId", "sentAt"),
         Index("mail_messages_status_updatedAt_idx", "status", "updatedAt"),
     )
-    id: Mapped[UUID] = mapped_column(UUIDType(as_uuid=True), primary_key=True, nullable=False)
+    id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True), primary_key=True, nullable=False, default=new_uuid
+    )
     mailboxConfigId: Mapped[UUID] = mapped_column(
         UUIDType(as_uuid=True),
         ForeignKey("mailbox_configs.id", ondelete="CASCADE", onupdate="CASCADE"),
@@ -266,9 +279,9 @@ class MailMessage(Base):
     failureCode: Mapped[str | None] = mapped_column(String(128), nullable=True)
     failureSummary: Mapped[str | None] = mapped_column(String(500), nullable=True)
     sanitizedSummary: Mapped[str | None] = mapped_column(Text, nullable=True)
-    keyPoints: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
-    attachmentMetadata: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
-    processingTrace: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    keyPoints: Mapped[JSONValue | None] = mapped_column(JSONB, nullable=True)
+    attachmentMetadata: Mapped[JSONValue | None] = mapped_column(JSONB, nullable=True)
+    processingTrace: Mapped[JSONValue | None] = mapped_column(JSONB, nullable=True)
     retryCount: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     createdAt: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True, precision=3),
@@ -276,7 +289,10 @@ class MailMessage(Base):
         server_default=text("CURRENT_TIMESTAMP"),
     )
     updatedAt: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True, precision=3), nullable=False
+        TIMESTAMP(timezone=True, precision=3),
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
     )
 
 
@@ -299,7 +315,9 @@ class MailMessageProjectMatch(Base):
         Index("mail_message_project_matches_projectId_createdAt_idx", "projectId", "createdAt"),
         Index("mail_message_project_matches_confirmedById_idx", "confirmedById"),
     )
-    id: Mapped[UUID] = mapped_column(UUIDType(as_uuid=True), primary_key=True, nullable=False)
+    id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True), primary_key=True, nullable=False, default=new_uuid
+    )
     messageId: Mapped[UUID] = mapped_column(
         UUIDType(as_uuid=True),
         ForeignKey("mail_messages.id", ondelete="CASCADE", onupdate="CASCADE"),
@@ -349,7 +367,9 @@ class MailRiskCandidate(Base):
         Index("mail_risk_candidates_reviewedById_idx", "reviewedById"),
         Index("mail_risk_candidates_confirmedRiskId_key", "confirmedRiskId", unique=True),
     )
-    id: Mapped[UUID] = mapped_column(UUIDType(as_uuid=True), primary_key=True, nullable=False)
+    id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True), primary_key=True, nullable=False, default=new_uuid
+    )
     messageId: Mapped[UUID] = mapped_column(
         UUIDType(as_uuid=True),
         ForeignKey("mail_messages.id", ondelete="CASCADE", onupdate="CASCADE"),
@@ -396,5 +416,8 @@ class MailRiskCandidate(Base):
         server_default=text("CURRENT_TIMESTAMP"),
     )
     updatedAt: Mapped[datetime] = mapped_column(
-        TIMESTAMP(timezone=True, precision=3), nullable=False
+        TIMESTAMP(timezone=True, precision=3),
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
     )
