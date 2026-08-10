@@ -1,0 +1,19 @@
+# T036 — Implement encrypted backup and restore runbook
+- **Task ID:** T036
+- **Title:** Implement encrypted backup and restore runbook
+- **Status:** BLOCKED_DESIGN_GAP (DG-04, DG-08) / TODO
+- **Objective:** Back up/rotate/restore PostgreSQL, file storage and configuration associations within approved RPO/RTO policy.
+- **Design baseline:** Design §9.
+- **Authoritative source references:** ADRs 0009/0014; approved DG-04/DG-08 addenda; T035 volumes and T031 lifecycle.
+- **Relevant ADR IDs:** 0003, 0007, 0008, 0009, 0012, 0014.
+- **Dependencies:** T031, T035 and approved DG-04/DG-08 addenda.
+- **Scope:** Parameterized encrypted backup/verification/rotation scripts, restore into isolated target, audit-chain/file association checks and drill runbook.
+- **Explicit out-of-scope:** Choosing production destination/key/window; WAL HA.
+- **Expected read set:** Infra/storage schema and approved external-material inputs.
+- **Expected write set:** `project-risk-system/infra/backup/**` and dedicated backup tests/runbook only; do not edit Compose/proxy/env-example files owned by T035.
+- **Contracts/invariants:** 7 daily/4 weekly/12 monthly; no plaintext backup/key; restore does not overwrite live system by default.
+- **Acceptance criteria:** Local isolated drill restores DB/files/config and valid audit chain; measured RTO recorded.
+- **Validation:** Script tests and full isolated restore drill.
+- **Required deliverables:** Scripts, manifests, verification/report template/runbook.
+- **Stop conditions:** DG-04/DG-08 unresolved, required external key/destination unavailable for the drill, or target resolves to a live/broad path.
+- **Known integration risks:** Consistency between DB snapshot and files.

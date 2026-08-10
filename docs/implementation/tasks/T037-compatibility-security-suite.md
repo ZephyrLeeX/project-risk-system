@@ -1,0 +1,19 @@
+# T037 — Run full compatibility and security acceptance suite
+- **Task ID:** T037
+- **Title:** Run full compatibility and security acceptance suite
+- **Status:** BLOCKED_DESIGN_GAP (inherits DG-01-DG-04 and DG-06-DG-10) / TODO
+- **Objective:** Prove complete Python API compatibility, authorization, transaction, audit, secret and async reliability across modules.
+- **Design baseline:** Design §11 and all global constraints.
+- **Authoritative source references:** OpenAPI T032; legacy contracts/tests; every completed task acceptance suite.
+- **Relevant ADR IDs:** 0001-0016.
+- **Dependencies:** T033, T034, T036; all inherited gaps resolved.
+- **Scope:** Cross-module contract diff, four-role/five-scope matrix, CSRF/Cookie/SSRF/file/model tests, audit chain, idempotency/restart/rollback tests.
+- **Explicit out-of-scope:** Capacity thresholds and real external acceptance.
+- **Expected read set:** Whole target backend/test/infra and legacy reference.
+- **Expected write set:** Dedicated release acceptance tests/evidence (for example `apps/api-python/tests/acceptance/**` and `artifacts/acceptance/**`) only; fixes require owning-task follow-up and no feature-module test/source edits are allowed.
+- **Contracts/invariants:** No bypass or mock proof; NestJS remains reference only.
+- **Acceptance criteria:** All gates and matrices PASS with zero unresolved critical/high finding.
+- **Validation:** uv gates, pnpm gates, PostgreSQL/Redis/Celery integration, image build.
+- **Required deliverables:** Automated suite and traceable report.
+- **Stop conditions:** Any inherited gap unresolved or finding needs architecture change.
+- **Known integration risks:** Flaky timing/external isolation.

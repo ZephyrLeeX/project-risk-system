@@ -1,0 +1,19 @@
+# T017 — Migrate Excel upload and preview worker
+- **Task ID:** T017
+- **Title:** Migrate Excel upload and preview worker
+- **Status:** BLOCKED_DESIGN_GAP (DG-02) / TODO
+- **Objective:** Upload safely and perform durable asynchronous parsing/validation for all approved workbook sheets.
+- **Design baseline:** Design §§3,6,8.
+- **Authoritative source references:** `project-risk-system/apps/api/src/imports/**`; `project-risk-system/docs/第二阶段第1步_项目清单Excel导入.md`; `project-risk-system/apps/web/src/api/imports.ts`; `project-risk-system/apps/web/src/views/admin/ProjectImportView.vue`; `project-risk-system/packages/contracts/src/index.ts`; approved DG-02 addendum.
+- **Relevant ADR IDs:** 0006, 0008, 0011, 0012, 0014, 0015.
+- **Dependencies:** T003, T006, T008, T010.
+- **Scope:** File validation/storage/hash, durable preview task, three-sheet parsing, row results/status/failure cleanup.
+- **Explicit out-of-scope:** Confirm, download, rollback, expiry deletion.
+- **Expected read set:** Named import code, tests and workbook rule document.
+- **Expected write set:** Python imports upload/parser/task modules/tests.
+- **Contracts/invariants:** 20MB/current types; file/output untrusted; failure never changes formal project version; idempotent preview.
+- **Acceptance criteria:** Golden workbooks and malformed/timeout/duplicate/restart tests pass.
+- **Validation:** PostgreSQL+Celery integration and parser tests.
+- **Required deliverables:** Endpoint/task/parser/storage adapter/tests.
+- **Stop conditions:** DG-02 unresolved or workbook semantics conflict.
+- **Known integration risks:** Parser resource exhaustion and fixture licensing/data sensitivity.

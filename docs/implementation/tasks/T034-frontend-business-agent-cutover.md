@@ -1,0 +1,19 @@
+# T034 — Cut dashboard, weekly reports and Agent to Python APIs
+- **Task ID:** T034
+- **Title:** Cut dashboard, weekly reports and Agent to Python APIs
+- **Status:** BLOCKED_DESIGN_GAP (DG-01, DG-03, DG-06, DG-07) / TODO
+- **Objective:** Replace local Agent/static weekly behavior and connect all business/mail pages to generated APIs with resilient states.
+- **Design baseline:** Design §§6,10(9),11.
+- **Authoritative source references:** Dashboard/Mailbox/MailSync views/APIs; generated T032 types; T027/T029/T030 contracts.
+- **Relevant ADR IDs:** 0004, 0007, 0011, 0013, 0016.
+- **Dependencies:** T027, T030, T032 and approved DG-01/DG-03/DG-06/DG-07 addenda.
+- **Scope:** Weekly summary/detail UI, SSE Agent, previews/REST confirm, reconnect/error/retry; existing dashboard/mail cutover verification.
+- **Explicit out-of-scope:** Visual redesign, browser-side business rules, backend edits.
+- **Expected read set:** Named frontend code/prototype and generated spec.
+- **Expected write set:** Business frontend API/views/components/tests.
+- **Contracts/invariants:** No local fabricated answers; no write on stream; permissions/current scope and confirmation feedback visible.
+- **Acceptance criteria:** Query/preview/confirm/replay rejection/disconnect/provider-failure/weekly boundary E2E pass.
+- **Validation:** pnpm typecheck/test/build and browser E2E against Python.
+- **Required deliverables:** Clients/UI state/tests; removed target mocks.
+- **Stop conditions:** Gaps unresolved.
+- **Known integration risks:** SSE proxy/browser cleanup and duplicate confirms.

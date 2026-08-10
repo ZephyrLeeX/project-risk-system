@@ -1,0 +1,19 @@
+# T031 — Implement auditable retention cleanup
+- **Task ID:** T031
+- **Title:** Implement auditable retention cleanup
+- **Status:** BLOCKED_DESIGN_GAP (DG-04; inherits DG-01/DG-03/DG-06/DG-07/DG-09/DG-10) / TODO
+- **Objective:** Safely expire import sources, Agent conversation content and temporary artifacts while preserving protected/business/audit facts.
+- **Design baseline:** Design §§6-8; retention defaults.
+- **Authoritative source references:** ADRs 0007/0012 and approved DG-04/DG-10 addenda; T042 protection policy; T004 capability schema; T024/T025 transient-storage interface; T041 task schema.
+- **Relevant ADR IDs:** 0006, 0007, 0008, 0012.
+- **Dependencies:** T004, T006, T008, T013, T019, T024, T025, T042 and approved DG-04/DG-10 addenda.
+- **Scope:** Scheduled/retryable cleanup, dry-run/report, holds/rollback guards, tombstone/status and audit, orphan temp cleanup.
+- **Explicit out-of-scope:** Backup rotation (T036) and deleting business/audit rows.
+- **Expected read set:** Addendum, storage/task/protection interfaces.
+- **Expected write set:** Python retention tasks/services/tests.
+- **Contracts/invariants:** Defaults 1 year/90 days; protected items survive; failure retryable; no broad filesystem target.
+- **Acceptance criteria:** Boundary/protection/idempotency/partial-failure/audit tests pass.
+- **Validation:** Fixed-clock PostgreSQL+filesystem+Celery tests.
+- **Required deliverables:** Cleanup tasks/policies/report/tests.
+- **Stop conditions:** DG-04 unresolved or storage target cannot be safely resolved.
+- **Known integration risks:** DB/file split-brain and backup lifecycle mismatch.

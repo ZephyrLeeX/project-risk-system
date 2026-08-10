@@ -1,0 +1,19 @@
+# T030 — Execute Agent confirmed writes
+- **Task ID:** T030
+- **Title:** Execute Agent confirmed writes
+- **Status:** BLOCKED_DESIGN_GAP (DG-01, DG-03, DG-07) / TODO
+- **Objective:** Confirm report/process/resolve previews through single-use tokens and existing domain transactions.
+- **Design baseline:** Design §6 Agent.
+- **Authoritative source references:** approved DG-01/DG-03/DG-07 addenda; T021/T022 domain services; T029 preview token.
+- **Relevant ADR IDs:** 0004, 0008, 0013, 0015, 0016.
+- **Dependencies:** T004, T006, T010, T021, T022, T029 and approved DG-01/DG-03/DG-07 addenda.
+- **Scope:** REST confirm operations, canonical content binding, expiry/one-use/replay handling, idempotency and audit.
+- **Explicit out-of-scope:** Writes from SSE, bypass domain rules, new risk states.
+- **Expected read set:** Addenda and domain contracts.
+- **Expected write set:** Python agent confirmation module/routes/tests.
+- **Contracts/invariants:** Token binds user+conversation+content; one transaction; current permission/scope rechecked; retries do not duplicate.
+- **Acceptance criteria:** Success/expired/wrong-user/tampered/replay/concurrent/rollback tests pass.
+- **Validation:** PostgreSQL API concurrency tests.
+- **Required deliverables:** Confirm route/service/token repository/tests.
+- **Stop conditions:** Any named gap is unresolved or the approved operation cannot be expressed through the existing domain services.
+- **Known integration risks:** Replay races and transaction lock ordering.

@@ -1,0 +1,19 @@
+# T002 — Build HTTP, configuration and tracing core
+- **Task ID:** T002
+- **Title:** Build HTTP, configuration and tracing core
+- **Status:** READY / TODO
+- **Objective:** Provide the FastAPI factory, validated configuration, `/api` routing, response/error envelope, trace IDs and baseline request security.
+- **Design baseline:** Global constraints; design §§4,5,7,10(1).
+- **Authoritative source references:** Design; `apps/api/src/main.ts`, `config/**`, `apps/web/src/api/http.ts`, contracts `ApiResponse`/`HealthResponse`.
+- **Relevant ADR IDs:** 0001, 0010, 0011, 0014.
+- **Dependencies:** T001.
+- **Scope:** App lifecycle, settings, exception mapping, trace middleware, CORS/proxy trust, Cookie/security defaults, liveness endpoint, and a documented router/dependency/lifespan composition contract used by isolated module tests and T040.
+- **Explicit out-of-scope:** DB readiness, auth business logic, dynamic dependency health.
+- **Expected read set:** Named legacy/config/frontend files and ADRs.
+- **Expected write set:** `apps/api-python/src/**/{main,app,config,http,errors,tracing,security}*`, the shared composition contract, and focused tests. T002 is the sole pre-T040 owner of shared app bootstrap files.
+- **Contracts/invariants:** `/api`; `{code,message,data,traceId}`; no secret values in errors/logs; unknown-input behavior stays compatible.
+- **Acceptance criteria:** Success and validation/auth-neutral errors have stable envelope/trace; proxy/CORS/security tests pass; a feature router can be mounted with dependency overrides without editing the shared bootstrap.
+- **Validation:** Ruff, mypy, pytest HTTP contract tests; generated OpenAPI smoke check.
+- **Required deliverables:** App factory, settings model, middleware/handlers, tests.
+- **Stop conditions:** A legacy error conflict cannot be resolved by source precedence.
+- **Known integration risks:** T009 Cookie/auth integration; T032 OpenAPI component reuse.

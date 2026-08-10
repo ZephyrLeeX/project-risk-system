@@ -1,0 +1,19 @@
+# T026 — Extract, review and publish mail risk candidates
+- **Task ID:** T026
+- **Title:** Extract, review and publish mail risk candidates
+- **Status:** BLOCKED_DESIGN_GAP (inherits DG-02/DG-10) / TODO
+- **Objective:** Generate validated candidates through the healthy Provider and implement adjust/ignore/confirm publication.
+- **Design baseline:** Design §§6-8.
+- **Authoritative source references:** `project-risk-system/apps/api/src/mailbox/**`, `project-risk-system/packages/contracts/src/index.ts`, T021/T022 rules and approved DG-02/DG-10 addenda.
+- **Relevant ADR IDs:** 0005, 0006, 0007, 0008, 0013, 0014, 0015.
+- **Dependencies:** T006, T007, T008, T014, T022, T025 and approved DG-02/DG-10 addenda.
+- **Scope:** AI extraction task, schema validation/call log, review APIs, candidate publication through T022/T021 domain services, and retry.
+- **Explicit out-of-scope:** Weekly aggregation and Agent.
+- **Expected read set:** Named mail/provider/risk sources.
+- **Expected write set:** Python mailbox candidate/extraction/publication modules/tests.
+- **Contracts/invariants:** No simulated result; model output untrusted; evidence minimal; confirmation is one transaction and idempotent; mailbox code does not duplicate risk/todo/timeline mutation rules.
+- **Acceptance criteria:** Success/unavailable/timeout/invalid-output/duplicate-confirm/rollback/scope tests pass.
+- **Validation:** PostgreSQL+Celery+fake Provider API tests.
+- **Required deliverables:** Task/client/review routes/domain transaction/tests.
+- **Stop conditions:** Candidate publication requires an unapproved lifecycle state.
+- **Known integration risks:** Provider retries duplicating call/candidate facts.

@@ -1,0 +1,19 @@
+# T038 — Validate capacity and resilience baseline
+- **Task ID:** T038
+- **Title:** Validate capacity and resilience baseline
+- **Status:** BLOCKED_DESIGN_GAP (DG-05) / TODO
+- **Objective:** Measure and pass approved API/task performance and recovery thresholds at baseline scale.
+- **Design baseline:** Design §§8,9,11.
+- **Authoritative source references:** ADR 0009; approved DG-05 thresholds; T037 release candidate.
+- **Relevant ADR IDs:** 0003, 0006, 0009.
+- **Dependencies:** T037 and DG-05.
+- **Scope:** Reproducible 300-user/5,000-project/1,000-weekly-mail dataset, query/task load, duplicate/outage/restart tests, explain/index evidence.
+- **Explicit out-of-scope:** HA/multi-node and unapproved tuning architecture.
+- **Expected read set:** All target query/task implementations and addendum.
+- **Expected write set:** Dedicated load fixtures/scripts/results (for example `apps/api-python/tests/load/**` and `artifacts/load/**`) only; any required code or index change is a FAIL finding returned to the owning task and is not implemented here.
+- **Contracts/invariants:** Correctness/scope/audit under load; failure never advances facts incorrectly.
+- **Acceptance criteria:** Every approved numeric threshold passes repeatably and recovery assertions hold.
+- **Validation:** Documented load/recovery commands in production-like Compose.
+- **Required deliverables:** Generator, scenarios, raw summary, PASS/FAIL report.
+- **Stop conditions:** DG-05 unresolved or production-like resources unavailable.
+- **Known integration risks:** Environment noise and unrealistic AI/IMAP substitutes.

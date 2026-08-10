@@ -1,0 +1,19 @@
+# T022 — Migrate risk lifecycle and timeline
+- **Task ID:** T022
+- **Title:** Migrate risk lifecycle and timeline
+- **Status:** READY / TODO
+- **Objective:** Implement the reusable risk mutation/lifecycle service plus scoped resolved-risk and timeline queries with atomic related updates.
+- **Design baseline:** Design §§5,6; `CONTEXT.md` risk terms.
+- **Authoritative source references:** legacy dashboard risk-lifecycle, `risk-timeline/**`, todo hooks, contracts/frontend.
+- **Relevant ADR IDs:** 0004, 0008, 0011, 0015.
+- **Dependencies:** T003, T006, T010, T021.
+- **Scope:** Reusable validated risk creation for approved import/mail callers, resolve/reopen/list/detail/timeline routes, and risk-todo-timeline-audit transactions.
+- **Explicit out-of-scope:** Public manual/Agent reporting contract, arbitrary risk states and mail candidate review/publication orchestration.
+- **Expected read set:** Named lifecycle/timeline tests/schema.
+- **Expected write set:** Python risks/timeline modules/tests.
+- **Contracts/invariants:** Only ACTIVE↔RESOLVED; resolution reason rules; related todo state and events remain coherent.
+- **Acceptance criteria:** Transition/idempotency/concurrency/rollback/scope contract tests pass.
+- **Validation:** PostgreSQL API transaction tests.
+- **Required deliverables:** Routes/domain service/query services/tests.
+- **Stop conditions:** Any caller requires a third formal risk state.
+- **Known integration risks:** Lock ordering with todo and audit inserts.

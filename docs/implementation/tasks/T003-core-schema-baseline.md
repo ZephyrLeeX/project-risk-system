@@ -1,0 +1,19 @@
+# T003 — Establish core ORM and Alembic baseline
+- **Task ID:** T003
+- **Title:** Establish core ORM and Alembic baseline
+- **Status:** READY / TODO
+- **Objective:** Model and migrate the approved mature PostgreSQL schema equivalently in SQLAlchemy/Alembic.
+- **Design baseline:** Design §§5,10(2); schema compatibility in baseline/global constraints.
+- **Authoritative source references:** `apps/api/prisma/schema.prisma`; all 13 Prisma migration SQL files; Seed only as reference.
+- **Relevant ADR IDs:** 0002, 0010, 0015.
+- **Dependencies:** T002.
+- **Scope:** Core tables/enums/models/constraints/indexes/relations through current mailbox/candidate schema; Alembic environment and baseline revision; async SQLAlchemy engine/session lifecycle, transaction dependency and PostgreSQL test fixtures.
+- **Explicit out-of-scope:** Audit trigger/functions/hash enforcement owned by T006; new Agent/weekly/task tables; Seed data; domain repository/service logic.
+- **Expected read set:** Entire Prisma schema and migrations.
+- **Expected write set:** Python DB/model metadata, session/transaction infrastructure, PostgreSQL fixtures and Alembic baseline files only. T003 owns the shared DB metadata/session fixtures.
+- **Contracts/invariants:** PostgreSQL UUID/timestamptz/decimal/json semantics and deletion/uniqueness match current schema; UTC; tests use isolated ephemeral database/schema namespaces and never mutate the shared development database.
+- **Acceptance criteria:** Empty DB upgrade creates table/column/enum/constraint/index equivalence to the final Prisma schema while explicitly reporting T006-owned trigger/function differences; request/worker session rollback and disposal tests pass; downgrade policy is documented; no runtime `create_all`.
+- **Validation:** Alembic upgrade/check on PostgreSQL; schema equivalence test; Ruff/mypy/pytest.
+- **Required deliverables:** Metadata, Alembic config/revision, equivalence report/test.
+- **Stop conditions:** A destructive or non-equivalent core change appears necessary.
+- **Known integration risks:** All later migrations depend on one Alembic head; serialize merges.

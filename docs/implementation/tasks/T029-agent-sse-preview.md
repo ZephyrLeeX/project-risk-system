@@ -1,0 +1,19 @@
+# T029 — Stream Agent answers and mutation previews
+- **Task ID:** T029
+- **Title:** Stream Agent answers and mutation previews
+- **Status:** BLOCKED_DESIGN_GAP (DG-01, DG-03, DG-06, DG-07) / TODO
+- **Objective:** Implement approved SSE text/progress/error/preview events without performing business mutations.
+- **Design baseline:** Design §6; ADR 0016.
+- **Authoritative source references:** approved DG-01/DG-03/DG-06/DG-07 addenda; T008 worker boundary; T028 tools; `project-risk-system/apps/web/src/views/DashboardView.vue`.
+- **Relevant ADR IDs:** 0005, 0006, 0011, 0013, 0014, 0016.
+- **Dependencies:** T004, T007, T008, T010, T014, T028 and approved DG-01/DG-03/DG-06/DG-07 addenda.
+- **Scope:** Provider orchestration through the execution boundary approved by DG-06, intent/arguments validation, stable SSE framing/IDs, disconnect/timeout/resume behavior, structured preview/token issue boundary.
+- **Explicit out-of-scope:** Confirmed writes and frontend.
+- **Expected read set:** Addenda, Provider/Agent interfaces.
+- **Expected write set:** Python agent streaming/orchestration modules/OpenAPI/tests.
+- **Contracts/invariants:** Stream never mutates risk/todo/timeline; events identify conversation/message/trace; explicit failure, no mock answer.
+- **Acceptance criteria:** Approved event sequences, disconnect/reconnect, timeout, malformed-model and no-write assertions pass.
+- **Validation:** ASGI streaming integration tests plus the DG-06-approved worker/direct-provider boundary using a fake Provider.
+- **Required deliverables:** SSE route/orchestrator/event schemas/tests.
+- **Stop conditions:** Any named gap is unresolved.
+- **Known integration risks:** Proxy buffering and cancellation cleanup.

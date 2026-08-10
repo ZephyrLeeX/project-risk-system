@@ -1,0 +1,19 @@
+# T019 — Migrate import rollback
+- **Task ID:** T019
+- **Title:** Migrate import rollback
+- **Status:** READY / TODO
+- **Objective:** Restore a committed import batch safely without corrupting later business state.
+- **Design baseline:** Design §6; ADR 0012 protection rule.
+- **Authoritative source references:** `project-risk-system/apps/api/src/imports/project-import.service.ts`, its tests/Prisma models, and `project-risk-system/docs/第二阶段第1步_项目清单Excel导入.md`.
+- **Relevant ADR IDs:** 0008, 0012, 0015.
+- **Dependencies:** T018.
+- **Scope:** Transactional rollback of project/risk/todo/timeline snapshots and later-write conflict detection.
+- **Explicit out-of-scope:** Retention window/hold policy (T042), scheduled deletion (T031), backup deletion.
+- **Expected read set:** Named import service/tests/schema and T021/T022 domain interfaces.
+- **Expected write set:** Python import rollback module/tests.
+- **Contracts/invariants:** Later overwrite blocks unsafe rollback; audit/business history remains coherent; rollback never deletes the source file.
+- **Acceptance criteria:** Create/update/risk/todo/timeline rollback and conflict tests pass.
+- **Validation:** PostgreSQL transaction/invariant tests.
+- **Required deliverables:** Rollback route/service, protection interface, tests.
+- **Stop conditions:** Existing sources conflict on rollback semantics or rollback needs a destructive/unapproved schema change.
+- **Known integration risks:** Cross-batch ordering and cascade deletion.

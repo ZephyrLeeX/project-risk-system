@@ -1,0 +1,19 @@
+# T021 — Migrate manager todo lifecycle
+- **Task ID:** T021
+- **Title:** Migrate manager todo lifecycle
+- **Status:** READY / TODO
+- **Objective:** Implement scoped todo list/detail/update and approved risk-to-todo rules.
+- **Design baseline:** Design §§3,5,6.
+- **Authoritative source references:** legacy `todos/**`, import risk-to-todo behavior, contracts/frontend dashboard.
+- **Relevant ADR IDs:** 0004, 0008, 0011, 0015.
+- **Dependencies:** T003, T006, T010.
+- **Scope:** Existing todo endpoints, summaries/schedule, assignee/status/due/note updates, the reusable one-auto-todo-per-risk mutation service, and audit/timeline service hooks.
+- **Explicit out-of-scope:** Standalone task center; risk resolve/reopen endpoints.
+- **Expected read set:** Named todo/timeline/schema sources.
+- **Expected write set:** Python todos module/tests.
+- **Contracts/invariants:** One auto todo per risk; todo progress does not alter risk state; scope and permissions enforced.
+- **Acceptance criteria:** Contract, state-transition, transaction, audit and unauthorized tests pass.
+- **Validation:** PostgreSQL API integration tests.
+- **Required deliverables:** Routes/services/schemas/tests.
+- **Stop conditions:** Requested todo stage would become a new risk state.
+- **Known integration risks:** Concurrent updates and timeline event duplication.

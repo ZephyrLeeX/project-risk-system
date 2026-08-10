@@ -1,0 +1,19 @@
+# T040 — Compose the backend application and dependency graph
+- **Task ID:** T040
+- **Title:** Compose the backend application and dependency graph
+- **Status:** BLOCKED_DESIGN_GAP (inherits DG-01/DG-02/DG-03/DG-04/DG-06/DG-07/DG-09/DG-10) / TODO
+- **Objective:** Wire all completed Python routers, services, repositories, worker tasks and lifecycle resources into the shared FastAPI/Celery application without changing module contracts.
+- **Design baseline:** `../BASELINE.md`, `../GLOBAL_CONSTRAINTS.md`; design §§4,10.
+- **Authoritative source references:** T002 composition contract; T003 session contract; T008 worker registry; completed T009-T031 module entry points.
+- **Relevant ADR IDs:** 0001, 0002, 0006, 0010, 0011.
+- **Dependencies:** T008, T009, T010, T011, T012, T013, T014, T015, T016, T017, T018, T019, T020, T021, T022, T023, T024, T025, T026, T027, T028, T029, T030, T031.
+- **Scope:** Shared app/router/lifespan composition, dependency-provider bindings, worker task discovery, startup/shutdown ordering and full-app smoke tests.
+- **Explicit out-of-scope:** New endpoints, schemas, business logic, migrations, frontend, production Compose.
+- **Expected read set:** Named foundation contracts and every completed module entry point.
+- **Expected write set:** Shared FastAPI/Celery bootstrap/composition files and composition tests only. T040 is their sole post-T002 owner.
+- **Contracts/invariants:** No circular module imports; request and worker transactions use the same domain services; app startup does not create/alter tables; missing provider fails startup/readiness explicitly.
+- **Acceptance criteria:** Full app starts with all routers exactly once; DI resolution and shutdown pass; every route appears once in OpenAPI; all worker tasks are discoverable; liveness/readiness and representative auth/background-task smoke tests pass.
+- **Validation:** Ruff, mypy, full pytest; route uniqueness/OpenAPI smoke; PostgreSQL+Redis+Celery startup/shutdown integration.
+- **Required deliverables:** Composition root, provider bindings, task registry integration and smoke tests.
+- **Stop conditions:** A module lacks its declared entry point, requires cross-module table access, or unresolved gaps prevent complete composition.
+- **Known integration risks:** Circular imports, duplicate routes, session lifetime mismatch and task discovery drift.

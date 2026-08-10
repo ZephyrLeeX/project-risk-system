@@ -1,0 +1,19 @@
+# T008 — Build durable Celery reliability core
+- **Task ID:** T008
+- **Title:** Build durable Celery reliability core
+- **Status:** BLOCKED_DESIGN_GAP (DG-02) / TODO
+- **Objective:** Implement Celery/Redis dispatch backed by PostgreSQL task facts, retry policy, leases and restart reconciliation.
+- **Design baseline:** Design §§4,8; global task constraints.
+- **Authoritative source references:** `docs/fastapi-backend-design.md`, ADR 0006 and approved DG-02 addendum; T041 schema.
+- **Relevant ADR IDs:** 0003, 0006, 0009, 0010.
+- **Dependencies:** T002, T003, T041.
+- **Scope:** Celery app, task registry/base class, dispatch-after-commit, idempotency, timeout/backoff, reconciliation and worker health signal.
+- **Explicit out-of-scope:** Excel/mail/AI domain task bodies.
+- **Expected read set:** T003 session contract, T041 task schema and current `infra/docker-compose.yml`.
+- **Expected write set:** Worker/shared task modules, Celery/Redis configuration, an API-Python-local integration harness and reliability tests; no production `infra/**` writes.
+- **Contracts/invariants:** Redis is never fact source; duplicate delivery safe; DB state explains failure; bounded concurrency/retries.
+- **Acceptance criteria:** Broker outage, duplicate message, crash/lease expiry and restart reconciliation tests pass.
+- **Validation:** PostgreSQL+Redis+Celery integration tests; Ruff/mypy/pytest.
+- **Required deliverables:** Worker app, durable dispatcher/reconciler, task test harness.
+- **Stop conditions:** DG-02 unresolved.
+- **Known integration risks:** Transaction/outbox race and eager-mode tests masking real broker behavior.

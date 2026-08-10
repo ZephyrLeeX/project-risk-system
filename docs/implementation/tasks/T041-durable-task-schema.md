@@ -1,0 +1,19 @@
+# T041 — Add durable background-task schema
+- **Task ID:** T041
+- **Title:** Add durable background-task schema
+- **Status:** BLOCKED_DESIGN_GAP (DG-02) / TODO
+- **Objective:** Add the single approved PostgreSQL persistence contract for recoverable Celery work.
+- **Design baseline:** `../BASELINE.md`, `../GLOBAL_CONSTRAINTS.md`; design §§5,8.
+- **Authoritative source references:** `docs/fastapi-backend-design.md`, ADR 0006, approved DG-02 addendum and T003/T006 migration head.
+- **Relevant ADR IDs:** 0002, 0006, 0008, 0010, 0015.
+- **Dependencies:** T006 and approved DG-02 addendum.
+- **Scope:** Durable task/outbox models, domain-batch reference rules, status/idempotency/lease/heartbeat constraints, indexes and one Alembic revision.
+- **Explicit out-of-scope:** Celery execution, domain task bodies, Agent/weekly/conversation tables.
+- **Expected read set:** T003 metadata/session contract, T006 current Alembic head, design and DG-02 addendum.
+- **Expected write set:** Durable-task model module, exactly one Alembic revision and schema tests.
+- **Contracts/invariants:** PostgreSQL is fact source; DB uniqueness enforces the approved idempotency key; task ownership/reference direction is explicit; core tables remain compatible.
+- **Acceptance criteria:** Empty/latest upgrade has one head; inspected schema exactly matches DG-02; invalid transitions/references and duplicate idempotency keys fail at the approved boundary.
+- **Validation:** PostgreSQL migration/model/constraint tests; Alembic heads/check; Ruff/mypy/pytest.
+- **Required deliverables:** Models, migration, state-transition note and schema tests.
+- **Stop conditions:** DG-02 is unresolved or does not uniquely specify task ownership/reference constraints.
+- **Known integration risks:** Migration ordering and domain-batch foreign-key direction.
