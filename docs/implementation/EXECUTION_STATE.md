@@ -112,4 +112,5 @@ Integration blockers:
 - T024 implementation and Independent Review: `REVIEW_PASSED`; see `docs/implementation/reports/T024.md` and `docs/implementation/reports/WAVE-09-PARTIAL.md`.
 - T024 checkpoint: `597a43b830e2e639d17b775c069a8fbfb896efd4`.
 - T019 implementation, Independent Review and validation are complete; checkpoint is recorded in `docs/implementation/reports/T019.md`.
+- T019 checkpoint: `4ddf34e`.
 - Wave 9 final Integration checkpoint: created after recording the PASS result and test baseline maintenance in `docs/implementation/reports/WAVE-09.md` and this state file.
