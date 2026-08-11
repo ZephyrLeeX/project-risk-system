@@ -30,7 +30,7 @@ Completed tasks:
 
 Current:
 - Wave 6: PASS (T004/T008/T010 remain REVIEW_PASSED; PostgreSQL integration validation passed)
-- Wave 7: IN_PROGRESS (T011/T012/T013/T014/T015/T017/T021 REVIEW_PASSED; Wave 7 Integration not started)
+- Wave 7: FAIL (T011/T012/T013/T014/T015/T017/T021 REVIEW_PASSED; Integration executed and blocked by PostgreSQL audit migration/search_path failure and existing T013 full Ruff/mypy findings)
 - T004: REVIEW_PASSED
 - T008: REVIEW_PASSED
 - T010: REVIEW_PASSED
@@ -78,7 +78,9 @@ Important invariants:
 - Human-facing reports Chinese.
 
 Integration blockers:
-- Existing T013 full-suite failure remains pending for Wave 7 Integration; do not fix in unrelated Tasks.
+- T013 regression test fixture was minimally corrected and passes independently; no production code change.
+- Wave 7 Integration failed because T006 audit migration `20260810_0002` cannot resolve pgcrypto `digest` when isolated PostgreSQL test schemas exclude `public` from `search_path`.
+- Full Ruff/mypy still report existing T013 `system_config` findings; not silently treated as PASS.
 - Current Wave: Wave 7 is IN_PROGRESS; T011, T012, T013, T014, T015 and T017 have been completed in this execution unit sequence.
 - T017 implementation, Independent Review, validation and checkpoint commit are complete. T021 remains READY and was not started.
-- T021 implementation, Independent Review and validation are complete. The known T013 full-suite regression remains a Wave 7 Integration item; Wave 7 Integration and the next Wave were not started.
+- T021 implementation, Independent Review and validation are complete. Wave 7 Integration was executed and failed; next Wave remains blocked and was not started. See `docs/implementation/reports/WAVE-07.md`.

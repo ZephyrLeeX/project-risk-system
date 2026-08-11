@@ -22,9 +22,9 @@ def _payload(**changes: object) -> dict[str, object]:
             }
         ],
         "levels": [
-            {"level": "HIGH", "displayName": "高", "colorToken": "#ff0000", "criteria": "影响交付", "keywords": ["延期"], "sortOrder": 0, "isActive": True},
-            {"level": "MEDIUM", "displayName": "中", "colorToken": "#ffaa00", "criteria": "需要关注", "keywords": ["关注"], "sortOrder": 1, "isActive": True},
-            {"level": "LOW", "displayName": "低", "colorToken": "#00aa00", "criteria": "一般事项", "keywords": ["一般"], "sortOrder": 2, "isActive": True},
+            {"level": "HIGH", "displayName": "高风险", "colorToken": "#ff0000", "criteria": "影响交付", "keywords": ["延期"], "sortOrder": 0, "isActive": True},
+            {"level": "MEDIUM", "displayName": "中风险", "colorToken": "#ffaa00", "criteria": "需要关注", "keywords": ["关注"], "sortOrder": 1, "isActive": True},
+            {"level": "LOW", "displayName": "低风险", "colorToken": "#00aa00", "criteria": "一般事项", "keywords": ["一般"], "sortOrder": 2, "isActive": True},
         ],
         "aliases": [],
         "mail": {"syncIntervalMinutes": 30, "initialSyncDays": 90, "subjectKeywords": ["周报"], "riskKeywords": ["风险"]},

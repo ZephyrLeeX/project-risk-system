@@ -2,7 +2,7 @@
 
 - **Wave:** 7
 - **Executed units:** T011, T012, T013, T014, T015, T017, T021
-- **Result:** IN_PROGRESS
+- **Result:** IN_PROGRESS；Wave 7 Integration：`FAIL`
 
 ## T011
 
@@ -29,9 +29,9 @@
 - T017 已完成实现与 Independent Review：`REVIEW_PASSED`。Ruff、mypy、`uv lock --check`、focused pytest（`3 passed`）通过；full pytest 为 `107 passed, 33 skipped, 1 failed`，唯一 failure 是已知 T013 regression，保留为 Wave 7 Integration 待处理项。T017 无独立 PostgreSQL-specific test，记为 `N/A`；其他 PostgreSQL tests 因未配置 `TEST_DATABASE_URL` skipped，未使用 SQLite。
 - T021 已完成实现与 Independent Review：`REVIEW_PASSED`。新增 scoped todo list/detail/update、summary/schedule、事务性 timeline/audit hooks 和 one-auto-todo-per-risk service。T021 Ruff、mypy、lock check 与 focused pytest（`3 passed`）通过；full pytest 为 `110 passed, 33 skipped, 1 failed`，唯一 failure 是已知 T013 regression，继续保留为 Wave 7 Integration 待处理项。T021 PostgreSQL API validation 因 `TEST_DATABASE_URL` 未配置而 skipped，未使用 SQLite。
 - T017 checkpoint commit：`7c4b2e60f1b54ad11c18caeae6a65a440026e9db`；详见 `reports/T017.md`。
-- T021 已完成；Wave 7 尚未完成，未进行 Wave integration。
+- T021 已完成。Wave 7 Integration 已执行但 `FAIL`；详见 `reports/WAVE-07.md`。下一 Wave 未启动。
 
 ## Readiness
 
 - T017：`REVIEW_PASSED`；T021：`REVIEW_PASSED`。
-- Wave 7 尚未完成，未进行 Wave integration。
+- Wave 7 Integration：`FAIL`；下一 Wave readiness：`BLOCKED`。阻塞项为 T006 audit migration 在隔离 schema `search_path` 下无法解析 pgcrypto `digest`，以及既有 T013 full Ruff/mypy findings；详见 `reports/WAVE-07.md`。
