@@ -1,1 +1,1 @@
-"""Role and project-scope authorization module boundary."""
+"""Role, permission and project-scope authorization module boundary."""
