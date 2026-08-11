@@ -1,7 +1,7 @@
 # T016 — Implement dynamic management overview
 - **Task ID:** T016
 - **Title:** Implement dynamic management overview
-- **Status:** TODO
+- **Status:** READY
 - **Objective:** Replace fixed admin health, attention and audit activity with one approved dynamic backend contract.
 - **Design baseline:** Design §§3,9,10(4).
 - **Authoritative source references:** ADR 0019; `project-risk-system/apps/web/src/views/admin/AdminDashboardView.vue`; existing admin/import/provider/audit API modules.

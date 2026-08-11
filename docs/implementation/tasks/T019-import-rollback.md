@@ -1,7 +1,7 @@
 # T019 — Migrate import rollback
 - **Task ID:** T019
 - **Title:** Migrate import rollback
-- **Status:** READY / TODO
+- **Status:** REVIEW_PASSED
 - **Objective:** Restore a committed import batch safely without corrupting later business state.
 - **Design baseline:** Design §6; ADR 0012 protection rule.
 - **Authoritative source references:** `project-risk-system/apps/api/src/imports/project-import.service.ts`, its tests/Prisma models, and `project-risk-system/docs/第二阶段第1步_项目清单Excel导入.md`.

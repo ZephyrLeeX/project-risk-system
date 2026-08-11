@@ -7,9 +7,10 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from risk_platform.imports.commit_service import _snapshot
+from risk_platform.imports.commit_service import ImportCommitService, _risk_snapshot, _snapshot
 from risk_platform.imports.schemas import ConfirmImportRequest, ImportBatchListQuery
 from risk_platform.projects.models import Project, ProjectRiskLevel, ProjectStatus
+from risk_platform.risks.models import Risk, RiskSourceType, RiskStatus
 
 
 def test_confirmation_contract_rejects_unknown_fields() -> None:
@@ -44,3 +45,51 @@ def test_project_snapshot_keeps_amount_precision_and_version() -> None:
     assert snapshot["annualPlanAmount"] == "100.00"
     assert snapshot["actualCollectedAmount"] == "40.50"
     assert snapshot["sourceVersion"] == 3
+
+
+def test_risk_snapshot_captures_restore_identity_and_lifecycle() -> None:
+    risk = Risk(
+        id=uuid4(),
+        projectId=uuid4(),
+        categoryId=uuid4(),
+        title="回款风险",
+        description="需要跟进",
+        level=ProjectRiskLevel.HIGH,
+        status=RiskStatus.ACTIVE,
+        sourceType=RiskSourceType.EXCEL,
+        dedupeFingerprint="f" * 64,
+        detectedAt=datetime(2026, 8, 11, tzinfo=UTC),
+    )
+    snapshot = _risk_snapshot(risk)
+    assert snapshot["projectId"] == str(risk.projectId)
+    assert snapshot["status"] == "ACTIVE"
+    assert snapshot["sourceType"] == "EXCEL"
+
+
+def test_restore_project_reinstates_snapshot_values() -> None:
+    project = Project(
+        id=uuid4(),
+        name="当前名称",
+        status=ProjectStatus.DELIVERY,
+        collectionRiskLevel=ProjectRiskLevel.UNKNOWN,
+        sourceVersion=9,
+    )
+    ImportCommitService._restore_project(
+        project,
+        {
+            "externalCode": "P-1",
+            "importKey": "key",
+            "name": "导入前名称",
+            "status": "COMPLETED",
+            "collectionRiskLevel": "HIGH",
+            "sourceVersion": 4,
+            "annualPlanAmount": "100.00",
+            "actualCollectedAmount": None,
+            "remainingAmount": "100.00",
+        },
+    )
+    assert project.name == "导入前名称"
+    assert project.status is ProjectStatus.COMPLETED
+    assert project.collectionRiskLevel is ProjectRiskLevel.HIGH
+    assert project.sourceVersion == 4
+    assert project.annualPlanAmount == Decimal("100.00")

@@ -181,6 +181,20 @@ async def confirm_batch(
     )
 
 
+@router.post("/batches/{batch_id}/rollback", response_model=ApiResponse[ImportBatchDetail])
+async def rollback_batch(
+    request: Request,
+    batch_id: UUID,
+    identity: Annotated[SessionIdentity, Depends(require_permissions("admin.import.manage"))],
+    service: Annotated[ImportCommitService, Depends(get_import_commit_service)],
+) -> ApiResponse[ImportBatchDetail]:
+    return ok(
+        request,
+        await service.rollback(batch_id, identity, UUID(get_trace_id(request))),
+        "导入批次已回滚",
+    )
+
+
 __all__ = [
     "PreviewAcceptedResponse",
     "get_import_commit_service",

@@ -47,11 +47,13 @@ Current:
 - T022: REVIEW_PASSED
 - T023: REVIEW_PASSED
 - Wave 8: PASS (T022 import-cycle fix reviewed; full pytest and PostgreSQL/Alembic integration validation passed)
-- Current Wave: Wave 9 complete (T018/T024 REVIEW_PASSED; Integration PASS); next Wave not started。
+- Current Wave: Wave 10 IN_PROGRESS (T019 selected; T016/T020/T025 remain READY); Wave 9 complete (T018/T024 REVIEW_PASSED; Integration PASS).
+- Wave 10 readiness sync: DG-01 is resolved by ADR 0019; the stale T016 blocker was removed and T016 is READY. DG-04/DG-05/DG-08 do not block the Wave 10 READY tasks.
+- T019: REVIEW_PASSED (selected as the single Wave 10 work unit; see `docs/implementation/reports/T019.md`).
 - T018: REVIEW_PASSED (checkpoint `b8a5a5f`; see `docs/implementation/reports/T018.md`).
 - T024: REVIEW_PASSED (DG-10 resolved; implementation and Independent Review complete; checkpoint `597a43b830e2e639d17b775c069a8fbfb896efd4`).
 - Wave 9 Integration: PASS; the six stale test-baseline assertions were updated only in tests, followed by full validation. No production redesign or next-Wave task started.
-- Next Wave: NOT_READY; Wave 9 completed and execution stops here as instructed.
+- Next Wave: NOT_STARTED; Wave 10 is the current execution wave.
 - DG-01: RESOLVED by ADR 0019
 - DG-02: RESOLVED by ADR 0018
 - DG-03: RESOLVED by ADR 0019
@@ -109,4 +111,5 @@ Integration blockers:
 - DG-10 design checkpoint: created by ADR 0022 and synchronized task/design state; T024 implementation is complete and reviewed.
 - T024 implementation and Independent Review: `REVIEW_PASSED`; see `docs/implementation/reports/T024.md` and `docs/implementation/reports/WAVE-09-PARTIAL.md`.
 - T024 checkpoint: `597a43b830e2e639d17b775c069a8fbfb896efd4`.
+- T019 implementation, Independent Review and validation are complete; checkpoint is recorded in `docs/implementation/reports/T019.md`.
 - Wave 9 final Integration checkpoint: created after recording the PASS result and test baseline maintenance in `docs/implementation/reports/WAVE-09.md` and this state file.

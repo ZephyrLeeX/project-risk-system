@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import cast
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from risk_platform.admin.models import Department, User
@@ -43,9 +43,11 @@ from risk_platform.model_types import JSONValue
 from risk_platform.projects.models import Project, ProjectStatus
 from risk_platform.projects.models import ProjectRiskLevel as ProjectDomainRiskLevel
 from risk_platform.risks.models import ProjectRiskLevel as RiskProjectRiskLevel
-from risk_platform.risks.models import RiskCategory, RiskSourceType
+from risk_platform.risks.models import Risk, RiskCategory, RiskSourceType, RiskStatus
 from risk_platform.risks.service import RiskCreate, RisksService
 from risk_platform.shared.errors import ApiError
+from risk_platform.timeline.models import RiskTimelineEvent
+from risk_platform.todos.models import ActionItem
 
 _MATCH_WARNING = "匹配到多个主项目，需人工确认关联关系"  # noqa: RUF001
 _UNMATCHED_WARNING = "未找到可精确匹配的主项目，记录将保留为待匹配且不会新增项目"  # noqa: RUF001
@@ -79,6 +81,30 @@ def _snapshot(project: Project) -> dict[str, JSONValue]:
         "collectionProgress": project.collectionProgress,
         "lastImportedAt": project.lastImportedAt.isoformat() if project.lastImportedAt else None,
         "sourceVersion": project.sourceVersion,
+    }
+
+
+def _risk_snapshot(risk: Risk) -> dict[str, JSONValue]:
+    return {
+        "projectId": str(risk.projectId),
+        "categoryId": str(risk.categoryId),
+        "title": risk.title,
+        "description": risk.description,
+        "evidence": risk.evidence,
+        "level": risk.level.value,
+        "status": risk.status.value,
+        "sourceType": risk.sourceType.value,
+        "sourceBatchId": str(risk.sourceBatchId) if risk.sourceBatchId else None,
+        "sourceRefId": str(risk.sourceRefId) if risk.sourceRefId else None,
+        "reporterUserId": str(risk.reporterUserId) if risk.reporterUserId else None,
+        "reporterNameSource": risk.reporterNameSource,
+        "weekCode": risk.weekCode,
+        "suggestion": risk.suggestion,
+        "detectedAt": risk.detectedAt.isoformat(),
+        "resolvedAt": risk.resolvedAt.isoformat() if risk.resolvedAt else None,
+        "resolvedById": str(risk.resolvedById) if risk.resolvedById else None,
+        "resolutionReason": risk.resolutionReason,
+        "dedupeFingerprint": risk.dedupeFingerprint,
     }
 
 
@@ -331,6 +357,15 @@ class ImportCommitService:
                                 "SEED_REQUIRED",
                                 "风险分类基础数据缺失，请先执行数据库种子初始化",  # noqa: RUF001
                             )
+                        fingerprint = hashlib.sha256(
+                            f"PROJECT_COLLECTION:{project.id}".encode()
+                        ).hexdigest()
+                        existing_risk = await session.scalar(
+                            select(Risk).where(Risk.dedupeFingerprint == fingerprint)
+                        )
+                        row.beforeRiskSnapshot = cast(
+                            JSONValue, _risk_snapshot(existing_risk) if existing_risk else None
+                        )
                         risk = await self._risks.create_in_session(
                             session,
                             RiskCreate(
@@ -346,9 +381,7 @@ class ImportCommitService:
                                 source_ref_id=row.id,
                                 reporter_user_id=UUID(identity.user.id),
                                 reporter_name=identity.user.displayName,
-                                dedupe_fingerprint=hashlib.sha256(
-                                    f"PROJECT_COLLECTION:{project.id}".encode()
-                                ).hexdigest(),
+                                dedupe_fingerprint=fingerprint,
                                 suggestion="核实回款计划与实际回款差异，明确下一次跟进时间。",  # noqa: RUF001
                                 actor_name=identity.user.displayName,
                             ),
@@ -356,6 +389,7 @@ class ImportCommitService:
                             trace_id=trace_id,
                         )
                         row.committedRiskId = risk.id
+                        row.afterRiskSnapshot = cast(JSONValue, _risk_snapshot(risk))
                 for supplemental_row in supplemental:
                     if supplemental_row.status in {ImportRowStatus.READY, ImportRowStatus.WARNING}:
                         if supplemental_row.projectId is None and supplemental_row.matchedImportKey:
@@ -389,6 +423,15 @@ class ImportCommitService:
                                 "SEED_REQUIRED",
                                 "风险分类基础数据缺失，请先执行数据库种子初始化",  # noqa: RUF001
                             )
+                        fingerprint = hashlib.sha256(
+                            f"LEGAL_MATTER:{legal_row.projectId}:{legal_row.sourceKey}".encode()
+                        ).hexdigest()
+                        existing_risk = await session.scalar(
+                            select(Risk).where(Risk.dedupeFingerprint == fingerprint)
+                        )
+                        legal_row.beforeRiskSnapshot = cast(
+                            JSONValue, _risk_snapshot(existing_risk) if existing_risk else None
+                        )
                         risk = await self._risks.create_in_session(
                             session,
                             RiskCreate(
@@ -407,15 +450,14 @@ class ImportCommitService:
                                 source_ref_id=legal_row.id,
                                 reporter_user_id=UUID(identity.user.id),
                                 reporter_name=identity.user.displayName,
-                                dedupe_fingerprint=hashlib.sha256(
-                                    f"LEGAL_MATTER:{legal_row.projectId}:{legal_row.sourceKey}".encode()
-                                ).hexdigest(),
+                                dedupe_fingerprint=fingerprint,
                                 actor_name=identity.user.displayName,
                             ),
                             actor_id=UUID(identity.user.id),
                             trace_id=trace_id,
                         )
                         legal_row.committedRiskId = risk.id
+                        legal_row.afterRiskSnapshot = cast(JSONValue, _risk_snapshot(risk))
                 batch.status = ImportBatchStatus.IMPORTED
                 batch.createdRows, batch.updatedRows = created, updated
                 batch.confirmedById, batch.confirmedAt = UUID(identity.user.id), now
@@ -429,6 +471,236 @@ class ImportCommitService:
                     trace_id=trace_id,
                 )
         return await self.detail(batch_id, identity)
+
+    async def rollback(
+        self, batch_id: UUID, identity: SessionIdentity, trace_id: UUID
+    ) -> ImportBatchDetail:
+        """Restore one imported batch atomically, rejecting later overwrites."""
+        user_id = UUID(identity.user.id)
+        async with transaction(self._session_factory) as session:
+            batch = await session.scalar(
+                select(ImportBatch).where(ImportBatch.id == batch_id).with_for_update()
+            )
+            if batch is None:
+                raise ApiError(404, "NOT_FOUND", "导入批次不存在")
+            if batch.status is not ImportBatchStatus.IMPORTED:
+                raise ApiError(409, "CONFLICT", "只有已导入的批次可以回滚")
+
+            project_ids = select(ProjectImportRow.committedProjectId).where(
+                ProjectImportRow.batchId == batch_id,
+                ProjectImportRow.status == ImportRowStatus.IMPORTED,
+                ProjectImportRow.committedProjectId.is_not(None),
+            )
+            later_statement = (
+                select(ProjectImportRow.id)
+                .join(ImportBatch, ImportBatch.id == ProjectImportRow.batchId)
+                .where(
+                    ProjectImportRow.committedProjectId.in_(project_ids),
+                    ProjectImportRow.batchId != batch_id,
+                    ImportBatch.status == ImportBatchStatus.IMPORTED,
+                )
+                .limit(1)
+            )
+            if batch.confirmedAt is not None:
+                later_statement = later_statement.where(ImportBatch.confirmedAt > batch.confirmedAt)
+            later = await session.scalar(later_statement)
+            if later is not None:
+                raise ApiError(409, "CONFLICT", "该批次涉及的项目已有后续导入，不能直接回滚")  # noqa: RUF001
+
+            rows = (
+                await session.scalars(
+                    select(ProjectImportRow)
+                    .where(
+                        ProjectImportRow.batchId == batch_id,
+                        ProjectImportRow.status == ImportRowStatus.IMPORTED,
+                    )
+                    .order_by(ProjectImportRow.rowNumber)
+                )
+            ).all()
+            legal_rows = (
+                await session.scalars(
+                    select(LegalMatterRow).where(
+                        LegalMatterRow.batchId == batch_id,
+                        LegalMatterRow.status == ImportRowStatus.IMPORTED,
+                    )
+                )
+            ).all()
+            risk_ids = [row.committedRiskId for row in rows if row.committedRiskId is not None]
+            risk_ids.extend(
+                row.committedRiskId for row in legal_rows if row.committedRiskId is not None
+            )
+            if risk_ids:
+                await session.execute(
+                    delete(RiskTimelineEvent).where(
+                        (RiskTimelineEvent.sourceBatchId == batch_id)
+                        | RiskTimelineEvent.riskId.in_(risk_ids)
+                    )
+                )
+            else:
+                await session.execute(
+                    delete(RiskTimelineEvent).where(RiskTimelineEvent.sourceBatchId == batch_id)
+                )
+            for legal_row in legal_rows:
+                if legal_row.committedRiskId:
+                    await self._restore_risk(
+                        session, legal_row.committedRiskId, legal_row.beforeRiskSnapshot
+                    )
+                legal_row.status = ImportRowStatus.ROLLED_BACK
+            for project_row in rows:
+                if project_row.committedRiskId:
+                    await self._restore_risk(
+                        session, project_row.committedRiskId, project_row.beforeRiskSnapshot
+                    )
+                project = (
+                    await session.get(Project, project_row.committedProjectId)
+                    if project_row.committedProjectId
+                    else None
+                )
+                before = project_row.beforeSnapshot
+                if project is None and before is not None:
+                    raise ApiError(409, "CONFLICT", "导入项目已不存在，无法安全回滚")  # noqa: RUF001
+                if project is not None:
+                    if isinstance(before, dict):
+                        self._restore_project(project, before)
+                    else:
+                        await session.delete(project)
+                project_row.status = ImportRowStatus.ROLLED_BACK
+            await session.execute(
+                update(ProjectImportRow)
+                .where(
+                    ProjectImportRow.batchId == batch_id,
+                    ProjectImportRow.status == ImportRowStatus.IMPORTED,
+                )
+                .values(status=ImportRowStatus.ROLLED_BACK)
+            )
+            await session.execute(
+                update(SupplementalCollectionRow)
+                .where(
+                    SupplementalCollectionRow.batchId == batch_id,
+                    SupplementalCollectionRow.status == ImportRowStatus.IMPORTED,
+                )
+                .values(status=ImportRowStatus.ROLLED_BACK)
+            )
+            await session.execute(
+                update(LegalMatterRow)
+                .where(
+                    LegalMatterRow.batchId == batch_id,
+                    LegalMatterRow.status == ImportRowStatus.IMPORTED,
+                )
+                .values(status=ImportRowStatus.ROLLED_BACK)
+            )
+            import_departments = (
+                await session.scalars(select(Department).where(Department.code.like("IMPORT_%")))
+            ).all()
+            for department in import_departments:
+                has_project = await session.scalar(
+                    select(Project.id).where(Project.departmentId == department.id).limit(1)
+                )
+                has_user = await session.scalar(
+                    select(User.id).where(User.departmentId == department.id).limit(1)
+                )
+                if has_project is None and has_user is None:
+                    await session.delete(department)
+            batch.status = ImportBatchStatus.ROLLED_BACK
+            batch.rolledBackById, batch.rolledBackAt = user_id, datetime.now(UTC)
+            await AuditService(session).record_success(
+                actor_id=user_id,
+                actor_type=AuditActorType.USER,
+                module="IMPORT",
+                action="PROJECT_IMPORT_ROLLED_BACK",
+                resource_type="IMPORT_BATCH",
+                resource_id=str(batch_id),
+                trace_id=trace_id,
+            )
+        return await self.detail(batch_id, identity)
+
+    @staticmethod
+    def _restore_project(project: Project, snapshot: dict[str, JSONValue]) -> None:
+        for key in (
+            "externalCode",
+            "importKey",
+            "name",
+            "alias",
+            "departmentId",
+            "managerId",
+            "deliveryOwnerName",
+            "monthlyCollections",
+            "monthAttributes",
+            "collectionProgress",
+        ):
+            if key in snapshot:
+                setattr(project, key, snapshot[key])
+        for key in ("annualPlanAmount", "actualCollectedAmount", "remainingAmount"):
+            if key in snapshot:
+                setattr(
+                    project,
+                    key,
+                    Decimal(str(snapshot[key])) if snapshot[key] is not None else None,
+                )
+        if snapshot.get("status") is not None:
+            project.status = ProjectStatus(str(snapshot["status"]))
+        if snapshot.get("collectionRiskLevel") is not None:
+            project.collectionRiskLevel = ProjectDomainRiskLevel(
+                str(snapshot["collectionRiskLevel"])
+            )
+        if snapshot.get("lastImportedAt") is not None:
+            project.lastImportedAt = datetime.fromisoformat(str(snapshot["lastImportedAt"]))
+        source_version = snapshot.get("sourceVersion")
+        if isinstance(source_version, (int, float, str)):
+            project.sourceVersion = int(source_version)
+
+    async def _restore_risk(
+        self, session: AsyncSession, risk_id: UUID, snapshot_value: JSONValue | None
+    ) -> None:
+        risk = await session.get(Risk, risk_id, with_for_update=True)
+        if risk is None:
+            return
+        if not isinstance(snapshot_value, dict):
+            await session.delete(risk)
+            return
+        for key in (
+            "title",
+            "description",
+            "evidence",
+            "reporterNameSource",
+            "weekCode",
+            "suggestion",
+            "resolutionReason",
+        ):
+            setattr(risk, key, snapshot_value.get(key))
+        risk.projectId = UUID(str(snapshot_value["projectId"]))
+        risk.categoryId = UUID(str(snapshot_value["categoryId"]))
+        risk.level = RiskProjectRiskLevel(str(snapshot_value["level"]))
+        risk.status = RiskStatus(str(snapshot_value["status"]))
+        risk.sourceType = RiskSourceType(str(snapshot_value["sourceType"]))
+        risk.sourceBatchId = (
+            UUID(str(snapshot_value["sourceBatchId"]))
+            if snapshot_value.get("sourceBatchId")
+            else None
+        )
+        risk.sourceRefId = (
+            UUID(str(snapshot_value["sourceRefId"])) if snapshot_value.get("sourceRefId") else None
+        )
+        risk.reporterUserId = (
+            UUID(str(snapshot_value["reporterUserId"]))
+            if snapshot_value.get("reporterUserId")
+            else None
+        )
+        risk.detectedAt = datetime.fromisoformat(str(snapshot_value["detectedAt"]))
+        risk.resolvedAt = (
+            datetime.fromisoformat(str(snapshot_value["resolvedAt"]))
+            if snapshot_value.get("resolvedAt")
+            else None
+        )
+        risk.resolvedById = (
+            UUID(str(snapshot_value["resolvedById"]))
+            if snapshot_value.get("resolvedById")
+            else None
+        )
+        risk.dedupeFingerprint = str(snapshot_value["dedupeFingerprint"])
+        await session.flush()
+        if risk.status is RiskStatus.RESOLVED:
+            await session.execute(delete(ActionItem).where(ActionItem.riskId == risk.id))
 
     async def _department(self, session: AsyncSession, name: str) -> Department:
         code = "IMPORT_" + hashlib.sha256(name.encode()).hexdigest()[:12].upper()

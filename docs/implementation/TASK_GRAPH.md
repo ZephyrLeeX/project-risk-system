@@ -68,7 +68,7 @@ flowchart TD
 | 7 | T011, T012, T013, T014, T015, T017, T021 | Parallel feature submodules; each owns only its declared subpackage/tests and may consume, but not edit, shared DB/audit/task fixtures. |
 | 8 | T022, T023 | Risk/todo mutation core and mailbox configuration are disjoint. |
 | 9 | T018, T024 | Import commit and IMAP orchestration consume established domain/task services without modifying them. |
-| 10 | T016, T019, T020, T025 | Admin overview, rollback, dashboard reads and mail parsing have disjoint module write sets; T016 is blocked on DG-01. |
+| 10 | T016, T019, T020, T025 | Admin overview, rollback, dashboard reads and mail parsing have disjoint module write sets; DG-01 is resolved. |
 | 11 | T026, T042 | Mail candidate pipeline and retention-protection policy are disjoint; T042 is blocked on DG-04. |
 | 12 | T027, T031 | Weekly-report query and retention cleanup are disjoint after their respective schemas/policies pass. |
 | 13 | T028 | Authorized Agent conversations/query tools. |
@@ -104,10 +104,10 @@ Tasks in a wave may run concurrently only when every dependency from an earlier 
 | T013 | READY | T003, T006, T010 | Migrate versioned system configuration and project aliases. |
 | T014 | READY | T003, T006, T007, T010 | Migrate AI Provider administration, connection tests, strategy and safe call logs. |
 | T015 | READY | T006, T010 | Migrate audit query, integrity and metadata-only export APIs. |
-| T016 | TODO | T008, T011-T015, T018, T024 | Implement real management health, attention and audit overview data. |
+| T016 | READY | T008, T011-T015, T018, T024 | Implement real management health, attention and audit overview data. |
 | T017 | READY | T003, T006, T008, T010 | Move safe Excel upload and three-sheet preview parsing into durable workers. |
 | T018 | READY | T017, T022 | Migrate atomic import commit, history, source download and supplemental matching through shared risk/todo services. |
-| T019 | READY | T018 | Migrate safe import rollback and later-write conflict handling. |
+| T019 | REVIEW_PASSED | T018 | Migrate safe import rollback and later-write conflict handling. |
 | T020 | READY | T003, T010, T018 | Migrate scoped dashboard project, collection and risk read models. |
 | T021 | READY | T003, T006, T010 | Migrate manager todo queries, updates and reusable risk-to-todo rules. |
 | T022 | READY | T003, T006, T010, T021 | Migrate reusable risk mutation, two-state lifecycle and append-only timeline behavior. |
