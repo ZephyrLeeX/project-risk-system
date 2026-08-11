@@ -9,6 +9,7 @@
 - T011 user administration implementation and independent Review：`REVIEW_PASSED`。
 - API contract、PostgreSQL transaction/audit regression、Ruff、mypy、lockfile 与完整 PostgreSQL test
   suite 均通过（124 passed）。
+- T011 checkpoint：`baa3208`。
 - Wave 7 的其他 READY Task 未启动。
 
 ## Readiness
