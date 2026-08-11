@@ -27,6 +27,7 @@ Completed tasks:
 - T015 REVIEW_PASSED
 - T017 REVIEW_PASSED
 - T021 REVIEW_PASSED
+- T023 REVIEW_PASSED
 
 Current:
 - Wave 6: PASS (T004/T008/T010 remain REVIEW_PASSED; PostgreSQL integration validation passed)
@@ -42,6 +43,7 @@ Current:
 - T017: REVIEW_PASSED
 - T021: REVIEW_PASSED
 - T022: REVIEW_PASSED
+- T023: REVIEW_PASSED
 - DG-01: RESOLVED by ADR 0019
 - DG-02: RESOLVED by ADR 0018
 - DG-03: RESOLVED by ADR 0019
@@ -86,7 +88,8 @@ Integration blockers:
 - Current Wave: Wave 7 is PASS; T011, T012, T013, T014, T015, T017 and T021 have been completed in this execution unit sequence.
 - T017 implementation, Independent Review, validation and checkpoint commit are complete. T021 remains READY and was not started.
 - T021 implementation, Independent Review and validation are complete. Wave 7 Integration Fix passed; Wave 8 remains not started. See `docs/implementation/reports/WAVE-07.md`.
-- Wave 7 final integration checkpoint includes the T012 fixture-only regression fix; next Wave readiness is `READY` for T022/T023, but next Wave was not started.
-- Wave 8 partial: T022 implementation, Quality Fix, Independent Review and focused validation are complete. Ruff, mypy, focused pytest (4 passed), `uv lock --check` and `git diff --check` are PASS; full pytest was attempted but is not a blocker because current full-suite collection/capture is unavailable. T022 has no dedicated PostgreSQL tests (`N/A`). T023 remains READY and was not started. See `docs/implementation/reports/T022.md` and `docs/implementation/reports/WAVE-08-PARTIAL.md`.
-- T022 checkpoint: `205e8fc69686d00f2d20b4f75dbf405a8ace0310`.
+- Wave 7 final integration checkpoint includes the T012 fixture-only regression fix; Wave 8 was then started by the Orchestrator.
+- Wave 8 partial: T022 and T023 implementation, Independent Review and focused validation are complete. T023 Ruff, mypy, focused pytest (3 passed), `uv lock --check` and `git diff --check` are PASS. T023 has no dedicated migration/PostgreSQL tests (`N/A`); no SQLite was used. Wave 8 Integration and the next Wave were not started. See `docs/implementation/reports/T022.md`, `docs/implementation/reports/T023.md` and `docs/implementation/reports/WAVE-08-PARTIAL.md`.
+- T022 checkpoint: `a91d203`.
+- T023 checkpoint: `d721895f241d2eb7d1a8ee446cd189c3842a4c74`.
 - T022 Quality Fix checkpoint: `ba339789409dc8138f763c6325262e9cff1be319`.
