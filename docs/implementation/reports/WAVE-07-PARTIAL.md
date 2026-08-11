@@ -17,7 +17,7 @@
 - API contract、保护系统角色、权限边界、失败审计、Ruff、mypy 与全量 Python tests 已验证。
 - Full validation：`96 passed, 32 skipped`；T012 PostgreSQL 集成测试因 `TEST_DATABASE_URL` 未配置而 skipped。
 - T012 checkpoint：`7361d26`。
-- T013 已完成实现与独立 Review：`REVIEW_PASSED`；新增系统配置版本、发布、历史、快照和项目选项 API。PostgreSQL validation 因 `TEST_DATABASE_URL` 未配置而 skipped；checkpoint SHA 待提交后记录。
+- T013 已完成实现与独立 Review：`REVIEW_PASSED`；新增系统配置版本、发布、历史、快照和项目选项 API。PostgreSQL validation 因 `TEST_DATABASE_URL` 未配置而 skipped；checkpoint：`13463f3`。
 - Wave 7 的 T014、T015、T017、T021 仍未启动。
 
 ## Readiness
