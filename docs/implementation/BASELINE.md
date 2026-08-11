@@ -26,7 +26,7 @@ Every task Agent must read, before editing: repository `AGENTS.md` if present; t
 - Cookie sessions, forced first-password change, login lockout; four seeded roles and five project data scopes; permission and data-scope checks are separate and universal.
 - Risks have only `ACTIVE` and `RESOLVED`; progress belongs to todos/timeline.
 - Excel and mail/AI work is durable, idempotent, bounded, retryable and recoverable after restart.
-- Audit is PostgreSQL-enforced append-only hash chaining. Secrets are versioned encrypted values; outbound endpoints and untrusted files/model output are constrained.
+- Audit is PostgreSQL-enforced append-only hash chaining with a fixed typed metadata-only write interface; it stores no snapshot or arbitrary payload and has no redaction subsystem. Secrets are versioned encrypted values; outbound endpoints and untrusted files/model output are constrained.
 - Agent uses authorized business tools only, SSE for text/progress/preview, and separate REST confirmation with a single-use short-lived token. Streaming never writes business mutations.
 - Single internal server, HTTPS reverse proxy, Docker Compose, persistent volumes, encrypted daily backups, specified retention, RPO 24h/RTO 4h.
 

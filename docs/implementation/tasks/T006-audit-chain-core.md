@@ -5,15 +5,15 @@
 - **Objective:** Implement PostgreSQL-enforced immutable chained audit records and a transaction-aware audit service.
 - **Design baseline:** Design §7; global audit constraints.
 - **Authoritative source references:** Prisma `AuditLog`; legacy `audit/**`; migration `20260803000200_audit_log_management`.
-- **Relevant ADR IDs:** 0008, 0014, 0015.
+- **Relevant ADR IDs:** 0008, 0014, 0015, 0017（0017 取代 snapshot/redaction 部分）.
 - **Dependencies:** T003.
-- **Scope:** Trigger/functions, hash canonicalization, insert API, redaction, integrity verifier, success/failure primitives.
+- **Scope:** Trigger/functions, metadata-only hash canonicalization, fixed typed insert API, integrity verifier, success/failure primitives, removal of snapshot/redaction code and columns.
 - **Explicit out-of-scope:** Search/export HTTP endpoints; module-specific event calls.
 - **Expected read set:** Named schema/migration/service/policy/tests.
 - **Expected write set:** Audit module, Alembic revision, audit tests.
-- **Contracts/invariants:** UPDATE/DELETE rejected in DB; chain break is reported and never repaired; snapshots are redacted.
-- **Acceptance criteria:** Concurrent inserts form valid chain; mutation attempts fail; deterministic verifier detects tampering.
+- **Contracts/invariants:** UPDATE/DELETE/TRUNCATE rejected in DB; chain break is reported and never repaired; Audit accepts only fixed typed metadata fields and has no arbitrary payload channel.
+- **Acceptance criteria:** Concurrent inserts form valid chain; mutation attempts fail; deterministic verifier detects tampering; schema/interface contain no snapshot/JSONB/payload input; secret/mail/prompt/model content has no Audit write entry point.
 - **Validation:** PostgreSQL integration/concurrency tests plus Ruff/mypy/pytest.
-- **Required deliverables:** DB enforcement, service, verifier, redaction tests.
-- **Stop conditions:** Hash canonicalization cannot preserve current stored fields without a design change.
+- **Required deliverables:** DB enforcement, typed metadata-only service, verifier, negative payload-channel tests.
+- **Stop conditions:** Hash canonicalization cannot cover the ADR 0017 fixed fields without a design change.
 - **Known integration risks:** Transaction ordering and high-write concurrency.

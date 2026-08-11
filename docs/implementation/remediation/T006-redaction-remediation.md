@@ -1,5 +1,9 @@
 # T006 Audit Snapshot Redaction Security Remediation Analysis
 
+> 历史状态：本分析及其失败证据完整保留。2026-08-11 人工批准 ADR 0017，取消 Audit snapshot
+> 和 redaction system；本文提出的 generic/event-specific redaction remediation 不再实施，也不得被
+> 重新引入。T006 改按 metadata-only typed interface 恢复。
+
 ## Status
 
 - 分析角色：T006 Security Remediation Analyst

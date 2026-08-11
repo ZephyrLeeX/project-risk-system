@@ -63,7 +63,7 @@ flowchart TD
 | 2 | T002 | HTTP/configuration core and the module composition contract. |
 | 3 | T003, T007 | DB/session foundation and crypto/outbound security consume T002 settings but use disjoint files. |
 | 4 | T005, T006 | Seed and audit enforcement share the completed core schema but do not share a migration file. |
-| 5 | T009, T041 | Authentication and the DG-02 durable-task migration are disjoint; T041 is blocked until DG-02 is resolved. |
+| 5 | T009, T041 | Authentication and the ADR 0018 durable-task migration are disjoint; both tasks are ready, but execution still requires explicit Wave 5 start. |
 | 6 | T004, T008, T010 | Capability migration, worker core and RBAC are disjoint after T041/T009 pass; T004 remains blocked on DG-01/DG-03/DG-06/DG-07. |
 | 7 | T011, T012, T013, T014, T015, T017, T021 | Parallel feature submodules; each owns only its declared subpackage/tests and may consume, but not edit, shared DB/audit/task fixtures. |
 | 8 | T022, T023 | Risk/todo mutation core and mailbox configuration are disjoint. |
@@ -94,27 +94,27 @@ Tasks in a wave may run concurrently only when every dependency from an earlier 
 | T003 | READY | T002 | Establish Prisma-equivalent SQLAlchemy models and Alembic core baseline. |
 | T004 | DESIGN_GAP DG-01/DG-03/DG-06/DG-07/DG-09 | T041 | Add approved Agent conversation, confirmation and weekly-report persistence schemas. |
 | T005 | READY | T002, T003 | Seed four roles, permissions and reference data repeatably without migrating demos. |
-| T006 | READY | T003 | Enforce PostgreSQL append-only audit chaining and a redacting audit service. |
+| T006 | READY | T003 | Enforce PostgreSQL append-only audit chaining and a fixed typed metadata-only audit service. |
 | T007 | READY | T002 | Provide versioned secret encryption and SSRF-safe outbound endpoint validation. |
-| T008 | DESIGN_GAP DG-02 | T002, T003, T041 | Build PostgreSQL-backed Celery dispatch, retry, lease and recovery infrastructure. |
+| T008 | READY | T002, T003, T041 | Build PostgreSQL-backed Celery dispatch, retry, lease and recovery infrastructure. |
 | T009 | READY | T002, T003, T005, T006 | Migrate Cookie authentication, sessions, password change and lockout. |
 | T010 | READY | T003, T005, T009 | Migrate permission enforcement and all five project data scopes. |
 | T011 | READY | T005, T006, T010 | Migrate user administration and project assignment APIs. |
 | T012 | READY | T005, T006, T010 | Migrate role, permission and department-option administration. |
 | T013 | READY | T003, T006, T010 | Migrate versioned system configuration and project aliases. |
 | T014 | READY | T003, T006, T007, T010 | Migrate AI Provider administration, connection tests, strategy and safe call logs. |
-| T015 | READY | T006, T010 | Migrate audit query, integrity and redacted export APIs. |
+| T015 | READY | T006, T010 | Migrate audit query, integrity and metadata-only export APIs. |
 | T016 | DESIGN_GAP DG-01 | T008, T011-T015, T018, T024 | Implement real management health, attention and audit overview data. |
-| T017 | DESIGN_GAP DG-02 | T003, T006, T008, T010 | Move safe Excel upload and three-sheet preview parsing into durable workers. |
+| T017 | READY | T003, T006, T008, T010 | Move safe Excel upload and three-sheet preview parsing into durable workers. |
 | T018 | READY | T017, T022 | Migrate atomic import commit, history, source download and supplemental matching through shared risk/todo services. |
 | T019 | READY | T018 | Migrate safe import rollback and later-write conflict handling. |
 | T020 | READY | T003, T010, T018 | Migrate scoped dashboard project, collection and risk read models. |
 | T021 | READY | T003, T006, T010 | Migrate manager todo queries, updates and reusable risk-to-todo rules. |
 | T022 | READY | T003, T006, T010, T021 | Migrate reusable risk mutation, two-state lifecycle and append-only timeline behavior. |
 | T023 | READY | T002, T003, T006, T007, T010, T013 | Migrate encrypted per-user mailbox configuration and connection testing. |
-| T024 | DESIGN_GAP DG-02/DG-10 | T008, T013, T023 | Implement durable scheduled/manual/retry UID synchronization. |
+| T024 | DESIGN_GAP DG-10 | T008, T013, T023 | Implement durable scheduled/manual/retry UID synchronization. |
 | T025 | DESIGN_GAP DG-10 | T007, T013, T024 | Parse mail and attachments safely and match standard projects/aliases. |
-| T026 | Inherits DG-02/DG-10 | T006, T007, T008, T014, T022, T025 | Extract, review and transactionally publish mail risk candidates. |
+| T026 | Inherits DG-10 | T006, T007, T008, T014, T022, T025 | Extract, review and transactionally publish mail risk candidates. |
 | T027 | DESIGN_GAP DG-01/DG-09 | T004, T010, T020, T025, T026 | Build and expose authorized current-week report aggregates/details. |
 | T028 | DESIGN_GAP DG-01 | T004, T010, T014, T020, T022, T026, T027 | Persist Agent conversations and expose authorized read-only business tools. |
 | T029 | DESIGN_GAP DG-01/DG-03/DG-06/DG-07 | T004, T007, T008, T010, T014, T028 | Stream Agent text, progress, errors and mutation previews over SSE. |
@@ -125,11 +125,11 @@ Tasks in a wave may run concurrently only when every dependency from an earlier 
 | T034 | DESIGN_GAP DG-01/DG-03/DG-06/DG-07 | T027, T030, T032 | Cut dashboard, weekly reports, mailbox and Agent UI to real Python APIs. |
 | T035 | Inherits gaps | T031-T034, T040 | Define production Compose, Python processes, proxy, secrets and persistence after final backend/frontend composition. |
 | T036 | DESIGN_GAP DG-04/DG-08 | T031, T035 | Implement encrypted backup rotation, isolated restore and drill verification. |
-| T037 | Inherits DG-01-DG-04/DG-06-DG-10 | T033, T034, T036 | Prove full compatibility and security across the release candidate. |
+| T037 | Inherits DG-01/DG-03/DG-04/DG-06-DG-10 | T033, T034, T036 | Prove full compatibility and security across the release candidate. |
 | T038 | DESIGN_GAP DG-05 | T037 | Validate performance and resilience at the approved capacity baseline. |
 | T039 | External inputs + gaps | T038 | Complete real mailbox/Provider E2E, restore evidence and Python-only cutover. |
-| T040 | Inherits DG-01-DG-04/DG-06/DG-07/DG-09/DG-10 | T008-T031 | Compose all routers, dependencies, lifecycles and worker tasks once. |
-| T041 | DESIGN_GAP DG-02 | T006 | Add the approved durable task/outbox persistence schema. |
+| T040 | Inherits DG-01/DG-03/DG-04/DG-06/DG-07/DG-09/DG-10 | T008-T031 | Compose all routers, dependencies, lifecycles and worker tasks once. |
+| T041 | READY | T006 | Add the ADR 0018 durable task/outbox persistence schema. |
 | T042 | DESIGN_GAP DG-04 | T004, T013, T019 | Implement approved retention configuration and deletion-protection policy. |
 
 ## Design gaps
@@ -137,7 +137,7 @@ Tasks in a wave may run concurrently only when every dependency from an earlier 
 | ID | Missing approved decision | Affected tasks | Why ADRs do not answer it |
 |---|---|---|---|
 | DG-01 | Exact public request/response/error schemas, permission codes/default-role grants and endpoint set for dynamic admin overview, weekly report aggregate/detail, Agent conversation/query/preview/confirm/help. | T004, T016, T027-T035, T037, T039-T040 | ADR 0011 defines authority transition and ADR 0016 defines SSE properties, but neither defines concrete OpenAPI operations/event payloads or authorization grants; current TS contracts have none. |
-| DG-02 | Durable task-state schema and ownership: task kinds/statuses, idempotency uniqueness, lease/heartbeat/reconciliation semantics and how domain batches reference it. | T008, T017, T024, T026, T031, T037-T041 | ADR 0006 requires PostgreSQL state and recovery but does not select the persistence contract needed for independent modules. |
+| DG-02 | RESOLVED by ADR 0018: `durable_tasks` + transactional `task_outbox`, domain batch → task FK, fixed state machine/idempotency, fenced leases, at-least-once dispatch and PostgreSQL reconciliation. | T008, T017, T024, T026, T031, T037-T041 | ADR 0018 supplies the approved persistence contract; Agent AI execution remains governed by DG-06. |
 | DG-03 | Confirmation-token lifetime and canonical content binding/replay contract; SSE reconnect/resume cursor semantics. | T004, T029-T035, T037, T039-T040 | ADRs 0013/0016 say short-lived, one-use and reconnect-capable but give no duration, canonical binding fields or resume behavior. |
 | DG-04 | Configurable retention bounds, definition/storage of rollback window and audit hold, and deletion behavior for protected backup copies. | T031, T035-T037, T039-T040, T042 | ADR 0012 gives defaults and protections, not the state model or enforceable boundaries needed for deterministic deletion. |
 | DG-05 | Numeric latency/throughput/failure-recovery acceptance thresholds at the approved capacity baseline. | T038, T039 | ADR 0009 specifies dataset size, RPO and RTO but no API/task performance PASS/FAIL thresholds. |

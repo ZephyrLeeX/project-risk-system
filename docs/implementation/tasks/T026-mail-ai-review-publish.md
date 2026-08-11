@@ -1,12 +1,12 @@
 # T026 — Extract, review and publish mail risk candidates
 - **Task ID:** T026
 - **Title:** Extract, review and publish mail risk candidates
-- **Status:** BLOCKED_DESIGN_GAP (inherits DG-02/DG-10) / TODO
+- **Status:** BLOCKED_DESIGN_GAP (inherits DG-10) / TODO
 - **Objective:** Generate validated candidates through the healthy Provider and implement adjust/ignore/confirm publication.
 - **Design baseline:** Design §§6-8.
-- **Authoritative source references:** `project-risk-system/apps/api/src/mailbox/**`, `project-risk-system/packages/contracts/src/index.ts`, T021/T022 rules and approved DG-02/DG-10 addenda.
-- **Relevant ADR IDs:** 0005, 0006, 0007, 0008, 0013, 0014, 0015.
-- **Dependencies:** T006, T007, T008, T014, T022, T025 and approved DG-02/DG-10 addenda.
+- **Authoritative source references:** `project-risk-system/apps/api/src/mailbox/**`, `project-risk-system/packages/contracts/src/index.ts`, T021/T022 rules, ADR 0018 and approved DG-10 addendum.
+- **Relevant ADR IDs:** 0005, 0006, 0007, 0008, 0013, 0014, 0015, 0018.
+- **Dependencies:** T006, T007, T008, T014, T022, T025, ADR 0018 and approved DG-10 addendum.
 - **Scope:** AI extraction task, schema validation/call log, review APIs, candidate publication through T022/T021 domain services, and retry.
 - **Explicit out-of-scope:** Weekly aggregation and Agent.
 - **Expected read set:** Named mail/provider/risk sources.

@@ -1,5 +1,8 @@
 # 保护密钥、传输与外部连接
 
+> 历史说明：Audit snapshot 已由人工批准的 ADR 0017 取消。审计不再通过 redaction 保护密钥，
+> 而是通过 metadata-only typed interface 消除任意 payload 写入入口；本 ADR 的其他要求继续有效。
+
 内网部署仍使用 HTTPS；AI 密钥和邮箱授权码在数据库中加密，主加密密钥与会话密钥通过 Docker Secret 或只读密钥文件注入。出站连接仅允许经过校验的 IMAP 和 AI Provider 端点，以防止配置功能成为凭据泄露或服务端请求伪造通道。
 
 ## Consequences

@@ -1,12 +1,12 @@
 # T024 — Implement durable IMAP synchronization
 - **Task ID:** T024
 - **Title:** Implement durable IMAP synchronization
-- **Status:** BLOCKED_DESIGN_GAP (DG-02, DG-10) / TODO
+- **Status:** BLOCKED_DESIGN_GAP (DG-10) / TODO
 - **Objective:** Run scheduled/manual/retry IMAP UID synchronization as recoverable Celery tasks.
 - **Design baseline:** Design §§6,8.
-- **Authoritative source references:** `project-risk-system/apps/api/src/mailbox/mail-sync-processor.service.ts`, mail result services/schema, approved DG-02/DG-10 addenda and T008 task core.
-- **Relevant ADR IDs:** 0003, 0006, 0007, 0008, 0014, 0015.
-- **Dependencies:** T008, T013, T023 and approved DG-02/DG-10 addenda.
+- **Authoritative source references:** `project-risk-system/apps/api/src/mailbox/mail-sync-processor.service.ts`, mail result services/schema, ADR 0018, approved DG-10 addendum and T008 task core.
+- **Relevant ADR IDs:** 0003, 0006, 0007, 0008, 0014, 0015, 0018.
+- **Dependencies:** T008, T013, T023, ADR 0018 and approved DG-10 addendum.
 - **Scope:** Scheduler, single-active-mailbox lock, UID fetch/dedupe, batches/results/retry dispatch, and DG-10-approved source handoff/cursor/failure accounting.
 - **Explicit out-of-scope:** Content parsing/matching/AI and review publication.
 - **Expected read set:** Named sync/schema sources and T008 contract.
@@ -15,5 +15,5 @@
 - **Acceptance criteria:** Manual/scheduled/retry, duplicate, crash and cursor safety tests pass.
 - **Validation:** PostgreSQL+Redis+Celery+fake IMAP integration.
 - **Required deliverables:** Tasks/scheduler/batch APIs/tests.
-- **Stop conditions:** DG-02 or DG-10 unresolved.
+- **Stop conditions:** DG-10 unresolved or ADR 0018 cannot be satisfied.
 - **Known integration risks:** UID validity/reset and distributed locking.

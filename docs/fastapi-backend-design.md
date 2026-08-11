@@ -95,6 +95,7 @@ flowchart LR
 - 项目数据范围保持 `ALL`、`OWNED`、`ASSIGNED`、`OWNED_OR_ASSIGNED`、`NONE`。
 - 迁移期间，现有 TypeScript 类型与前端行为是契约基准；切换后以 FastAPI OpenAPI 为唯一来源并生成前端类型。
 - 现有数据库只有演示数据，正式环境由 Alembic 和可重复 Seed 初始化。
+- 持久化后台任务采用 ADR 0018 定义的统一 `durable_tasks` + `task_outbox` 契约；领域批次以 `task_id NOT NULL UNIQUE` 外键引用 `durable_tasks.id`，删除行为为 `RESTRICT`，任务基础设施不反向保存领域表的多态引用。
 
 ## 6. 关键业务流程
 
@@ -142,8 +143,12 @@ AI 不可用时明确失败并允许重试；非 AI 看板、导入和风险维�
 - Provider 和 IMAP 地址经过允许范围、DNS/IP 与 SSRF 校验；
 - 邮件附件、Excel 和模型输出均是不可信输入，限制类型、大小、解析时间和输出结构；
 - 审计日志只增不改，由 PostgreSQL 触发器连接哈希链；
-- 提供链完整性检查和脱敏导出，导出行为本身也被审计；
-- 日志、审计快照和 AI 调用记录不保存完整密钥、邮件、附件文本、提示词或模型原始响应。
+- Audit 采用 metadata-only 模型，只记录固定 typed fields：时间、actor、action、resource、result、
+  trace/request，以及必要的 project/failure code；
+- Audit write interface 不接受 snapshot、arbitrary JSON metadata、业务 payload、request/response body、
+  邮件/附件内容、prompt、模型原始响应或 secret/credential，因此 Audit 不再需要 redaction system；
+- 提供链完整性检查和 metadata-only 导出，导出行为本身也被审计；
+- 日志和 AI 调用记录仍不得保存完整密钥、邮件、附件文本、提示词或模型原始响应。
 
 ## 8. 任务可靠性
 
@@ -153,6 +158,11 @@ AI 不可用时明确失败并允许重试；非 AI 看板、导入和风险维�
 - Worker 重启后根据数据库状态恢复遗漏任务；
 - 同一邮箱同一时刻只能有一个同步批次；失败邮件可单封重试，失败批次不得错误推进 UID 游标；
 - 临时文件无论成功、失败或重启都必须清理。
+- durable task 状态固定为 `QUEUED`、`RUNNING`、`RETRY_WAIT`、`SUCCEEDED`、`FAILED`、`CANCELLED`；状态迁移使用带预期旧状态和适用 lease token 的 repository 原子条件更新。
+- PostgreSQL 通过 `UNIQUE(kind, idempotency_key)` 强制任务创建幂等性；task payload 只保存小型标识符和执行配置，不保存文件、邮件正文、大型业务内容或领域结果。
+- PostgreSQL transactional outbox 提供 at-least-once 投递；Redis/Celery message 只携带 `task_id` 和 `dispatch_generation`。
+- Worker 使用 lease token、heartbeat、expiry 和 fencing；reconciliation 负责 lost dispatch、到期 retry 和 expired lease。完整契约以 ADR 0018 为准。
+- Agent AI execution 不由本节的 durable task 契约决定，其 Worker/SSE 边界由 DG-06 另行批准。
 
 ## 9. 容量、备份与运行目标
 

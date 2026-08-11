@@ -1,11 +1,11 @@
 # T037 — Run full compatibility and security acceptance suite
 - **Task ID:** T037
 - **Title:** Run full compatibility and security acceptance suite
-- **Status:** BLOCKED_DESIGN_GAP (inherits DG-01-DG-04 and DG-06-DG-10) / TODO
+- **Status:** BLOCKED_DESIGN_GAP (inherits DG-01/DG-03/DG-04 and DG-06-DG-10) / TODO
 - **Objective:** Prove complete Python API compatibility, authorization, transaction, audit, secret and async reliability across modules.
 - **Design baseline:** Design §11 and all global constraints.
-- **Authoritative source references:** OpenAPI T032; legacy contracts/tests; every completed task acceptance suite.
-- **Relevant ADR IDs:** 0001-0016.
+- **Authoritative source references:** OpenAPI T032; ADR 0018; legacy contracts/tests; every completed task acceptance suite.
+- **Relevant ADR IDs:** 0001-0016, 0018.
 - **Dependencies:** T033, T034, T036; all inherited gaps resolved.
 - **Scope:** Cross-module contract diff, four-role/five-scope matrix, CSRF/Cookie/SSRF/file/model tests, audit chain, idempotency/restart/rollback tests.
 - **Explicit out-of-scope:** Capacity thresholds and real external acceptance.

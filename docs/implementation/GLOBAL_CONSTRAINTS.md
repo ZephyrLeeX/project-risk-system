@@ -25,7 +25,7 @@ These constraints apply to every Txxx task and are part of each task's acceptanc
 - Apply both permission and current project-scope filtering to lists, counts, statistics, details, exports and Agent tools. Include negative tests.
 - Store UTC; calculate “本周周报” in `Asia/Shanghai`, Monday `[00:00, next Monday 00:00)`, preferring sent time over received time.
 - Secrets come from Docker Secret/read-only files in production; encrypted records carry a key version. Outbound IMAP/provider destinations undergo approved SSRF/DNS/IP validation.
-- Audit-sensitive success and failure paths. PostgreSQL must prevent audit update/delete and verify the hash chain; never auto-repair a break.
+- Audit-sensitive success and failure paths through the fixed typed metadata-only interface. Audit accepts no snapshot, arbitrary JSON/free-form payload, request/response body, mail/attachment content, prompt, raw model response or secret. PostgreSQL must prevent audit update/delete/truncate and verify the hash chain; never auto-repair a break.
 
 ## Reliability and retention
 

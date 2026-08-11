@@ -4,8 +4,8 @@
 - **Status:** BLOCKED_DESIGN_GAP (DG-05) / TODO
 - **Objective:** Measure and pass approved API/task performance and recovery thresholds at baseline scale.
 - **Design baseline:** Design §§8,9,11.
-- **Authoritative source references:** ADR 0009; approved DG-05 thresholds; T037 release candidate.
-- **Relevant ADR IDs:** 0003, 0006, 0009.
+- **Authoritative source references:** ADRs 0009/0018; approved DG-05 thresholds; T037 release candidate.
+- **Relevant ADR IDs:** 0003, 0006, 0009, 0018.
 - **Dependencies:** T037 and DG-05.
 - **Scope:** Reproducible 300-user/5,000-project/1,000-weekly-mail dataset, query/task load, duplicate/outage/restart tests, explain/index evidence.
 - **Explicit out-of-scope:** HA/multi-node and unapproved tuning architecture.

@@ -4,8 +4,8 @@
 - **Status:** BLOCKED_EXTERNAL_INPUTS plus inherited design gaps / TODO
 - **Objective:** Demonstrate real mailbox-to-risk and Agent flows, restore readiness, frontend E2E and Python-only production release.
 - **Design baseline:** Design §§11,12.
-- **Authoritative source references:** Approved design/addenda; T036-T038 reports; provided mailbox/Provider/TLS/outbound/backup inputs.
-- **Relevant ADR IDs:** 0001, 0003, 0005-0016.
+- **Authoritative source references:** Approved design/addenda including ADR 0018; T036-T038 reports; provided mailbox/Provider/TLS/outbound/backup inputs.
+- **Relevant ADR IDs:** 0001, 0003, 0005-0016, 0018.
 - **Dependencies:** T038; all design gaps resolved; external materials supplied.
 - **Scope:** Real IMAP and Provider flows, candidate publish, weekly aggregate, Agent query/confirm, degraded AI behavior, restore/audit verification, Compose cutover checklist.
 - **Explicit out-of-scope:** Production data migration, NestJS dual run, architecture change.

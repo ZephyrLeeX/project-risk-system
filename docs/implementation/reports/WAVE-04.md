@@ -110,3 +110,65 @@ Wave 5：`NOT_READY`。
 
 T009 和 T041 均依赖 T006；T006 当前为 `BLOCKED`。此外 T041 仍受 DG-02 影响。本次未启动 Wave 5
 或任何后续 Task。
+
+---
+
+## 2026-08-11 人工批准 Recovery 与最终 Integration
+
+### 恢复结果
+
+- Architecture change：ADR 0017 将 Audit 从 redacted snapshot 简化为 fixed typed
+  metadata-only。
+- 历史 T006 `BLOCKED`、Recovery、remediation 和 Review 失败记录：完整保留。
+- T005 原 reviewed commit object 在当前 clone/`origin` 不存在；按 authoritative sources 与历史
+  report 重建后，由额外独立 Reviewer 确认为语义等价，结果 `REVIEW_PASSED`。
+- T006 新实现初审：`REVIEW_FAILED`（同毫秒 ordering、downgrade 恢复 snapshot）。
+- 两项修复后的 T006 独立复审：`REVIEW_PASSED`。
+
+### 最终 Task 状态
+
+| Task | Implementation | Independent Review | Integration |
+| --- | --- | --- | --- |
+| T005 | `IMPLEMENTED` | `REVIEW_PASSED` | `PASS` |
+| T006 | `IMPLEMENTED` | `REVIEW_PASSED` | `PASS` |
+
+### Migration / Audit
+
+- Migration graph：`20260810_0001 -> 20260810_0002`，single head
+  `20260810_0002`。
+- Audit schema：15 个固定字段，无 JSONB、snapshot、free-form metadata/payload/content column。
+- redaction/sanitizer/classifier system：已完全删除，未保留双模式。
+- arbitrary payload input：已完全删除；strict typed `AuditEvent` 拒绝 unknown fields，service 无
+  `**kwargs`。
+- PostgreSQL chain、20 路 concurrency、200 条同事务 burst、rollback、UPDATE/DELETE/TRUNCATE
+  rejection、tamper detection/no-repair、empty upgrade、`alembic check`：全部 `PASS`。
+
+### Wave 4 Validation
+
+环境：仅监听 `127.0.0.1:55432` 的临时 PostgreSQL 17.10 与随机隔离 schema。
+
+- `mise exec uv@0.12.3 python@3.12.13 -- uv sync --frozen`：`PASS`
+- `mise exec uv@0.12.3 python@3.12.13 -- uv lock --check`：`PASS`
+- Ruff：`PASS`
+- mypy：`PASS`，52 source files
+- Alembic heads：`PASS`，`20260810_0002 (head)`
+- 真实 PostgreSQL pytest：`PASS`，101 tests
+- `git diff --check`：`PASS`
+
+Wave 4 Integration：`PASS`。
+
+### API / Design
+
+T005/T006 未新增或修改 HTTP endpoint。Audit 的数据库/写入模型按人工批准的 ADR 0017 发生
+架构变更；T015 后续提供固定 `null`/derived metadata compatibility projection，不得恢复 snapshot。
+
+- `DESIGN_GAP`：无
+- `DESIGN_DEVIATION`：无
+
+### Wave 5 readiness
+
+Wave 5：`NOT_READY`。
+
+- T009 的 T005/T006 dependencies 已满足，T009：`READY`。
+- T041 虽已满足 T006 dependency，但仍为 `BLOCKED_DESIGN_GAP (DG-02)`。
+- Wave 5 只有全部 Task 可执行时才可标记 `READY`；本次未启动 T009、T041 或任何 Wave 5 工作。

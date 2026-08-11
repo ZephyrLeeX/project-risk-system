@@ -18,13 +18,14 @@ Completed tasks:
 - T007 REVIEW_PASSED
 
 Current:
-- Wave 5: NOT_READY
+- Wave 5: READY
 - T009: READY
-- T041: BLOCKED_DESIGN_GAP
-- DG-02: unresolved
+- T041: READY
+- DG-02: RESOLVED by ADR 0018
 
 Architecture changes:
 - ADR 0017: Audit is metadata-only; no snapshot/redaction.
+- ADR 0018: Durable tasks use PostgreSQL task/outbox facts, domain-to-task references, fenced leases and at-least-once dispatch.
 
 Environment:
 - Python validation via mise explicit tool selection.
