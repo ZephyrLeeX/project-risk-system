@@ -46,10 +46,10 @@ Current:
 - T022: REVIEW_PASSED
 - T023: REVIEW_PASSED
 - Wave 8: PASS (T022 import-cycle fix reviewed; full pytest and PostgreSQL/Alembic integration validation passed)
-- Current Wave: Wave 9 partial (T018 REVIEW_PASSED; T024 READY after DG-10 resolution); Wave 9 Integration 未启动。
+- Current Wave: Wave 9 partial (T018/T024 REVIEW_PASSED); Wave 9 Integration 未启动。
 - T018: REVIEW_PASSED (checkpoint `b8a5a5f`; see `docs/implementation/reports/T018.md`).
-- T024: READY (DG-10 resolved; 本次仅完成设计落地，T024 未执行)。
-- Next Wave: NOT_READY; Wave 9 Integration 尚未启动，T024 仍待实施和 Review。
+- T024: REVIEW_PASSED (DG-10 resolved; implementation and Independent Review complete; checkpoint `311ddc3`).
+- Next Wave: NOT_READY; Wave 9 Integration 尚未启动，按本次指令停止。
 - DG-01: RESOLVED by ADR 0019
 - DG-02: RESOLVED by ADR 0018
 - DG-03: RESOLVED by ADR 0019
@@ -104,4 +104,6 @@ Integration blockers:
 - Wave 8 prior failed-integration checkpoint: `9c1b598d425a06cb3ed6753252d9209e6a73aaae`.
 - Wave 8 final Integration Fix checkpoint: `5f5d421f5bc4f7a86c0f70c1febda6c1c8ae515a`; see `docs/implementation/reports/WAVE-08.md`.
 - T018 checkpoint: `b8a5a5f`; see `docs/implementation/reports/T018.md` and `docs/implementation/reports/WAVE-09-PARTIAL.md`.
-- DG-10 design checkpoint: created by ADR 0022 and synchronized task/design state; T024 implementation remains unstarted.
+- DG-10 design checkpoint: created by ADR 0022 and synchronized task/design state; T024 implementation is complete and reviewed.
+- T024 implementation and Independent Review: `REVIEW_PASSED`; see `docs/implementation/reports/T024.md` and `docs/implementation/reports/WAVE-09-PARTIAL.md`.
+- T024 checkpoint: `311ddc3`.

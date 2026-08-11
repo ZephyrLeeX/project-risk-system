@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import email.utils
 import imaplib
 import time
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from email.parser import BytesHeaderParser
 
 from risk_platform.shared.outbound import OutboundEndpointGuard
 
@@ -16,6 +19,22 @@ class ConnectionOutcome:
     latency_ms: int
     error_code: str | None = None
     error_summary: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class MailEnvelope:
+    uid: int
+    uid_validity: int
+    message_id: str | None
+    subject: str | None
+    sender: str | None
+    sent_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class MailSyncSnapshot:
+    uid_validity: int
+    envelopes: tuple[MailEnvelope, ...]
 
 
 class MailboxConnection:
@@ -46,6 +65,90 @@ class MailboxConnection:
                 await asyncio.to_thread(self._close, client)
             code, summary = self.classify(exc)
             return ConnectionOutcome(False, int((time.monotonic() - started) * 1000), code, summary)
+
+    async def discover(
+        self,
+        *,
+        email: str,
+        auth_code: str,
+        host: str,
+        port: int,
+        encryption: str,
+        folder: str,
+        cursor: int | None,
+        initial_sync_weeks: int,
+    ) -> MailSyncSnapshot:
+        """Fetch envelope metadata only; message bodies never leave this worker."""
+
+        endpoint = await self._outbound.resolve_imap(host, port)
+        client: object | None = None
+        try:
+            client = await asyncio.to_thread(
+                self._create, endpoint.connection_address, host, port, encryption
+            )
+            await asyncio.to_thread(self._login, client, email, auth_code)
+            await asyncio.to_thread(self._select_readonly, client, folder)
+            validity = await asyncio.to_thread(self._uid_validity, client)
+            criterion = (
+                f"UID {cursor + 1}:*"
+                if cursor is not None
+                else f"SINCE {self._since(initial_sync_weeks)}"
+            )
+            uids = await asyncio.to_thread(self._search, client, criterion)
+            envelopes = []
+            for uid in uids:
+                raw = await asyncio.to_thread(self._fetch_header, client, uid)
+                envelopes.append(self._parse_envelope(uid, validity, raw))
+            return MailSyncSnapshot(validity, tuple(envelopes))
+        finally:
+            if client is not None:
+                await asyncio.to_thread(self._close, client)
+
+    @staticmethod
+    def _since(weeks: int) -> str:
+        from datetime import timedelta
+
+        return (datetime.now(UTC) - timedelta(weeks=weeks)).strftime("%d-%b-%Y")
+
+    @staticmethod
+    def _uid_validity(client: object) -> int:
+        typ, data = client.response("UIDVALIDITY")  # type: ignore[attr-defined]
+        if typ != "UIDVALIDITY" or not data or not data[0]:
+            raise RuntimeError("IMAP UIDVALIDITY unavailable")
+        return int(data[0])
+
+    @staticmethod
+    def _search(client: object, criterion: str) -> list[int]:
+        typ, data = client.uid("search", None, criterion)  # type: ignore[attr-defined]
+        if typ != "OK" or not data or not data[0]:
+            return []
+        return sorted(int(value) for value in data[0].split())
+
+    @staticmethod
+    def _fetch_header(client: object, uid: int) -> bytes:
+        typ, data = client.uid("fetch", str(uid), "(UID BODY.PEEK[HEADER])")  # type: ignore[attr-defined]
+        if typ != "OK":
+            raise RuntimeError("IMAP message fetch failed")
+        return b"".join(item for item in data if isinstance(item, bytes))
+
+    @staticmethod
+    def _parse_envelope(uid: int, validity: int, raw: bytes) -> MailEnvelope:
+        header = BytesHeaderParser().parsebytes(raw)
+        parsed = (
+            email.utils.parsedate_to_datetime(header.get("Date", ""))
+            if header.get("Date")
+            else None
+        )
+        if parsed is not None and parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=UTC)
+        return MailEnvelope(
+            uid=uid,
+            uid_validity=validity,
+            message_id=header.get("Message-ID"),
+            subject=header.get("Subject"),
+            sender=header.get("From"),
+            sent_at=parsed,
+        )
 
     def _create(self, resolved: str, host: str, port: int, encryption: str) -> object:
         if self._client_factory is not None:

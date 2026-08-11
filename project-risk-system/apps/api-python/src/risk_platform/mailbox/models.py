@@ -96,6 +96,7 @@ class MailboxConfig(Base):
     autoSyncEnabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("TRUE")
     )
+    uidValidity: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     uidCursor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     connectionStatus: Mapped[MailboxConnectionStatus] = mapped_column(
         Enum(MailboxConnectionStatus, name="MailboxConnectionStatus", native_enum=True),
@@ -214,6 +215,21 @@ class MailSyncBatch(Base):
         ),
         nullable=True,
     )
+    uidValidity: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    discoveredCount: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    handedOffCount: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    downstreamPendingCount: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
+    retryableFailedCount: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
+    permanentlyFailedCount: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
+    cursorAdvanced: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("FALSE")
+    )
     createdAt: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True, precision=3),
         nullable=False,
@@ -237,6 +253,84 @@ class MailMessageStatus(StrEnum):
     COMPLETED = "COMPLETED"
     SKIPPED = "SKIPPED"
     FAILED = "FAILED"
+
+
+class MailStageStatus(StrEnum):
+    PENDING = "PENDING"
+    SUCCEEDED = "SUCCEEDED"
+    RETRYABLE_FAILURE = "RETRYABLE_FAILURE"
+    PERMANENT_FAILURE = "PERMANENT_FAILURE"
+
+
+class MailSourceHandoff(Base):
+    """UID-only durable handoff; mail content is deliberately absent."""
+
+    __tablename__ = "mail_source_handoffs"
+    __table_args__ = (
+        Index(
+            "mail_source_handoffs_mailbox_uidValidity_uid_key",
+            "mailboxConfigId",
+            "uidValidity",
+            "imapUid",
+            unique=True,
+        ),
+        Index("mail_source_handoffs_batchId_idx", "batchId"),
+        Index("mail_source_handoffs_messageId_idx", "mailboxConfigId", "messageId"),
+    )
+
+    id: Mapped[UUID] = mapped_column(UUIDType(as_uuid=True), primary_key=True, default=new_uuid)
+    mailboxConfigId: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True),
+        ForeignKey("mailbox_configs.id", ondelete="CASCADE", onupdate="CASCADE"),
+        nullable=False,
+    )
+    batchId: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True),
+        ForeignKey("mail_sync_batches.id", ondelete="CASCADE", onupdate="CASCADE"),
+        nullable=False,
+    )
+    parseTaskId: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True),
+        ForeignKey("durable_tasks.id", ondelete="RESTRICT", onupdate="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    uidValidity: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    imapUid: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    messageId: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    envelopeMetadata: Mapped[JSONValue] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    fetchStatus: Mapped[MailStageStatus] = mapped_column(
+        Enum(MailStageStatus, name="MailStageStatus"),
+        nullable=False,
+        server_default=text("'SUCCEEDED'"),
+    )
+    handoffStatus: Mapped[MailStageStatus] = mapped_column(
+        Enum(MailStageStatus, name="MailStageStatus"),
+        nullable=False,
+        server_default=text("'SUCCEEDED'"),
+    )
+    parseStatus: Mapped[MailStageStatus] = mapped_column(
+        Enum(MailStageStatus, name="MailStageStatus"),
+        nullable=False,
+        server_default=text("'PENDING'"),
+    )
+    aiReviewStatus: Mapped[MailStageStatus] = mapped_column(
+        Enum(MailStageStatus, name="MailStageStatus"),
+        nullable=False,
+        server_default=text("'PENDING'"),
+    )
+    failureCode: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    failureSummary: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    createdAt: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True, precision=3),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updatedAt: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True, precision=3), nullable=False, default=utc_now, onupdate=utc_now
+    )
 
 
 class MailMessage(Base):
