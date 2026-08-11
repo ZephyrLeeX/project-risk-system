@@ -1,13 +1,13 @@
 # T027 — Implement weekly report aggregation
 - **Task ID:** T027
 - **Title:** Implement weekly report aggregation
-- **Status:** BLOCKED_DESIGN_GAP (DG-01, DG-09) / TODO
+- **Status:** TODO
 - **Objective:** Expose authorized current-week report summary/detail from processed mail and published business state.
 - **Design baseline:** `CONTEXT.md` “本周周报”; design §§3,6.
-- **Authoritative source references:** approved DG-01/DG-09 addenda; T004/T025/T026 schemas and services; `project-risk-system/apps/web/src/views/DashboardView.vue` only for visible placement.
-- **Relevant ADR IDs:** 0004, 0007, 0011, 0015.
-- **Dependencies:** T004, T010, T020, T025, T026 and approved DG-01/DG-09 addenda.
-- **Scope:** DG-09-approved aggregate creation/rebuild/invalidation path, Shanghai-week query, sent/received fallback, project-scope filtering, summary/detail schemas and endpoints.
+- **Authoritative source references:** ADRs 0019/0021; T004/T025/T026 schemas and services; `project-risk-system/apps/web/src/views/DashboardView.vue` only for visible placement.
+- **Relevant ADR IDs:** 0004, 0007, 0011, 0015, 0019, 0021.
+- **Dependencies:** T004, T010, T020, T025, T026.
+- **Scope:** ADR 0021 aggregate creation/rebuild/invalidation path, Shanghai-week query, sent/received fallback, project-scope filtering, ADR 0019 summary/detail schemas and endpoints.
 - **Explicit out-of-scope:** New mail storage, Agent, frontend wiring.
 - **Expected read set:** Named definitions/schema/addendum.
 - **Expected write set:** Python weekly-report module/OpenAPI/tests.
@@ -15,5 +15,5 @@
 - **Acceptance criteria:** Boundary/DST-neutral/fallback/delay/late-update/rebuild/scope/empty-state tests match the approved contract and prove aggregate/source consistency.
 - **Validation:** PostgreSQL API tests with fixed clocks.
 - **Required deliverables:** Routes/query service/schemas/tests.
-- **Stop conditions:** DG-01 or DG-09 unresolved.
+- **Stop conditions:** A required source service or the approved aggregate contract is unavailable.
 - **Known integration risks:** Timezone boundary and duplicate project/mail counting.

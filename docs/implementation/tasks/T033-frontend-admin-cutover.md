@@ -1,7 +1,7 @@
 # T033 — Cut admin frontend to Python dynamic APIs
 - **Task ID:** T033
 - **Title:** Cut admin frontend to Python dynamic APIs
-- **Status:** BLOCKED_DESIGN_GAP (DG-01) / TODO
+- **Status:** TODO
 - **Objective:** Connect all admin pages to generated Python contracts and remove fixed overview business state without redesign.
 - **Design baseline:** Design §§3,10(9),11.
 - **Authoritative source references:** existing admin views/APIs; generated types T032; T016 contract; UI prototype for visual baseline only.
@@ -15,5 +15,5 @@
 - **Acceptance criteria:** All admin pages pass real-API E2E including degraded/empty/forbidden states.
 - **Validation:** pnpm typecheck/test/build and browser E2E.
 - **Required deliverables:** API wiring, state handling, tests.
-- **Stop conditions:** DG-01 unresolved or required view field absent from contract.
+- **Stop conditions:** A required view field is absent from the approved contract.
 - **Known integration risks:** Shared HTTP error handling and visual regressions.

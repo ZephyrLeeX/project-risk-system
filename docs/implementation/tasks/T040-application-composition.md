@@ -1,11 +1,11 @@
 # T040 — Compose the backend application and dependency graph
 - **Task ID:** T040
 - **Title:** Compose the backend application and dependency graph
-- **Status:** BLOCKED_DESIGN_GAP (inherits DG-01/DG-03/DG-04/DG-06/DG-07/DG-09/DG-10) / TODO
+- **Status:** BLOCKED_DESIGN_GAP (inherits DG-04/DG-10) / TODO
 - **Objective:** Wire all completed Python routers, services, repositories, worker tasks and lifecycle resources into the shared FastAPI/Celery application without changing module contracts.
 - **Design baseline:** `../BASELINE.md`, `../GLOBAL_CONSTRAINTS.md`; design §§4,10.
-- **Authoritative source references:** T002 composition contract; T003 session contract; ADR 0018; T008 worker registry; completed T009-T031 module entry points.
-- **Relevant ADR IDs:** 0001, 0002, 0006, 0010, 0011, 0018.
+- **Authoritative source references:** T002 composition contract; T003 session contract; ADRs 0018-0021; T008 worker registry; completed T009-T031 module entry points.
+- **Relevant ADR IDs:** 0001, 0002, 0006, 0010, 0011, 0018-0021.
 - **Dependencies:** T008, T009, T010, T011, T012, T013, T014, T015, T016, T017, T018, T019, T020, T021, T022, T023, T024, T025, T026, T027, T028, T029, T030, T031.
 - **Scope:** Shared app/router/lifespan composition, dependency-provider bindings, worker task discovery, startup/shutdown ordering and full-app smoke tests.
 - **Explicit out-of-scope:** New endpoints, schemas, business logic, migrations, frontend, production Compose.

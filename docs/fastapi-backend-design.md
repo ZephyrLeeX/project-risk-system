@@ -88,7 +88,7 @@ flowchart LR
 
 - PostgreSQL 是唯一正式数据库；不使用 SQLite 作为本地替代，避免行为差异。
 - 用户、权限、项目、导入、风险、待办、邮箱和审计等核心结构保持与现有 Prisma 模型兼容。
-- Agent 会话、一次性确认凭证和周报聚合采用新增表。
+- Agent 会话、消息、有序事件、一次性确认凭证和周报聚合采用新增表；字段、公开 API、确认和 SSE 契约以 ADR 0019 为准，执行/领域命令以 ADR 0020 为准，周报物化生命周期以 ADR 0021 为准。
 - Alembic 以当前结构建立基线，后续所有结构变化均通过显式迁移完成。
 - 数据库统一保存 UTC 时间，界面业务时间按 `Asia/Shanghai` 展示。
 - 风险只在 `ACTIVE`（跟踪中）与 `RESOLVED`（已解除）之间流转；处置阶段由待办和时间线表达。
@@ -127,10 +127,10 @@ flowchart LR
 1. 用户发起或继续一个最多保留 90 天的会话；
 2. 模型识别意图并选择白名单业务工具，禁止任意 SQL；
 3. 查询工具每次重新执行权限和项目数据范围过滤；
-4. 文本、进度和结构化预览通过 SSE 返回；
+4. 文本、进度和结构化预览通过 SSE 返回；事件由 PostgreSQL 有序持久化，支持 cursor 补发，具体 event/断线契约以 ADR 0019 为准；
 5. 上报、处理或解除先生成预览，不在流式响应中写入；
 6. 用户通过 REST 提交绑定用户、会话和内容的一次性短效确认凭证；
-7. 服务在事务中执行幂等写入、关联联动和审计；
+7. 服务在事务中执行幂等写入、关联联动和审计；上报、处理、解除的精确定义以 ADR 0020 为准；
 8. 回答包含业务依据、数据时间和追踪编号。
 
 AI 不可用时明确失败并允许重试；非 AI 看板、导入和风险维护功能继续可用。
@@ -162,7 +162,7 @@ AI 不可用时明确失败并允许重试；非 AI 看板、导入和风险维�
 - PostgreSQL 通过 `UNIQUE(kind, idempotency_key)` 强制任务创建幂等性；task payload 只保存小型标识符和执行配置，不保存文件、邮件正文、大型业务内容或领域结果。
 - PostgreSQL transactional outbox 提供 at-least-once 投递；Redis/Celery message 只携带 `task_id` 和 `dispatch_generation`。
 - Worker 使用 lease token、heartbeat、expiry 和 fencing；reconciliation 负责 lost dispatch、到期 retry 和 expired lease。完整契约以 ADR 0018 为准。
-- Agent AI execution 不由本节的 durable task 契约决定，其 Worker/SSE 边界由 DG-06 另行批准。
+- Agent AI invocation 使用 ADR 0018 durable task/outbox 由 Celery Worker 执行；Worker 先向 PostgreSQL 写入有序 event facts，SSE API 只读取这些事实。取消、heartbeat、背压和恢复以 ADR 0019/0020 为准。
 
 ## 9. 容量、备份与运行目标
 

@@ -1,12 +1,12 @@
 # T016 — Implement dynamic management overview
 - **Task ID:** T016
 - **Title:** Implement dynamic management overview
-- **Status:** BLOCKED_DESIGN_GAP (DG-01) / TODO
+- **Status:** TODO
 - **Objective:** Replace fixed admin health, attention and audit activity with one approved dynamic backend contract.
 - **Design baseline:** Design §§3,9,10(4).
-- **Authoritative source references:** approved DG-01 addendum; `project-risk-system/apps/web/src/views/admin/AdminDashboardView.vue`; existing admin/import/provider/audit API modules.
+- **Authoritative source references:** ADR 0019; `project-risk-system/apps/web/src/views/admin/AdminDashboardView.vue`; existing admin/import/provider/audit API modules.
 - **Relevant ADR IDs:** 0003, 0006, 0008, 0011.
-- **Dependencies:** T008, T011, T012, T013, T014, T015, T018, T024 and approved DG-01.
+- **Dependencies:** T008, T011, T012, T013, T014, T015, T018, T024.
 - **Scope:** Overview endpoint/service aggregating API/DB/Redis/worker/external checks, actionable counts and recent audit/import facts.
 - **Explicit out-of-scope:** New UI (T033), monitoring platform, synthetic success.
 - **Expected read set:** Named view/modules and addendum.
@@ -15,5 +15,5 @@
 - **Acceptance criteria:** Approved schema and healthy/degraded/unavailable tests pass.
 - **Validation:** API integration with dependency fault injection.
 - **Required deliverables:** Endpoint/service/schemas/tests.
-- **Stop conditions:** DG-01 unresolved.
+- **Stop conditions:** An ADR 0019 section cannot be satisfied through the declared source modules.
 - **Known integration risks:** Slow external health checks and false aggregate “healthy”.

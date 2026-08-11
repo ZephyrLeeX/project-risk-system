@@ -1,12 +1,12 @@
 # T032 — Transition contract authority to OpenAPI
 - **Task ID:** T032
 - **Title:** Transition contract authority to OpenAPI
-- **Status:** BLOCKED_DESIGN_GAP (DG-01) / TODO
+- **Status:** TODO
 - **Objective:** Freeze reviewed FastAPI OpenAPI and reproducibly generate frontend TypeScript types.
 - **Design baseline:** Design §§5,11.
-- **Authoritative source references:** all implemented routes; transitional contracts; frontend APIs; approved DG-01.
+- **Authoritative source references:** all implemented routes; transitional contracts; frontend APIs; ADR 0019.
 - **Relevant ADR IDs:** 0001, 0010, 0011, 0016.
-- **Dependencies:** T040 and approved DG-01.
+- **Dependencies:** T040.
 - **Scope:** OpenAPI metadata/components, deterministic export, compatibility diff, TS generator/commands and generated artifact policy.
 - **Explicit out-of-scope:** Frontend page refactor and manual editing generated types.
 - **Expected read set:** T040-composed backend OpenAPI, every public route/schema module, `packages/contracts/src/index.ts`, and frontend API clients.
@@ -15,5 +15,5 @@
 - **Acceptance criteria:** Re-generation has zero diff; compatibility diff approved; frontend typecheck can consume output.
 - **Validation:** OpenAPI schema validation, generation, contract diff, pnpm typecheck.
 - **Required deliverables:** Spec, generator, generated types, CI/documentation.
-- **Stop conditions:** DG-01 unresolved or breaking diff lacks approval.
+- **Stop conditions:** A breaking diff lacks approval.
 - **Known integration risks:** Optional/null and decimal/date representation drift.
