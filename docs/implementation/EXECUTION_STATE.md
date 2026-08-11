@@ -21,10 +21,11 @@ Completed tasks:
 - T008 REVIEW_PASSED
 - T010 REVIEW_PASSED
 - T041 REVIEW_PASSED
+- T004 REVIEW_PASSED
 
 Current:
-- Wave 6: READY (T004 is now ready; T008/T010 are REVIEW_PASSED)
-- T004: READY
+- Wave 6: PARTIAL PASS (T004/T008/T010 are REVIEW_PASSED; stop after T004 checkpoint)
+- T004: REVIEW_PASSED
 - T008: REVIEW_PASSED
 - T010: REVIEW_PASSED
 - T011: READY
@@ -43,6 +44,7 @@ Current:
 
 Checkpoint commits:
 - T010: e30dd45
+- T004: pending checkpoint
 
 Architecture changes:
 - ADR 0017: Audit is metadata-only; no snapshot/redaction.

@@ -23,6 +23,7 @@ class Base(DeclarativeBase):
 metadata = Base.metadata
 
 _MODEL_MODULES = (
+    "agent",
     "admin",
     "ai_providers",
     "audit",
@@ -36,6 +37,7 @@ _MODEL_MODULES = (
     "system_config",
     "timeline",
     "todos",
+    "weekly_reports",
 )
 for _module in _MODEL_MODULES:
     import_module(f"risk_platform.{_module}.models")
