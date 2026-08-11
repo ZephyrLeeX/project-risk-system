@@ -160,6 +160,30 @@ def test_audit_enforcement_is_installed_by_t006(
     }
 
 
+def test_t006_migration_works_without_public_search_path(
+    migrated_postgresql_schema: Connection,
+) -> None:
+    search_path = migrated_postgresql_schema.scalar(text("SELECT current_setting('search_path')"))
+    schema = migrated_postgresql_schema.scalar(text("SELECT current_schema()"))
+    assert search_path == schema
+    assert "public" not in str(search_path).lower()
+
+    migrated_postgresql_schema.execute(
+        text(
+            '''INSERT INTO "audit_logs"
+            ("id", "actorType", "module", "action", "resourceType", "resourceId",
+             "result", "traceId", "createdAt")
+            VALUES (:id, 'SYSTEM', 'T006', 'SEARCH_PATH.PROBE', 'AUDIT_LOG', 'probe',
+                    'SUCCESS', :trace_id, CURRENT_TIMESTAMP)'''
+        ),
+        {"id": uuid.uuid4(), "trace_id": str(uuid.uuid4())},
+    )
+    migrated_postgresql_schema.commit()
+    assert migrated_postgresql_schema.scalar(
+        text('SELECT "integrityHash" FROM "audit_logs" WHERE "action" = \'SEARCH_PATH.PROBE\'')
+    )
+
+
 def test_request_and_worker_transactions_commit_rollback_and_dispose(
     migrated_postgresql_schema: Connection,
 ) -> None:

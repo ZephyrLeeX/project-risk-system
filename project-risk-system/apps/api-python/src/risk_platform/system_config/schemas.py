@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Literal
 from uuid import UUID
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, model_validator
 
 from risk_platform.shared.http import StrictRequestModel
 
@@ -142,8 +142,18 @@ def clean_keywords(values: list[str]) -> list[str]:
 
 
 __all__ = [
-    "ConfigOverview", "ConfigSnapshot", "MailSettings", "NotificationSettings",
-    "ProjectAlias", "ProjectOptionResponse", "PublishRequest", "ReleaseDetail",
-    "ReleaseItem", "ReleaseQuery", "RiskCategory", "RiskLevelRule", "SecuritySettings",
+    "ConfigOverview",
+    "ConfigSnapshot",
+    "MailSettings",
+    "NotificationSettings",
+    "ProjectAlias",
+    "ProjectOptionResponse",
+    "PublishRequest",
+    "ReleaseDetail",
+    "ReleaseItem",
+    "ReleaseQuery",
+    "RiskCategory",
+    "RiskLevelRule",
+    "SecuritySettings",
     "clean_keywords",
 ]

@@ -34,3 +34,36 @@ PostgreSQL fixture 使用临时 PostgreSQL 16、`127.0.0.1:55439`、独立数据
 ## Readiness
 
 Wave 7 Integration 为 `FAIL`。下一 Wave readiness：`BLOCKED`，原因是必须先处理上述 PostgreSQL migration/search_path blocker，并重新执行完整 validation；下一 Wave 未启动。
+
+## 2026-08-11 Integration Remediation
+
+本次仅处理两个已知 blocker，未启动下一 Wave，也未重新实施任何已通过 Task。
+
+### T006 migration portability
+
+根因是 `20260810_0002` 中 pgcrypto 未显式指定 schema，且 `digest(...)` 未限定为
+`public.digest(...)`；隔离 schema 且 `search_path` 不含 `public` 时函数解析失败。修复为
+`CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public` 与 `public.digest(...)`，保留
+metadata-only audit contract、既有 hash semantics，未恢复 snapshot/redaction。新增 isolated-schema
+regression test。T006 Independent Review：`REVIEW_PASSED`。
+
+### T013 Ruff/mypy
+
+仅修复 T013 `system_config` 的 Ruff 与 mypy findings：格式/import/异常断言、SQLAlchemy scalar
+类型收窄、ORM 局部变量类型复用和 JSON/module 字段类型收窄。未改变 T013 API/config/version
+snapshot/publish semantics。T013 Independent Review：`REVIEW_PASSED`。
+
+### Remediation validation
+
+- Focused T006/T013：`14 passed`；T013 focused Ruff/mypy：`PASS`。
+- Full Ruff：`PASS`；full mypy：`PASS`（116 source files）；`uv lock --check`：`PASS`。
+- Full pytest with isolated PostgreSQL 16：`FAIL`，`143 passed, 1 failed, 1 skipped`。
+- Remaining blocker：`tests/admin/roles/test_admin_roles.py::test_role_api_mutations_and_negative_audits`
+  返回 422，归属 T012；root cause 是既有 update fixture 仍携带 `UpdateRoleRequest` 不允许的
+  `code` 字段。本次不修改 T012。
+- Default empty-schema `upgrade head` / `current` / `check`：`PASS`。
+- Isolated-schema empty upgrade with `search_path` excluding `public` / `current` / `check`：`PASS`。
+- Alembic single head：`20260811_0004 (head)`，`PASS`；`git diff --check`：`PASS`。
+
+因此 Wave 7 Integration 仍为 `FAIL`，剩余 blocker 仅为 T012 regression；下一 Wave readiness
+仍为 `BLOCKED`，下一 Wave 未启动。

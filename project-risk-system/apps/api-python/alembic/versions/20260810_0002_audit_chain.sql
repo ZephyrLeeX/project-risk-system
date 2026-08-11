@@ -1,4 +1,4 @@
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
 
 CREATE TYPE "AuditActorType" AS ENUM ('USER', 'SYSTEM', 'WORKER', 'AGENT');
 
@@ -65,7 +65,7 @@ LANGUAGE SQL
 IMMUTABLE
 AS $$
   SELECT encode(
-    digest(
+      public.digest(
       concat_ws('|',
         p_id::text,
         COALESCE(p_actor_user_id::text, ''),

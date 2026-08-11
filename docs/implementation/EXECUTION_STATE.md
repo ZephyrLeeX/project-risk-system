@@ -30,7 +30,7 @@ Completed tasks:
 
 Current:
 - Wave 6: PASS (T004/T008/T010 remain REVIEW_PASSED; PostgreSQL integration validation passed)
-- Wave 7: FAIL (T011/T012/T013/T014/T015/T017/T021 REVIEW_PASSED; Integration executed and blocked by PostgreSQL audit migration/search_path failure and existing T013 full Ruff/mypy findings)
+- Wave 7: FAIL (T011/T012/T013/T014/T015/T017/T021 REVIEW_PASSED; T006/T013 remediation reviewed and passed, but full PostgreSQL pytest retains one T012 regression)
 - T004: REVIEW_PASSED
 - T008: REVIEW_PASSED
 - T010: REVIEW_PASSED
@@ -79,8 +79,10 @@ Important invariants:
 
 Integration blockers:
 - T013 regression test fixture was minimally corrected and passes independently; no production code change.
-- Wave 7 Integration failed because T006 audit migration `20260810_0002` cannot resolve pgcrypto `digest` when isolated PostgreSQL test schemas exclude `public` from `search_path`.
-- Full Ruff/mypy still report existing T013 `system_config` findings; not silently treated as PASS.
+- T006 migration portability remediation explicitly installs pgcrypto in `public` and calls `public.digest`; isolated PostgreSQL upgrade/hash regression passes with `search_path` excluding `public`.
+- Full Ruff and mypy pass after the T013-only remediation.
+- Full isolated PostgreSQL pytest remains blocked by the existing T012 role update regression (`422` caused by an obsolete `code` field in the update test fixture); T012 was not modified in this remediation.
 - Current Wave: Wave 7 is IN_PROGRESS; T011, T012, T013, T014, T015 and T017 have been completed in this execution unit sequence.
 - T017 implementation, Independent Review, validation and checkpoint commit are complete. T021 remains READY and was not started.
 - T021 implementation, Independent Review and validation are complete. Wave 7 Integration was executed and failed; next Wave remains blocked and was not started. See `docs/implementation/reports/WAVE-07.md`.
+- Wave 7 Integration Remediation completed T006/T013 only; both Independent Reviews passed. Wave 7 remains `FAIL` due to the T012 regression above; next Wave remains blocked and was not started.
