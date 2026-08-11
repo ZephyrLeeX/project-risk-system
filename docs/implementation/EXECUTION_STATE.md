@@ -55,7 +55,7 @@ Checkpoint commits:
 - T013: 13463f3
 - T014: d9bde24
 - T015: dd603dc
-- T017: pending checkpoint commit
+- T017: 7c4b2e60f1b54ad11c18caeae6a65a440026e9db
 
 Architecture changes:
 - ADR 0017: Audit is metadata-only; no snapshot/redaction.
@@ -78,4 +78,4 @@ Important invariants:
 Integration blockers:
 - Existing T013 full-suite failure remains pending for Wave 7 Integration; do not fix in unrelated Tasks.
 - Current Wave: Wave 7 is IN_PROGRESS; T011, T012, T013, T014, T015 and T017 have been completed in this execution unit sequence.
-- T017 implementation, Independent Review and validation are complete; checkpoint commit is pending in this closeout. T021 remains READY and was not started.
+- T017 implementation, Independent Review, validation and checkpoint commit are complete. T021 remains READY and was not started.
