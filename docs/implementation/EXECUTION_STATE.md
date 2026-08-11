@@ -46,16 +46,17 @@ Current:
 - T022: REVIEW_PASSED
 - T023: REVIEW_PASSED
 - Wave 8: PASS (T022 import-cycle fix reviewed; full pytest and PostgreSQL/Alembic integration validation passed)
-- Current Wave: Wave 9 partial (T018 REVIEW_PASSED; T024 BLOCKED_DESIGN_GAP DG-10); Wave 9 Integration 未启动。
+- Current Wave: Wave 9 partial (T018 REVIEW_PASSED; T024 READY after DG-10 resolution); Wave 9 Integration 未启动。
 - T018: REVIEW_PASSED (checkpoint `b8a5a5f`; see `docs/implementation/reports/T018.md`).
-- T024: BLOCKED_DESIGN_GAP (DG-10); 本次未执行。
-- Next Wave: NOT_READY; Wave 9 仍有 T024/DG-10 blocker。
+- T024: READY (DG-10 resolved; 本次仅完成设计落地，T024 未执行)。
+- Next Wave: NOT_READY; Wave 9 Integration 尚未启动，T024 仍待实施和 Review。
 - DG-01: RESOLVED by ADR 0019
 - DG-02: RESOLVED by ADR 0018
 - DG-03: RESOLVED by ADR 0019
 - DG-06: RESOLVED by ADR 0020
 - DG-07: RESOLVED by ADR 0020
 - DG-09: RESOLVED by ADR 0021
+- DG-10: RESOLVED by ADR 0022
 
 Checkpoint commits:
 - T010: e30dd45
@@ -74,6 +75,7 @@ Architecture changes:
 - ADR 0019: Agent API, confirmation and PostgreSQL-backed SSE contract.
 - ADR 0020: Agent Celery execution and domain-command contract.
 - ADR 0021: PostgreSQL weekly aggregate lifecycle contract.
+- ADR 0022: Mail fetch-to-parse/AI UID/UIDVALIDITY-only durable handoff, stage terminal states, crash recovery and cursor contract.
 
 Environment:
 - Python validation via mise explicit tool selection.
@@ -102,3 +104,4 @@ Integration blockers:
 - Wave 8 prior failed-integration checkpoint: `9c1b598d425a06cb3ed6753252d9209e6a73aaae`.
 - Wave 8 final Integration Fix checkpoint: `5f5d421f5bc4f7a86c0f70c1febda6c1c8ae515a`; see `docs/implementation/reports/WAVE-08.md`.
 - T018 checkpoint: `b8a5a5f`; see `docs/implementation/reports/T018.md` and `docs/implementation/reports/WAVE-09-PARTIAL.md`.
+- DG-10 design checkpoint: created by ADR 0022 and synchronized task/design state; T024 implementation remains unstarted.

@@ -111,14 +111,16 @@ flowchart LR
 ### 邮箱与周报
 
 1. 风险管理员配置自己的只读 IMAP 邮箱；
-2. Worker 按 UID 增量同步并执行去重、规则判断、正文清洗和受限附件解析；
-3. 通过标准项目名和项目别名匹配项目；
-4. 调用已启用且健康的 AI Provider 生成结构化风险候选；
+2. T024 按 UID/UIDVALIDITY 增量同步、去重并完成 durable handoff；T025 负责正文清洗、受限附件解析和项目匹配；T026 负责 AI 风险候选、复核和发布；
+3. durable handoff 只保存 mailbox、UIDVALIDITY、UID、去重标识、脱敏 envelope 元数据和阶段事实；正文/附件只存在于 Worker 内存或受控短生命周期临时文件；
+4. T025/T026 按 `(mailbox, uidValidity, uid)` 重新抓取 source，不把正文/附件放入 PostgreSQL、Redis、Celery payload、日志或 audit；
 5. 候选经风险管理员调整、忽略或确认；
 6. 确认在单个事务中产生正式风险、时间线、管理者待办和审计事件；
 7. 看板、周报汇总和 Agent 查询读取最新业务状态。
 
-系统只长期保存安全摘要、关键要点、必要证据摘录和附件元数据。重新分析时按 IMAP UID 获取原邮件；原邮件已删除时明确报告不可重试。
+系统只长期保存安全摘要、关键要点、必要证据摘录、附件元数据和脱敏 handoff 阶段事实。重新分析时按邮箱、UIDVALIDITY 和 IMAP UID 获取原邮件；原邮件已删除、UID 失效或 UIDVALIDITY 改变时记录结构化 permanent failure。
+
+fetch、durable handoff、parse、AI/review 分别记录 `SUCCEEDED`、`RETRYABLE_FAILURE` 或 `PERMANENT_FAILURE`。只有 batch 中所有 UID 都达到 terminal state，且不存在 retryable failure 或未完成阶段时，邮箱 UID cursor 才能推进；永久失败可以结束该 UID，但不能伪造成成功，也不能让 cursor 因单封邮件永久冻结。UIDVALIDITY 变化必须进入显式 reset/rebaseline 流程，禁止静默沿用旧 cursor。详细 handoff、崩溃恢复和 batch 统计契约以 ADR 0022 为准。
 
 “本周周报”按上海时区周一 00:00 至下周一 00:00 计算，优先使用邮件发送时间，缺失时使用接收时间；延迟同步不改变所属周。
 
@@ -158,6 +160,8 @@ AI 不可用时明确失败并允许重试；非 AI 看板、导入和风险维�
 - Worker 重启后根据数据库状态恢复遗漏任务；
 - 同一邮箱同一时刻只能有一个同步批次；失败邮件可单封重试，失败批次不得错误推进 UID 游标；
 - 临时文件无论成功、失败或重启都必须清理。
+- 邮箱同步 batch 分别统计 discovered、handed off、downstream pending、succeeded、retryable failed 和 permanently failed；T024 的 fetch 失败与 T025/T026 的下游失败分责记录，但下游 terminal state 可以参与 batch/cursor 判定。
+- 邮件 source handoff、UIDVALIDITY/reset、阶段终态和 crash recovery 以 ADR 0022 为准。
 - durable task 状态固定为 `QUEUED`、`RUNNING`、`RETRY_WAIT`、`SUCCEEDED`、`FAILED`、`CANCELLED`；状态迁移使用带预期旧状态和适用 lease token 的 repository 原子条件更新。
 - PostgreSQL 通过 `UNIQUE(kind, idempotency_key)` 强制任务创建幂等性；task payload 只保存小型标识符和执行配置，不保存文件、邮件正文、大型业务内容或领域结果。
 - PostgreSQL transactional outbox 提供 at-least-once 投递；Redis/Celery message 只携带 `task_id` 和 `dispatch_generation`。
