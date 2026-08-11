@@ -31,6 +31,7 @@ _MODEL_MODULES = (
     "mailbox",
     "projects",
     "rbac",
+    "reliability",
     "risks",
     "system_config",
     "timeline",

@@ -1,1 +1,1 @@
-"""Authentication module boundary."""
+"""Authentication and Cookie session bounded context."""

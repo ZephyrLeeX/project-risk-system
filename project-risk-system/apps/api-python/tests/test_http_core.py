@@ -4,6 +4,7 @@ import asyncio
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from ipaddress import ip_network
+from pathlib import Path
 from uuid import UUID
 
 import httpx2
@@ -386,6 +387,7 @@ def test_settings_are_validated_without_exposing_values() -> None:
             "API_PORT": "8443",
             "CORS_ORIGIN": "https://one.internal,https://two.internal",
             "TRUSTED_PROXY_CIDRS": "10.0.0.5/24,fd00::/64",
+            "SESSION_SECRET_FILE": "/run/secrets/project_risk_session_key",
         }
     )
 
@@ -405,7 +407,12 @@ def test_settings_are_validated_without_exposing_values() -> None:
 
 def test_cookie_security_defaults_match_environment() -> None:
     development = session_cookie_options(Settings(environment="development"))
-    production = session_cookie_options(Settings(environment="production"))
+    production = session_cookie_options(
+        Settings(
+            environment="production",
+            session_secret_file=Path("/run/secrets/project_risk_session_key"),
+        )
+    )
 
     assert development == {
         "httponly": True,

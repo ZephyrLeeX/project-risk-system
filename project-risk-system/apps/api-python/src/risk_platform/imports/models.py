@@ -44,6 +44,12 @@ class ImportBatch(Base):
     id: Mapped[UUID] = mapped_column(
         UUIDType(as_uuid=True), primary_key=True, nullable=False, default=new_uuid
     )
+    taskId: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True),
+        ForeignKey("durable_tasks.id", ondelete="RESTRICT", onupdate="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
     fileName: Mapped[str] = mapped_column(String(255), nullable=False)
     fileHash: Mapped[str] = mapped_column(String(64), nullable=False)
     storageKey: Mapped[str] = mapped_column(String(500), nullable=False)

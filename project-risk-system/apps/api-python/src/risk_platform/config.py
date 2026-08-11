@@ -6,10 +6,18 @@ import os
 import re
 from collections.abc import Mapping
 from ipaddress import IPv4Network, IPv6Network, ip_network
+from pathlib import Path
 from typing import Literal, Self
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 Environment = Literal["development", "test", "production"]
 IpNetwork = IPv4Network | IPv6Network
@@ -29,6 +37,7 @@ class Settings(BaseModel):
     cors_origins: tuple[str, ...] = ("http://localhost:5173",)
     trusted_proxy_cidrs: tuple[IpNetwork, ...] = ()
     session_cookie_name: str = "project_risk_session"
+    session_secret_file: Path | None = None
 
     @field_validator("cors_origins")
     @classmethod
@@ -57,6 +66,19 @@ class Settings(BaseModel):
             raise ValueError("invalid cookie name")
         return name
 
+    @field_validator("session_secret_file", mode="before")
+    @classmethod
+    def validate_session_secret_file(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            raise ValueError("session secret file path must not be empty")
+        return value
+
+    @model_validator(mode="after")
+    def require_production_session_secret_file(self) -> Self:
+        if self.environment == "production" and self.session_secret_file is None:
+            raise ValueError("SESSION_SECRET_FILE is required in production")
+        return self
+
     @property
     def session_cookie_secure(self) -> bool:
         """Production session cookies are always HTTPS-only."""
@@ -73,6 +95,7 @@ class Settings(BaseModel):
             "NODE_ENV": "environment",
             "API_PORT": "api_port",
             "SESSION_COOKIE_NAME": "session_cookie_name",
+            "SESSION_SECRET_FILE": "session_secret_file",
         }
         for env_name, field_name in scalar_names.items():
             if env_name in source:
@@ -98,7 +121,12 @@ class Settings(BaseModel):
     @staticmethod
     def _invalid_fields(exc: ValidationError | ValueError) -> list[str]:
         if isinstance(exc, ValidationError):
-            return sorted({str(error["loc"][0]) for error in exc.errors()})
+            return sorted(
+                {
+                    str(error["loc"][0]) if error["loc"] else "SESSION_SECRET_FILE"
+                    for error in exc.errors()
+                }
+            )
         return ["TRUSTED_PROXY_CIDRS"]
 
 

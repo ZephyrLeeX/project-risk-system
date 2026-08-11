@@ -51,7 +51,37 @@ def test_metadata_has_final_prisma_tables_with_approved_audit_override() -> None
         "integrityHash",
         "createdAt",
     }
-    assert len(expected) == 28
+    expected["import_batches"].add("taskId")
+    expected["mail_sync_batches"].add("taskId")
+    expected["durable_tasks"] = {
+        "id",
+        "kind",
+        "status",
+        "idempotencyKey",
+        "payload",
+        "attemptCount",
+        "maxAttempts",
+        "nextRetryAt",
+        "leaseToken",
+        "leaseOwner",
+        "heartbeatAt",
+        "leaseExpiresAt",
+        "dispatchGeneration",
+        "failureCode",
+        "failureSummary",
+        "startedAt",
+        "completedAt",
+        "createdAt",
+        "updatedAt",
+    }
+    expected["task_outbox"] = {
+        "id",
+        "taskId",
+        "dispatchGeneration",
+        "publishedAt",
+        "createdAt",
+    }
+    assert len(expected) == 30
     assert set(metadata.tables) == set(expected)
     for table_name, columns in expected.items():
         assert set(metadata.tables[table_name].columns.keys()) == columns
@@ -89,14 +119,14 @@ def test_prisma_python_side_defaults_are_complete_without_ddl_drift() -> None:
         for table in metadata.tables.values()
         if "id" in table.c and len(table.primary_key.columns) == 1
     ]
-    assert len(uuid_default_columns) == 25
+    assert len(uuid_default_columns) == 27
     assert all(column.default is not None for column in uuid_default_columns)
     assert all(column.server_default is None for column in uuid_default_columns)
 
     updated_at_columns = [
         table.c.updatedAt for table in metadata.tables.values() if "updatedAt" in table.c
     ]
-    assert len(updated_at_columns) == 17
+    assert len(updated_at_columns) == 18
     assert all(column.default is not None for column in updated_at_columns)
     assert all(column.onupdate is not None for column in updated_at_columns)
     assert all(column.server_default is None for column in updated_at_columns)
