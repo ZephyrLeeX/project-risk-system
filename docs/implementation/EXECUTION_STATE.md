@@ -27,14 +27,14 @@ Completed tasks:
 
 Current:
 - Wave 6: PASS (T004/T008/T010 remain REVIEW_PASSED; PostgreSQL integration validation passed)
-- Wave 7: IN_PROGRESS (T011/T012 REVIEW_PASSED; other Wave 7 tasks not started)
+- Wave 7: IN_PROGRESS (T011/T012/T013/T014 REVIEW_PASSED; T015/T017/T021 not started)
 - T004: REVIEW_PASSED
 - T008: REVIEW_PASSED
 - T010: REVIEW_PASSED
 - T011: REVIEW_PASSED
 - T013: REVIEW_PASSED
+- T014: REVIEW_PASSED
 - T012: REVIEW_PASSED
-- T013: READY
 - T014: READY
 - T015: READY
 - T017: READY
@@ -52,6 +52,7 @@ Checkpoint commits:
 - T011: baa3208
 - T012: 7361d26
 - T013: 13463f3
+- T014: pending
 
 Architecture changes:
 - ADR 0017: Audit is metadata-only; no snapshot/redaction.
@@ -73,5 +74,5 @@ Important invariants:
 
 Integration blockers:
 - None.
-- Current Wave: Wave 7 is IN_PROGRESS; T011, T012 and T013 have been completed in this execution unit sequence.
-- Remaining Wave 7 work units: T014, T015, T017 and T021 are READY but have not been started.
+- Current Wave: Wave 7 is IN_PROGRESS; T011, T012, T013 and T014 have been completed in this execution unit sequence.
+- Remaining Wave 7 work units: T015, T017 and T021 are READY but have not been started.
