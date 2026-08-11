@@ -167,10 +167,13 @@ def test_role_api_mutations_and_negative_audits(
             )
             assert created.status_code == 200
             role_id = uuid.UUID(created.json()["data"]["id"])
+            update_payload = {
+                key: value for key, value in payload.items() if key != "code"
+            }
             updated = await client.patch(
                 f"/api/admin/roles/{role_id}",
                 headers={"origin": "https://web.internal"},
-                json={**payload, "name": "临时角色更新", "enabled": False},
+                json={**update_payload, "name": "临时角色更新", "enabled": False},
             )
             assert updated.status_code == 200
             deleted = await client.delete(
