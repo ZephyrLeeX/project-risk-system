@@ -41,6 +41,7 @@ Current:
 - T015: REVIEW_PASSED
 - T017: REVIEW_PASSED
 - T021: REVIEW_PASSED
+- T022: REVIEW_PASSED
 - DG-01: RESOLVED by ADR 0019
 - DG-02: RESOLVED by ADR 0018
 - DG-03: RESOLVED by ADR 0019
@@ -86,3 +87,5 @@ Integration blockers:
 - T017 implementation, Independent Review, validation and checkpoint commit are complete. T021 remains READY and was not started.
 - T021 implementation, Independent Review and validation are complete. Wave 7 Integration Fix passed; Wave 8 remains not started. See `docs/implementation/reports/WAVE-07.md`.
 - Wave 7 final integration checkpoint includes the T012 fixture-only regression fix; next Wave readiness is `READY` for T022/T023, but next Wave was not started.
+- Wave 8 partial: T022 implementation, Independent Review and local compile/diff validation are complete. Ruff/mypy/pytest were unavailable because the environment lacks `mise`, `uv` and Python dependencies; PostgreSQL validation was skipped because `TEST_DATABASE_URL` is not configured. T023 remains READY and was not started. See `docs/implementation/reports/T022.md` and `docs/implementation/reports/WAVE-08-PARTIAL.md`.
+- T022 checkpoint: `205e8fc69686d00f2d20b4f75dbf405a8ace0310`.
