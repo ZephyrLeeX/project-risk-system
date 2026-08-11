@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "alembic>=1.16,<2",
+  "argon2-cffi>=25,<26",
   "celery>=5.5,<6",
   "cryptography>=45,<47",
   "fastapi>=0.116,<1",
@@ -18,6 +19,9 @@ dependencies = [
   "redis>=6.2,<7",
   "sqlalchemy>=2.0,<3",
 ]
+
+[project.scripts]
+risk-platform-seed = "risk_platform.seed:main"
 
 [dependency-groups]
 dev = [

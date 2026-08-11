@@ -1,5 +1,8 @@
 # 第三阶段第2步：API Key 管理实现说明
 
+> 历史 NestJS 实现说明：本文中的审计 snapshot 方案已由 ADR 0017 取代。正式 FastAPI Audit
+> 不接受 API Key 或任意业务 payload，只保存固定 typed metadata。
+
 ## 1. 本步目标
 
 在不改变 `ui-prototype/07-api-key-management.html` 页面结构和功能内容的前提下，将正式系统的「API Key 管理」页由静态样例升级为真实数据库、真实接口和真实交互。

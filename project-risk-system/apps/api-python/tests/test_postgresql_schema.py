@@ -121,10 +121,10 @@ def test_enum_values_and_single_alembic_head(
     }
     assert actual_enums == expected_enums
     config = Config(ROOT / "alembic.ini")
-    assert ScriptDirectory.from_config(config).get_heads() == ["20260810_0001"]
+    assert ScriptDirectory.from_config(config).get_heads() == ["20260810_0002"]
 
 
-def test_baseline_downgrade_policy_is_non_destructive(
+def test_downgrade_policy_never_restores_forbidden_audit_schema(
     migrated_postgresql_schema: Connection,
 ) -> None:
     config = Config(ROOT / "alembic.ini")
@@ -133,15 +133,25 @@ def test_baseline_downgrade_policy_is_non_destructive(
         command.downgrade(config, "base")
     migrated_postgresql_schema.rollback()
     assert "users" in inspect(migrated_postgresql_schema).get_table_names()
+    audit_columns = {
+        column["name"] for column in inspect(migrated_postgresql_schema).get_columns("audit_logs")
+    }
+    assert "beforeSnapshot" not in audit_columns
+    assert "afterSnapshot" not in audit_columns
 
 
-def test_audit_enforcement_is_explicitly_deferred_to_t006(
+def test_audit_enforcement_is_installed_by_t006(
     migrated_postgresql_schema: Connection,
 ) -> None:
     triggers = migrated_postgresql_schema.execute(
         text("SELECT tgname FROM pg_trigger WHERE NOT tgisinternal")
     ).scalars()
-    assert list(triggers) == []
+    assert set(triggers) == {
+        "audit_logs_append_hash",
+        "audit_logs_reject_delete",
+        "audit_logs_reject_truncate",
+        "audit_logs_reject_update",
+    }
 
 
 def test_request_and_worker_transactions_commit_rollback_and_dispose(

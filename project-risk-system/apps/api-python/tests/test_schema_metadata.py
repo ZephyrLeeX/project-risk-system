@@ -32,8 +32,25 @@ def _prisma_table_columns() -> dict[str, set[str]]:
     return result
 
 
-def test_metadata_has_exact_final_prisma_tables_and_columns() -> None:
+def test_metadata_has_final_prisma_tables_with_approved_audit_override() -> None:
     expected = _prisma_table_columns()
+    expected["audit_logs"] = {
+        "id",
+        "actorUserId",
+        "actorType",
+        "module",
+        "action",
+        "resourceType",
+        "resourceId",
+        "result",
+        "traceId",
+        "requestId",
+        "projectId",
+        "failureCode",
+        "previousHash",
+        "integrityHash",
+        "createdAt",
+    }
     assert len(expected) == 28
     assert set(metadata.tables) == set(expected)
     for table_name, columns in expected.items():

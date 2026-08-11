@@ -12,7 +12,9 @@ from risk_platform.models import metadata
 
 config = context.config
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # Alembic may run inside pytest or the application process; do not disable
+    # security/application loggers that were configured by the caller.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = metadata
 
