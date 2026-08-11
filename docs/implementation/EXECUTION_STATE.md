@@ -89,4 +89,4 @@ Integration blockers:
 - Wave 7 final integration checkpoint includes the T012 fixture-only regression fix; next Wave readiness is `READY` for T022/T023, but next Wave was not started.
 - Wave 8 partial: T022 implementation, Quality Fix, Independent Review and focused validation are complete. Ruff, mypy, focused pytest (4 passed), `uv lock --check` and `git diff --check` are PASS; full pytest was attempted but is not a blocker because current full-suite collection/capture is unavailable. T022 has no dedicated PostgreSQL tests (`N/A`). T023 remains READY and was not started. See `docs/implementation/reports/T022.md` and `docs/implementation/reports/WAVE-08-PARTIAL.md`.
 - T022 checkpoint: `205e8fc69686d00f2d20b4f75dbf405a8ace0310`.
-- T022 Quality Fix checkpoint: pending commit for this validation closeout.
+- T022 Quality Fix checkpoint: `ba339789409dc8138f763c6325262e9cff1be319`.
