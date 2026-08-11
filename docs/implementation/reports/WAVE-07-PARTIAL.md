@@ -26,9 +26,11 @@
 - T015 定向 validation：Ruff、mypy、5 个测试均通过；PostgreSQL 因 `TEST_DATABASE_URL` 未配置而 skipped，未使用 SQLite。
 - Full pytest：`104 passed, 33 skipped, 1 failed`；唯一 failure 属于既有 T013 `system_config` 测试，保留为 Wave 7 Integration 待处理项。Full Ruff/mypy 的既有 T013 findings 同样未在 T015 中处理。
 - T015 checkpoint：`dd603dc`。
-- Wave 7 的 T017、T021 仍未启动。
+- T017 已完成实现与 Independent Review：`REVIEW_PASSED`。Ruff、mypy、`uv lock --check`、focused pytest（`3 passed`）通过；full pytest 为 `107 passed, 33 skipped, 1 failed`，唯一 failure 是已知 T013 regression，保留为 Wave 7 Integration 待处理项。T017 无独立 PostgreSQL-specific test，记为 `N/A`；其他 PostgreSQL tests 因未配置 `TEST_DATABASE_URL` skipped，未使用 SQLite。
+- T017 checkpoint commit：待本次精确 stage 后写入；详见 `reports/T017.md`。
+- Wave 7 的 T021 仍未启动。
 
 ## Readiness
 
-- T017、T021：`READY`；T015 已 `REVIEW_PASSED`。
+- T017：`REVIEW_PASSED`；T021：`READY`，未启动。
 - Wave 7 尚未完成，未进行 Wave integration。
