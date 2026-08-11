@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+# isort: off
 from risk_platform.todos.models import ActionItemStatus
 from risk_platform.timeline.models import RiskTimelineEventType
+# isort: on
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,22 +41,26 @@ def build_action_timeline_change(
             title="待办事项已完成" if completed else "待办处理状态更新",
             description=(
                 f"待办由“{before.status.value}”变更为“{after.status.value}”"
-                + (f"：{after.completion_note}" if completed and after.completion_note else "。")
+                + (f"：{after.completion_note}" if completed and after.completion_note else "。")  # noqa: RUF001
             ),
             from_value=before.status.value,
             to_value=after.status.value,
         )
     changes: list[str] = []
     if before.assignee_name != after.assignee_name:
-        changes.append(f"负责人由“{before.assignee_name or '待分配'}”调整为“{after.assignee_name or '待分配'}”")
+        changes.append(
+            f"负责人由“{before.assignee_name or '待分配'}”调整为“{after.assignee_name or '待分配'}”"
+        )
     if before.due_date != after.due_date:
-        changes.append(f"截止日期由“{before.due_date or '待安排'}”调整为“{after.due_date or '待安排'}”")
+        changes.append(
+            f"截止日期由“{before.due_date or '待安排'}”调整为“{after.due_date or '待安排'}”"
+        )
     if before.completion_note != after.completion_note:
         changes.append("处理说明已更新")
     return TimelineChange(
         event_type=RiskTimelineEventType.ACTION_UPDATED,
         title="待办事项信息更新",
-        description=f"{'；'.join(changes)}。" if changes else "待办事项已更新。",
+        description=f"{'；'.join(changes)}。" if changes else "待办事项已更新。",  # noqa: RUF001
     )
 
 
@@ -72,4 +78,9 @@ def event_presentation(event_type: RiskTimelineEventType) -> tuple[str, str]:
     }[event_type]
 
 
-__all__ = ["ActionTimelineSnapshot", "TimelineChange", "build_action_timeline_change", "event_presentation"]
+__all__ = [
+    "ActionTimelineSnapshot",
+    "TimelineChange",
+    "build_action_timeline_change",
+    "event_presentation",
+]

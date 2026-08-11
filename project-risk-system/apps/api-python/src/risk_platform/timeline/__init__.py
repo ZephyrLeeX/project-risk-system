@@ -7,4 +7,9 @@ from risk_platform.timeline.policy import (
     event_presentation,
 )
 
-__all__ = ["ActionTimelineSnapshot", "TimelineChange", "build_action_timeline_change", "event_presentation"]
+__all__ = [
+    "ActionTimelineSnapshot",
+    "TimelineChange",
+    "build_action_timeline_change",
+    "event_presentation",
+]

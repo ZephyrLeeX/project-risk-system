@@ -135,4 +135,15 @@ class TimelineDetail(TimelineItem):
     metadata: dict[str, object] | None
 
 
-__all__ = ["LifecycleRequest", "RiskDetail", "RiskItem", "RiskPage", "RiskQuery", "ResolvedRiskPage", "TimelineDetail", "TimelineItem", "TimelinePage", "TimelineQuery"]
+__all__ = [
+    "LifecycleRequest",
+    "ResolvedRiskPage",
+    "RiskDetail",
+    "RiskItem",
+    "RiskPage",
+    "RiskQuery",
+    "TimelineDetail",
+    "TimelineItem",
+    "TimelinePage",
+    "TimelineQuery",
+]

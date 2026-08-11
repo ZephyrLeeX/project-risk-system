@@ -1,17 +1,27 @@
-from risk_platform.todos.models import ActionItemStatus
+from risk_platform.todos.models import ActionItemStatus  # noqa: I001
 from risk_platform.timeline.models import RiskTimelineEventType
-from risk_platform.timeline.policy import ActionTimelineSnapshot, build_action_timeline_change, event_presentation
+from risk_platform.timeline.policy import (
+    ActionTimelineSnapshot,
+    build_action_timeline_change,
+    event_presentation,
+)
 
 
 def snapshot(status: ActionItemStatus, *, assignee: str | None = "张三") -> ActionTimelineSnapshot:
-    return ActionTimelineSnapshot(status=status, assignee_name=assignee, due_date=None, completion_note=None)
+    return ActionTimelineSnapshot(
+        status=status, assignee_name=assignee, due_date=None, completion_note=None
+    )
 
 
 def test_status_change_uses_completed_event_only_for_completed_state() -> None:
-    completed = build_action_timeline_change(snapshot(ActionItemStatus.IN_PROGRESS), snapshot(ActionItemStatus.COMPLETED))
+    completed = build_action_timeline_change(
+        snapshot(ActionItemStatus.IN_PROGRESS), snapshot(ActionItemStatus.COMPLETED)
+    )
     assert completed.event_type is RiskTimelineEventType.ACTION_COMPLETED
     assert completed.from_value == "IN_PROGRESS"
-    progressed = build_action_timeline_change(snapshot(ActionItemStatus.PENDING), snapshot(ActionItemStatus.IN_PROGRESS))
+    progressed = build_action_timeline_change(
+        snapshot(ActionItemStatus.PENDING), snapshot(ActionItemStatus.IN_PROGRESS)
+    )
     assert progressed.event_type is RiskTimelineEventType.ACTION_STATUS_CHANGED
 
 
