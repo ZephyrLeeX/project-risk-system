@@ -16,6 +16,7 @@ from sqlalchemy import Connection, Enum, create_engine, inspect, select, text
 from sqlalchemy.dialects.postgresql.base import PGInspector
 from sqlalchemy.schema import PrimaryKeyConstraint
 
+from risk_platform.agent.models import AgentEventType
 from risk_platform.db import (
     create_database_engine,
     create_session_factory,
@@ -119,9 +120,12 @@ def test_enum_values_and_single_alembic_head(
         for column in table.columns
         if isinstance(column.type, Enum)
     }
+    # SQLAlchemy's default Enum configuration uses Python member names, while
+    # ADR 0019 requires these SSE event values to be stored verbatim.
+    expected_enums["AgentEventType"] = [event_type.value for event_type in AgentEventType]
     assert actual_enums == expected_enums
     config = Config(ROOT / "alembic.ini")
-    assert ScriptDirectory.from_config(config).get_heads() == ["20260811_0003"]
+    assert ScriptDirectory.from_config(config).get_heads() == ["20260811_0004"]
 
 
 def test_downgrade_policy_never_restores_forbidden_audit_schema(
@@ -151,6 +155,8 @@ def test_audit_enforcement_is_installed_by_t006(
         "audit_logs_reject_delete",
         "audit_logs_reject_truncate",
         "audit_logs_reject_update",
+        "agent_messages_assign_sequence_trigger",
+        "agent_events_assign_sequence_trigger",
     }
 
 

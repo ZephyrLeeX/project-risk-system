@@ -104,7 +104,9 @@ def test_latest_upgrade_has_one_head_and_exact_durable_constraints(
     durable_task_schema: Connection,
 ) -> None:
     config = Config(ROOT / "alembic.ini")
-    assert ScriptDirectory.from_config(config).get_heads() == ["20260811_0003"]
+    # T004 extends the same linear migration chain; durable-task constraints remain
+    # unchanged at the latest approved schema head.
+    assert ScriptDirectory.from_config(config).get_heads() == ["20260811_0004"]
     inspector = inspect(durable_task_schema)
     assert {"durable_tasks", "task_outbox"}.issubset(inspector.get_table_names())
     checks = {item["name"] for item in inspector.get_check_constraints("durable_tasks")}
