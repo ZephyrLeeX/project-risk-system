@@ -70,7 +70,7 @@ class WeeklyReportItem(Base):
     __tablename__ = "weekly_report_items"
     __table_args__ = (
         Index(
-            "weekly_report_items_aggregateId_sourceMailId_sourceCandidateId_riskId_key",
+            "weekly_report_items_aggregate_sources_key",
             "aggregateId",
             "sourceMailId",
             "sourceCandidateId",

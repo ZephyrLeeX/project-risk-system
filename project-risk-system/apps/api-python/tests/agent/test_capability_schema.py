@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import os
 import re
 import uuid
@@ -17,6 +18,7 @@ from risk_platform.models import metadata
 from risk_platform.reliability.models import DurableTaskKind
 
 ROOT = Path(__file__).resolve().parents[2]
+T004_REVISION = ROOT / "alembic" / "versions" / "20260811_0004_agent_weekly_capabilities.py"
 
 
 @pytest.fixture
@@ -71,6 +73,57 @@ def test_metadata_has_approved_agent_and_weekly_capability_tables() -> None:
         "action_items.id",
     }
     assert all(foreign_key.ondelete == "RESTRICT" for foreign_key in item.foreign_keys)
+
+
+def test_t004_named_constraints_and_indexes_fit_postgresql_identifier_limit() -> None:
+    source = T004_REVISION.read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    names: list[str] = []
+
+    for call in ast.walk(tree):
+        if not isinstance(call, ast.Call) or not isinstance(call.func, ast.Attribute):
+            continue
+        if call.func.attr == "create_index":
+            index_name = call.args[0]
+            assert isinstance(index_name, ast.Constant) and isinstance(index_name.value, str)
+            names.append(index_name.value)
+            continue
+        if call.func.attr != "create_table":
+            continue
+
+        table_name = call.args[0]
+        assert isinstance(table_name, ast.Constant) and isinstance(table_name.value, str)
+        for constraint in call.args[1:]:
+            if not isinstance(constraint, ast.Call) or not isinstance(
+                constraint.func, ast.Attribute
+            ):
+                continue
+            if constraint.func.attr not in {
+                "CheckConstraint",
+                "ForeignKeyConstraint",
+                "PrimaryKeyConstraint",
+            }:
+                continue
+            name = next(
+                (
+                    keyword.value.value
+                    for keyword in constraint.keywords
+                    if keyword.arg == "name"
+                    and isinstance(keyword.value, ast.Constant)
+                    and isinstance(keyword.value.value, str)
+                ),
+                None,
+            )
+            assert isinstance(name, str)
+            names.append(
+                f"{table_name.value}_{name}"
+                if constraint.func.attr == "CheckConstraint"
+                else name
+            )
+
+    assert names
+    assert all(len(name.encode("utf-8")) <= 63 for name in names)
+    assert "weekly_report_items_aggregate_sources_key" in names
 
 
 def test_latest_upgrade_has_one_head_and_capability_constraints(

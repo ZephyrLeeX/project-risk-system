@@ -24,7 +24,7 @@ Completed tasks:
 - T004 REVIEW_PASSED
 
 Current:
-- Wave 6: PARTIAL PASS (T004/T008/T010 are REVIEW_PASSED; stop after T004 checkpoint)
+- Wave 6: FAIL (T004 identifier fix REVIEW_PASSED, but 3 stale PostgreSQL integration test expectations fail; T004/T008/T010 remain REVIEW_PASSED)
 - T004: REVIEW_PASSED
 - T008: REVIEW_PASSED
 - T010: REVIEW_PASSED
@@ -63,3 +63,9 @@ Important invariants:
 - PostgreSQL only.
 - No dual write.
 - Human-facing reports Chinese.
+
+Integration blockers:
+- Wave 6: T004 identifier fix has passed Review and PostgreSQL empty-schema migration checks. Full PostgreSQL pytest
+  now has three stale test expectations: T008 expects old head `20260811_0003`; core enum test expects Python member
+  names rather than approved AgentEventType database values; audit-trigger test excludes T004 Agent sequence triggers.
+- Next Wave: NOT READY; update the failing integration test expectations and rerun Wave 6 Integration.

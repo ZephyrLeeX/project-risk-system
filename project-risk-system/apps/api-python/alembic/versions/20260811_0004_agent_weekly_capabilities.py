@@ -334,7 +334,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id", name="weekly_report_items_pkey"),
     )
     op.create_index(
-        "weekly_report_items_aggregateId_sourceMailId_sourceCandidateId_riskId_key",
+        "weekly_report_items_aggregate_sources_key",
         "weekly_report_items",
         ["aggregateId", "sourceMailId", "sourceCandidateId", "riskId"],
         unique=True,
