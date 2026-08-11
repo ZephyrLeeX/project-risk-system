@@ -10,7 +10,7 @@
 - T010 已完成 RBAC permission guard 与五种 project-scope predicate，独立审查结果为 `REVIEW_PASSED`。
 - T004 已完成 Agent conversation/confirmation 与 weekly-report capability schemas，独立复审结果为
   `REVIEW_PASSED`。为满足 ADR 0021 的重建契约，在同一 revision 以 additive 方式登记
-  `WEEKLY_REPORT_REBUILD`；未改动任务表、API、worker 或 T008/T010。
+  `WEEKLY_REPORT_REBUILD`；未改动任务表、API、worker 或 T008/T010。Checkpoint：`1b4cfa8`。
 
 ## Integration validation
 
