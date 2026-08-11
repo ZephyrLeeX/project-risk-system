@@ -125,7 +125,7 @@ def test_enum_values_and_single_alembic_head(
     expected_enums["AgentEventType"] = [event_type.value for event_type in AgentEventType]
     assert actual_enums == expected_enums
     config = Config(ROOT / "alembic.ini")
-    assert ScriptDirectory.from_config(config).get_heads() == ["20260811_0004"]
+    assert ScriptDirectory.from_config(config).get_heads() == ["20260811_0005"]
 
 
 def test_downgrade_policy_never_restores_forbidden_audit_schema(
@@ -133,7 +133,9 @@ def test_downgrade_policy_never_restores_forbidden_audit_schema(
 ) -> None:
     config = Config(ROOT / "alembic.ini")
     config.attributes["connection"] = migrated_postgresql_schema
-    with pytest.raises(NotImplementedError, match="不提供破坏性 downgrade"):
+    with pytest.raises(
+        NotImplementedError, match="T024 migration is not destructively downgradable"
+    ):
         command.downgrade(config, "base")
     migrated_postgresql_schema.rollback()
     assert "users" in inspect(migrated_postgresql_schema).get_table_names()
