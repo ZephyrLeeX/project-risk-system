@@ -10,6 +10,7 @@ Completed waves:
 - Wave 4: PASS
 - Wave 5: PASS
 - Wave 6: PASS
+- Wave 8: PASS
 
 Completed tasks:
 - T001 REVIEW_PASSED
@@ -44,8 +45,8 @@ Current:
 - T021: REVIEW_PASSED
 - T022: REVIEW_PASSED
 - T023: REVIEW_PASSED
-- Wave 8: FAIL (T022/T023 integration tests and PostgreSQL/Alembic checks pass; full pytest is blocked by T022-owned circular import during collection)
-- Next Wave: NOT_READY; Wave 9 was not started.
+- Wave 8: PASS (T022 import-cycle fix reviewed; full pytest and PostgreSQL/Alembic integration validation passed)
+- Next Wave: NOT_READY (T018 READY; T024 BLOCKED_DESIGN_GAP DG-10); Wave 9 was not started.
 - DG-01: RESOLVED by ADR 0019
 - DG-02: RESOLVED by ADR 0018
 - DG-03: RESOLVED by ADR 0019
@@ -91,8 +92,9 @@ Integration blockers:
 - T017 implementation, Independent Review, validation and checkpoint commit are complete. T021 remains READY and was not started.
 - T021 implementation, Independent Review and validation are complete. Wave 7 Integration Fix passed; Wave 8 remains not started. See `docs/implementation/reports/WAVE-07.md`.
 - Wave 7 final integration checkpoint includes the T012 fixture-only regression fix; Wave 8 was then started by the Orchestrator.
-- Wave 8 partial: T022 and T023 implementation, Independent Review and focused validation are complete. T023 Ruff, mypy, focused pytest (3 passed), `uv lock --check` and `git diff --check` are PASS. T023 has no dedicated migration/PostgreSQL tests (`N/A`); no SQLite was used. Wave 8 Integration and the next Wave were not started. See `docs/implementation/reports/T022.md`, `docs/implementation/reports/T023.md` and `docs/implementation/reports/WAVE-08-PARTIAL.md`.
+- Wave 8 Integration Fix: T022 package `__init__` eager re-export was removed to resolve the collection cycle; regression tests, full pytest, PostgreSQL 16 and Alembic validation passed. See `docs/implementation/reports/T022.md` and `docs/implementation/reports/WAVE-08.md`.
 - T022 checkpoint: `a91d203`.
 - T023 checkpoint: `d721895f241d2eb7d1a8ee446cd189c3842a4c74`.
 - T022 Quality Fix checkpoint: `ba339789409dc8138f763c6325262e9cff1be319`.
-- Wave 8 Integration checkpoint: `9c1b598d425a06cb3ed6753252d9209e6a73aaae`; see `docs/implementation/reports/WAVE-08.md`.
+- Wave 8 prior failed-integration checkpoint: `9c1b598d425a06cb3ed6753252d9209e6a73aaae`.
+- Wave 8 final Integration Fix checkpoint: pending commit; see `docs/implementation/reports/WAVE-08.md`.
