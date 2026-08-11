@@ -26,10 +26,11 @@ Completed tasks:
 - T011 REVIEW_PASSED
 - T015 REVIEW_PASSED
 - T017 REVIEW_PASSED
+- T021 REVIEW_PASSED
 
 Current:
 - Wave 6: PASS (T004/T008/T010 remain REVIEW_PASSED; PostgreSQL integration validation passed)
-- Wave 7: IN_PROGRESS (T011/T012/T013/T014/T015/T017 REVIEW_PASSED; checkpoint pending; T021 not started)
+- Wave 7: IN_PROGRESS (T011/T012/T013/T014/T015/T017/T021 REVIEW_PASSED; Wave 7 Integration not started)
 - T004: REVIEW_PASSED
 - T008: REVIEW_PASSED
 - T010: REVIEW_PASSED
@@ -39,7 +40,7 @@ Current:
 - T012: REVIEW_PASSED
 - T015: REVIEW_PASSED
 - T017: REVIEW_PASSED
-- T021: READY
+- T021: REVIEW_PASSED
 - DG-01: RESOLVED by ADR 0019
 - DG-02: RESOLVED by ADR 0018
 - DG-03: RESOLVED by ADR 0019
@@ -56,6 +57,7 @@ Checkpoint commits:
 - T014: d9bde24
 - T015: dd603dc
 - T017: 7c4b2e60f1b54ad11c18caeae6a65a440026e9db
+- T021: e6638f4
 
 Architecture changes:
 - ADR 0017: Audit is metadata-only; no snapshot/redaction.
@@ -79,3 +81,4 @@ Integration blockers:
 - Existing T013 full-suite failure remains pending for Wave 7 Integration; do not fix in unrelated Tasks.
 - Current Wave: Wave 7 is IN_PROGRESS; T011, T012, T013, T014, T015 and T017 have been completed in this execution unit sequence.
 - T017 implementation, Independent Review, validation and checkpoint commit are complete. T021 remains READY and was not started.
+- T021 implementation, Independent Review and validation are complete. The known T013 full-suite regression remains a Wave 7 Integration item; Wave 7 Integration and the next Wave were not started.
