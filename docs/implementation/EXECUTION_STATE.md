@@ -44,6 +44,8 @@ Current:
 - T021: REVIEW_PASSED
 - T022: REVIEW_PASSED
 - T023: REVIEW_PASSED
+- Wave 8: FAIL (T022/T023 integration tests and PostgreSQL/Alembic checks pass; full pytest is blocked by T022-owned circular import during collection)
+- Next Wave: NOT_READY; Wave 9 was not started.
 - DG-01: RESOLVED by ADR 0019
 - DG-02: RESOLVED by ADR 0018
 - DG-03: RESOLVED by ADR 0019
@@ -93,3 +95,4 @@ Integration blockers:
 - T022 checkpoint: `a91d203`.
 - T023 checkpoint: `d721895f241d2eb7d1a8ee446cd189c3842a4c74`.
 - T022 Quality Fix checkpoint: `ba339789409dc8138f763c6325262e9cff1be319`.
+- Wave 8 Integration checkpoint: pending commit for `FAIL` result; see `docs/implementation/reports/WAVE-08.md`.
