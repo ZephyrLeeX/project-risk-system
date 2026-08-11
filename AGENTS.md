@@ -329,3 +329,26 @@ Review / Integration result
 下一 Wave readiness
 
 最终事实以经过 Review / Integration 后 repository 中的状态和报告为准。
+
+## Lean Context Loading
+
+Implementation 阶段默认采用最小上下文加载。
+
+正常执行时：
+
+- Orchestrator 只读取 `EXECUTION_STATE.md`、`TASK_GRAPH.md` 和必要执行规范；
+- Implementer 只读取 assigned Task、其明确引用的 ADR/design section 和相关代码；
+- Reviewer 只读取 assigned Task、相关 refs、diff、tests 和 Task report。
+
+不要默认加载：
+
+- 所有 ADR
+- 完整设计文档
+- 全部历史 Wave reports
+- 所有 Task definitions
+- 完整 implementation history
+
+只有出现 `DESIGN_GAP`、`DESIGN_DEVIATION`、`REVIEW_FAILED`、
+Integration failure 或 repository state conflict 时，才按需扩大上下文。
+
+历史报告用于调查，不用于每次正常状态恢复。
