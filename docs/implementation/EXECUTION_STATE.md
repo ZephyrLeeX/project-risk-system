@@ -53,7 +53,7 @@ Checkpoint commits:
 - T012: 7361d26
 - T013: 13463f3
 - T014: d9bde24
-- T015: pending
+- T015: dd603dc
 
 Architecture changes:
 - ADR 0017: Audit is metadata-only; no snapshot/redaction.

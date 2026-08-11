@@ -25,7 +25,7 @@
 - T015 已完成审计查询、详情、summary/options、hash-chain integrity 和 metadata-only CSV/XLSX export；独立 Review：`REVIEW_PASSED`。
 - T015 定向 validation：Ruff、mypy、5 个测试均通过；PostgreSQL 因 `TEST_DATABASE_URL` 未配置而 skipped，未使用 SQLite。
 - Full pytest：`104 passed, 33 skipped, 1 failed`；唯一 failure 属于既有 T013 `system_config` 测试，保留为 Wave 7 Integration 待处理项。Full Ruff/mypy 的既有 T013 findings 同样未在 T015 中处理。
-- T015 checkpoint：待提交后写入。
+- T015 checkpoint：`dd603dc`。
 - Wave 7 的 T017、T021 仍未启动。
 
 ## Readiness
