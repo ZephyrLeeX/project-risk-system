@@ -95,4 +95,4 @@ Integration blockers:
 - T022 checkpoint: `a91d203`.
 - T023 checkpoint: `d721895f241d2eb7d1a8ee446cd189c3842a4c74`.
 - T022 Quality Fix checkpoint: `ba339789409dc8138f763c6325262e9cff1be319`.
-- Wave 8 Integration checkpoint: pending commit for `FAIL` result; see `docs/implementation/reports/WAVE-08.md`.
+- Wave 8 Integration checkpoint: `9c1b598d425a06cb3ed6753252d9209e6a73aaae`; see `docs/implementation/reports/WAVE-08.md`.
