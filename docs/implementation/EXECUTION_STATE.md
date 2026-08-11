@@ -32,6 +32,7 @@ Current:
 - T008: REVIEW_PASSED
 - T010: REVIEW_PASSED
 - T011: REVIEW_PASSED
+- T013: REVIEW_PASSED
 - T012: REVIEW_PASSED
 - T013: READY
 - T014: READY
@@ -50,6 +51,7 @@ Checkpoint commits:
 - T004: 1b4cfa8
 - T011: baa3208
 - T012: 7361d26
+- T013: pending
 
 Architecture changes:
 - ADR 0017: Audit is metadata-only; no snapshot/redaction.
@@ -71,5 +73,5 @@ Important invariants:
 
 Integration blockers:
 - None.
-- Current Wave: Wave 7 is IN_PROGRESS; T011 and T012 have been completed in this execution unit sequence.
-- Remaining Wave 7 work units: T013, T014, T015, T017 and T021 are READY but have not been started.
+- Current Wave: Wave 7 is IN_PROGRESS; T011, T012 and T013 have been completed in this execution unit sequence.
+- Remaining Wave 7 work units: T014, T015, T017 and T021 are READY but have not been started.
