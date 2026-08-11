@@ -2,6 +2,7 @@
 
 - **Wave：** Wave 8
 - **状态：** `PASS`
+- **Final checkpoint：** `5f5d421f5bc4f7a86c0f70c1febda6c1c8ae515a`
 - **范围：** T022、T023
 - **日期：** 2026-08-11
 
