@@ -23,13 +23,15 @@ Completed tasks:
 - T010 REVIEW_PASSED
 - T041 REVIEW_PASSED
 - T004 REVIEW_PASSED
+- T011 REVIEW_PASSED
 
 Current:
 - Wave 6: PASS (T004/T008/T010 remain REVIEW_PASSED; PostgreSQL integration validation passed)
+- Wave 7: IN_PROGRESS (T011 REVIEW_PASSED; other Wave 7 tasks not started)
 - T004: REVIEW_PASSED
 - T008: REVIEW_PASSED
 - T010: REVIEW_PASSED
-- T011: READY
+- T011: REVIEW_PASSED
 - T012: READY
 - T013: READY
 - T014: READY
@@ -67,5 +69,5 @@ Important invariants:
 
 Integration blockers:
 - None.
-- Next Wave: READY; Wave 7 dependencies are satisfied for T011, T012, T013, T014, T015, T017 and T021. Wave 7
-  has not been started.
+- Current Wave: Wave 7 is IN_PROGRESS; only T011 has been completed in this execution unit.
+- Remaining Wave 7 work units: T012, T013, T014, T015, T017 and T021 are READY but have not been started.
