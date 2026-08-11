@@ -36,6 +36,9 @@ Current:
 - T021: READY
 - DG-02: RESOLVED by ADR 0018
 
+Checkpoint commits:
+- T010: e30dd45
+
 Architecture changes:
 - ADR 0017: Audit is metadata-only; no snapshot/redaction.
 - ADR 0018: Durable tasks use PostgreSQL task/outbox facts, domain-to-task references, fenced leases and at-least-once dispatch.
