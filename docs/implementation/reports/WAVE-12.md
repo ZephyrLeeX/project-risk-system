@@ -29,7 +29,7 @@ Full pytest 的 1 个 skip 为既有 `tests/audit/test_audit_query_export.py` �
 
 ## Checkpoint
 
-- **Final checkpoint：** 待 metadata commit 写入
+- **Final checkpoint：** `286dbab0dca17870434a2bc7e5ddac79b2f9109f`
 
 ## Next-wave readiness
 

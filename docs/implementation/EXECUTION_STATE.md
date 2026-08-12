@@ -85,7 +85,7 @@ Checkpoint commits:
 - Wave 10 integration fix: `7b9722075ca3bc8358789198b7ef6b0e6282fcfa`
 - Wave 10 final checkpoint: `7b9722075ca3bc8358789198b7ef6b0e6282fcfa` (metadata recorded in the following report commit)
 - Wave 11 final checkpoint: `4487c09a2281c462e3b4c93e0553080a56af4531` (metadata recorded in the following report commit)
-- Wave 12 final checkpoint: pending metadata commit (integration report/state commit)
+- Wave 12 final checkpoint: `286dbab0dca17870434a2bc7e5ddac79b2f9109f` (metadata recorded in this report commit)
 - T010: e30dd45
 - T004: 1b4cfa8
 - T011: baa3208
