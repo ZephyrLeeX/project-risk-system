@@ -131,7 +131,7 @@ Integration blockers:
 - T026 design resolution: ADR 0025 approves `MAIL_PROVIDER_DERIVED_CONTENT_V1`, including the only permitted derived text, deny-list, filtering, limits and retry/log/audit boundary. T026 is READY; no implementation, T042, Wave 11 Integration or next-Wave work has started. DG-04/DG-05/DG-08 remain out of scope.
 - T026 design checkpoint: `56368827d42406dc73fc371dfa31db2a03a3c096`.
 - DG-04 design resolution: ADR 0027 approves bounded, versioned retention configuration; frozen import/conversation expiry and rollback-protection facts; an auditable hold state machine; and fail-closed deterministic cleanup/backup-copy predicates. T042 is READY. No T042 implementation, Wave 11 Integration or next-Wave work has started; DG-05 and DG-08 remain out of scope.
-- DG-04 design checkpoint: `c744b6aa9a843d39af228208d4293b5182aa0d36`.
+- DG-04 design checkpoint: `c744b6a889f09be71ff088c3b9f4ba0892c73c9a`.
 - DG-12 design resolution: ADR 0026 approves `MAIL_PROVIDER_DERIVED_CONTENT_V2` plus `RISK_CATEGORY_OPTIONS_V1`, one opaque classification choice, deterministic active-local-category mapping, fail-closed invalid/ambiguous handling and retry/audit boundaries. T026 is READY; no implementation, T042, Wave 11 Integration or next-Wave work has started. DG-04/DG-05/DG-08 remain out of scope.
 - T024 implementation and Independent Review: `REVIEW_PASSED`; see `docs/implementation/reports/T024.md` and `docs/implementation/reports/WAVE-09-PARTIAL.md`.
 - T024 checkpoint: `597a43b830e2e639d17b775c069a8fbfb896efd4`.
