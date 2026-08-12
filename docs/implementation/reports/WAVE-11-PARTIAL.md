@@ -41,3 +41,4 @@ T026 已通过，T042 仍因 DG-04 `BLOCKED`。根据用户指令，本次恢复
   和 partial unique index 强制的不可重激活 terminal state。
 - T042 恢复为 `READY`，但候选实现未接受、未复审且没有代码 checkpoint。Wave 11 仍为 `IN_PROGRESS`；本次没有
   启动 Integration、下一 Wave、DG-05 或 DG-08。
+- Design checkpoint：`ee4de76840f9181caf3158a448cb45af9949112d`。
