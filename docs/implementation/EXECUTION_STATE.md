@@ -47,12 +47,12 @@ Current:
 - T022: REVIEW_PASSED
 - T023: REVIEW_PASSED
 - Wave 8: PASS (T022 import-cycle fix reviewed; full pytest and PostgreSQL/Alembic integration validation passed)
-- Current Wave: Wave 10 IN_PROGRESS (T019/T020 REVIEW_PASSED; T016 READY after design resolution; T025 DESIGN_GAP); Wave 9 complete (T018/T024 REVIEW_PASSED; Integration PASS).
+- Current Wave: Wave 10 IN_PROGRESS (T016/T019/T020 REVIEW_PASSED; T025 DESIGN_GAP); Wave 9 complete (T018/T024 REVIEW_PASSED; Integration PASS).
 - Wave 10 design resolution: ADR 0023 supplies the missing T016 admin overview item contract. No Wave 10 Integration or next-Wave work was started. DG-04/DG-05/DG-08 remain out of scope.
 - T019: REVIEW_PASSED (selected as the single Wave 10 work unit; see `docs/implementation/reports/T019.md`).
 - T020: REVIEW_PASSED (collection/department remediation, Independent Review and PostgreSQL 16 focused validation complete; see `docs/implementation/reports/T020.md`).
 - T025: DESIGN_GAP (approved attachment type/parser/timeout/resource policy is missing; legacy behavior must not be used to self-design the boundary).
-- T016: READY (ADR 0023 approved the admin overview item schema, status, ordering, link, partial-data and permission/error semantics; implementation was not started).
+- T016: REVIEW_PASSED (ADR 0023 admin overview implementation, Independent Review and PostgreSQL 16 focused validation complete; code checkpoint `cbd5569869cb36c5b7ae93645edeeecfbfb49842`).
 - T018: REVIEW_PASSED (checkpoint `b8a5a5f`; see `docs/implementation/reports/T018.md`).
 - T024: REVIEW_PASSED (DG-10 resolved; implementation and Independent Review complete; checkpoint `597a43b830e2e639d17b775c069a8fbfb896efd4`).
 - Wave 9 Integration: PASS; the six stale test-baseline assertions were updated only in tests, followed by full validation. No production redesign or next-Wave task started.
@@ -118,4 +118,5 @@ Integration blockers:
 - T019 implementation, Independent Review and validation are complete; checkpoint is recorded in `docs/implementation/reports/T019.md`.
 - T019 checkpoint: `4ddf34e`.
 - T020 checkpoint: `8a0297ba1eaa5d72432a442cbda746d0ff480075`.
+- T016 checkpoint: `cbd5569869cb36c5b7ae93645edeeecfbfb49842`; see `docs/implementation/reports/T016.md` and `docs/implementation/reports/WAVE-10-PARTIAL.md`.
 - Wave 9 final Integration checkpoint: created after recording the PASS result and test baseline maintenance in `docs/implementation/reports/WAVE-09.md` and this state file.
