@@ -1,7 +1,7 @@
 # T026 — Extract, review and publish mail risk candidates
 - **Task ID:** T026
 - **Title:** Extract, review and publish mail risk candidates
-- **Status:** READY
+- **Status:** DESIGN_GAP
 - **Objective:** Generate validated candidates through the healthy Provider and implement adjust/ignore/confirm publication.
 - **Design baseline:** Design §§6-8.
 - **Authoritative source references:** `project-risk-system/apps/api/src/mailbox/**`, `project-risk-system/packages/contracts/src/index.ts`, T021/T022 rules, ADR 0018 and ADR 0022.
@@ -12,6 +12,7 @@
 - **Expected read set:** Named mail/provider/risk sources.
 - **Expected write set:** Python mailbox candidate/extraction/publication modules/tests.
 - **Contracts/invariants:** Consume parsed handoff by stable source identity; downstream retry re-fetches by `(mailbox_config_id, uid_validity, imap_uid)`; Provider input is exclusively ADR 0025 `MAIL_PROVIDER_DERIVED_CONTENT_V1`; no raw source in task payload/log/audit; AI/review result is `SUCCEEDED`, `RETRYABLE_FAILURE` or structured `PERMANENT_FAILURE`; no simulated result; model output untrusted; evidence minimal; confirmation is one transaction and idempotent; mailbox code does not duplicate risk/todo/timeline mutation rules.
+- **Current design gap:** DG-12 — ADR 0025 permits `project_options` but defines no approved Provider-visible risk-category selection/mapping contract, while every candidate must contain a locally valid `categoryId`.
 - **Acceptance criteria:** Success/unavailable/timeout/invalid-output/duplicate-confirm/rollback/scope tests pass.
 - **Validation:** PostgreSQL+Celery+fake Provider API tests.
 - **Required deliverables:** Task/client/review routes/domain transaction/tests.
