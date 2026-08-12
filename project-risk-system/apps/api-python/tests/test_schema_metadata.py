@@ -209,7 +209,22 @@ def test_metadata_has_final_prisma_tables_with_approved_audit_override() -> None
         "expiredById",
         "expiredTraceId",
     }
-    assert len(expected) == 38
+    expected["agent_execution_configs"] = {
+        "id",
+        "taskId",
+        "conversationId",
+        "userMessageId",
+        "requestedByUserId",
+        "providerConfigId",
+        "providerNameSnapshot",
+        "endpointSnapshot",
+        "modelSnapshot",
+        "encryptedApiKeySnapshot",
+        "timeoutSeconds",
+        "cancellationRequestedAt",
+        "createdAt",
+    }
+    assert len(expected) == 39
     assert set(metadata.tables) == set(expected)
     for table_name, columns in expected.items():
         assert set(metadata.tables[table_name].columns.keys()) == columns
@@ -247,7 +262,7 @@ def test_prisma_python_side_defaults_are_complete_without_ddl_drift() -> None:
         for table in metadata.tables.values()
         if "id" in table.c and len(table.primary_key.columns) == 1
     ]
-    assert len(uuid_default_columns) == 35
+    assert len(uuid_default_columns) == 36
     assert all(column.default is not None for column in uuid_default_columns)
     assert all(column.server_default is None for column in uuid_default_columns)
 

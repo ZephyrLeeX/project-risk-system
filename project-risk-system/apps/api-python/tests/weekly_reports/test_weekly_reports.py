@@ -167,6 +167,7 @@ async def _seed(factory: async_sessionmaker[AsyncSession]) -> None:
             receivedAtSource=MailReceivedAtSource.IMAP_INTERNALDATE,
             status=MailMessageStatus.COMPLETED,
             sanitizedSummary="范围内项目周报摘要",
+            updatedAt=FIXED_NOW - timedelta(hours=1),
         )
         fallback_message = MailMessage(
             mailboxConfigId=mailbox.id,
@@ -180,6 +181,7 @@ async def _seed(factory: async_sessionmaker[AsyncSession]) -> None:
             receivedAtSource=MailReceivedAtSource.IMAP_INTERNALDATE,
             status=MailMessageStatus.COMPLETED,
             sanitizedSummary="范围外项目周报摘要",
+            updatedAt=FIXED_NOW - timedelta(hours=1),
         )
         handoff = MailSourceHandoff(
             mailboxConfigId=mailbox.id,
@@ -224,6 +226,7 @@ async def _seed(factory: async_sessionmaker[AsyncSession]) -> None:
                 status=RiskStatus.ACTIVE,
                 sourceType=RiskSourceType.MAIL_AI,
                 dedupeFingerprint=f"t027-{index}",
+                updatedAt=FIXED_NOW - timedelta(hours=1),
             )
             session.add(risk)
             await session.flush()
@@ -238,6 +241,7 @@ async def _seed(factory: async_sessionmaker[AsyncSession]) -> None:
                 confidence=90,
                 status=MailRiskCandidateStatus.CONFIRMED,
                 confirmedRiskId=risk.id,
+                updatedAt=FIXED_NOW - timedelta(hours=1),
             )
             todo = ActionItem(
                 riskId=risk.id,
@@ -247,6 +251,7 @@ async def _seed(factory: async_sessionmaker[AsyncSession]) -> None:
                 urgency=ActionItemUrgency.HIGH,
                 status=ActionItemStatus.PENDING,
                 sourceType=ActionItemSourceType.RISK_SUGGESTION,
+                updatedAt=FIXED_NOW - timedelta(hours=1),
             )
             session.add_all((candidate, todo))
 
