@@ -1,7 +1,7 @@
 # T031 — Implement auditable retention cleanup
 - **Task ID:** T031
 - **Title:** Implement auditable retention cleanup
-- **Status:** TODO
+- **Status:** REVIEW_PASSED
 - **Objective:** Safely expire import sources, Agent conversation content and temporary artifacts while preserving protected/business/audit facts.
 - **Design baseline:** Design §§6-8; retention defaults.
 - **Authoritative source references:** ADRs 0007/0012/0018-0021 and approved DG-04/DG-10 addenda; T042 protection policy; T004 capability schema; T024/T025 transient-storage interface; T041 task schema.

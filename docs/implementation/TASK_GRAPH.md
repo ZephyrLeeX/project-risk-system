@@ -119,7 +119,7 @@ Tasks in a wave may run concurrently only when every dependency from an earlier 
 | T028 | TODO | T004, T010, T014, T020, T022, T026, T027 | Persist Agent conversations and expose authorized read-only business tools. |
 | T029 | TODO | T004, T007, T008, T010, T014, T028 | Stream Agent text, progress, errors and mutation previews over SSE. |
 | T030 | TODO | T004, T006, T010, T021, T022, T029 | Execute previewed Agent writes through bound one-use REST confirmations. |
-| T031 | TODO | T004, T006, T008, T013, T019, T024, T025, T042 | Run auditable import/conversation/temp retention cleanup with protections. |
+| T031 | REVIEW_PASSED | T004, T006, T008, T013, T019, T024, T025, T042 | Run auditable import/conversation/temp retention cleanup with protections. |
 | T032 | TODO | T040 | Freeze OpenAPI authority and generate reproducible frontend types. |
 | T033 | TODO | T016, T032 | Cut admin pages to Python APIs and remove fixed business states. |
 | T034 | TODO | T027, T030, T032 | Cut dashboard, weekly reports, mailbox and Agent UI to real Python APIs. |
