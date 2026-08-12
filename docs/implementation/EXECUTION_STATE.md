@@ -60,10 +60,11 @@ Current:
 - Wave 10 Integration: PASS; cross-module/full validation and PostgreSQL 16/Alembic validation complete. Minimal integration fix changed T025 helper IPC from Queue to Pipe; no safety boundary was widened. See `docs/implementation/reports/WAVE-10.md`.
 - Current Wave: Wave 11 IN_PROGRESS.
 - T026: REVIEW_PASSED (Celery worker isolation remediation complete. PostgreSQL 16 + Redis + real Celery `solo` worker acceptance/negative tests pass: `16 passed`; each worker handler asserts the random Alembic-created temporary PostgreSQL schema. `register_executor` is app-local (`shared=False, lazy=False`), preventing stale executor/handler/factory leakage across test Celery apps. Independent Review passed; no dispatcher direct execution was used as worker proof. Checkpoint: `76c5ef6cb50705b63ad86e7a9b05d00bf9a45da4`.)
-- T042: BLOCKED by DG-04; not started.
+- T042: READY (DG-04 resolved by ADR 0027); not started.
 - DG-01: RESOLVED by ADR 0019
 - DG-02: RESOLVED by ADR 0018
 - DG-03: RESOLVED by ADR 0019
+- DG-04: RESOLVED by ADR 0027
 - DG-06: RESOLVED by ADR 0020
 - DG-07: RESOLVED by ADR 0020
 - DG-09: RESOLVED by ADR 0021
@@ -129,6 +130,7 @@ Integration blockers:
 - DG-11 design resolution: ADR 0024 approves the attachment safety policy and returns T025 to READY. No T025 implementation, Wave 10 Integration or next-Wave work was started; DG-04/DG-05/DG-08 remain out of scope.
 - T026 design resolution: ADR 0025 approves `MAIL_PROVIDER_DERIVED_CONTENT_V1`, including the only permitted derived text, deny-list, filtering, limits and retry/log/audit boundary. T026 is READY; no implementation, T042, Wave 11 Integration or next-Wave work has started. DG-04/DG-05/DG-08 remain out of scope.
 - T026 design checkpoint: `56368827d42406dc73fc371dfa31db2a03a3c096`.
+- DG-04 design resolution: ADR 0027 approves bounded, versioned retention configuration; frozen import/conversation expiry and rollback-protection facts; an auditable hold state machine; and fail-closed deterministic cleanup/backup-copy predicates. T042 is READY. No T042 implementation, Wave 11 Integration or next-Wave work has started; DG-05 and DG-08 remain out of scope.
 - DG-12 design resolution: ADR 0026 approves `MAIL_PROVIDER_DERIVED_CONTENT_V2` plus `RISK_CATEGORY_OPTIONS_V1`, one opaque classification choice, deterministic active-local-category mapping, fail-closed invalid/ambiguous handling and retry/audit boundaries. T026 is READY; no implementation, T042, Wave 11 Integration or next-Wave work has started. DG-04/DG-05/DG-08 remain out of scope.
 - T024 implementation and Independent Review: `REVIEW_PASSED`; see `docs/implementation/reports/T024.md` and `docs/implementation/reports/WAVE-09-PARTIAL.md`.
 - T024 checkpoint: `597a43b830e2e639d17b775c069a8fbfb896efd4`.

@@ -69,7 +69,7 @@ flowchart TD
 | 8 | T022, T023 | Risk/todo mutation core and mailbox configuration are disjoint. |
 | 9 | T018, T024 | Import commit and IMAP orchestration consume established domain/task services without modifying them. |
 | 10 | T016, T019, T020, T025 | Admin overview, rollback, dashboard reads and mail parsing have disjoint module write sets; DG-01 is resolved. |
-| 11 | T026, T042 | Mail candidate pipeline and retention-protection policy are disjoint; T042 is blocked on DG-04. |
+| 11 | T026, T042 | Mail candidate pipeline and retention-protection policy are disjoint; DG-04 is resolved by ADR 0027. |
 | 12 | T027, T031 | Weekly-report query and retention cleanup are disjoint after their respective schemas/policies pass. |
 | 13 | T028 | Authorized Agent conversations/query tools. |
 | 14 | T029 | SSE answer/preview contract checkpoint. |
@@ -119,18 +119,18 @@ Tasks in a wave may run concurrently only when every dependency from an earlier 
 | T028 | TODO | T004, T010, T014, T020, T022, T026, T027 | Persist Agent conversations and expose authorized read-only business tools. |
 | T029 | TODO | T004, T007, T008, T010, T014, T028 | Stream Agent text, progress, errors and mutation previews over SSE. |
 | T030 | TODO | T004, T006, T010, T021, T022, T029 | Execute previewed Agent writes through bound one-use REST confirmations. |
-| T031 | DESIGN_GAP DG-04 | T004, T006, T008, T013, T019, T024, T025, T042 | Run auditable import/conversation/temp retention cleanup with protections. |
+| T031 | TODO | T004, T006, T008, T013, T019, T024, T025, T042 | Run auditable import/conversation/temp retention cleanup with protections. |
 | T032 | TODO | T040 | Freeze OpenAPI authority and generate reproducible frontend types. |
 | T033 | TODO | T016, T032 | Cut admin pages to Python APIs and remove fixed business states. |
 | T034 | TODO | T027, T030, T032 | Cut dashboard, weekly reports, mailbox and Agent UI to real Python APIs. |
 | T035 | Inherits gaps | T031-T034, T040 | Define production Compose, Python processes, proxy, secrets and persistence after final backend/frontend composition. |
-| T036 | DESIGN_GAP DG-04/DG-08 | T031, T035 | Implement encrypted backup rotation, isolated restore and drill verification. |
-| T037 | Inherits DG-04/DG-05/DG-08 | T033, T034, T036 | Prove full compatibility and security across the release candidate. |
+| T036 | DESIGN_GAP DG-08 | T031, T035 | Implement encrypted backup rotation, isolated restore and drill verification. |
+| T037 | Inherits DG-05/DG-08 | T033, T034, T036 | Prove full compatibility and security across the release candidate. |
 | T038 | DESIGN_GAP DG-05 | T037 | Validate performance and resilience at the approved capacity baseline. |
-| T039 | External inputs + inherits DG-04/DG-05/DG-08 | T038 | Complete real mailbox/Provider E2E, restore evidence and Python-only cutover. |
-| T040 | Inherits DG-04 | T008-T031 | Compose all routers, dependencies, lifecycles and worker tasks once. |
+| T039 | External inputs + inherits DG-05/DG-08 | T038 | Complete real mailbox/Provider E2E, restore evidence and Python-only cutover. |
+| T040 | TODO | T008-T031 | Compose all routers, dependencies, lifecycles and worker tasks once. |
 | T041 | READY | T006 | Add the ADR 0018 durable task/outbox persistence schema. |
-| T042 | DESIGN_GAP DG-04 | T004, T013, T019 | Implement approved retention configuration and deletion-protection policy. |
+| T042 | READY | T004, T013, T019 | Implement approved retention configuration and deletion-protection policy. |
 
 ## Design gaps
 
@@ -139,7 +139,7 @@ Tasks in a wave may run concurrently only when every dependency from an earlier 
 | DG-01 | RESOLVED by ADR 0019: Agent/weekly/admin endpoint set, response/error shapes, permission codes/default-role grants and SSE event payloads. | T004, T016, T027-T035, T037, T039-T040 | ADR 0019 is the approved public contract. |
 | DG-02 | RESOLVED by ADR 0018: `durable_tasks` + transactional `task_outbox`, domain batch → task FK, fixed state machine/idempotency, fenced leases, at-least-once dispatch and PostgreSQL reconciliation. | T008, T017, T024, T026, T031, T037-T041 | ADR 0018 supplies the approved persistence contract; Agent execution is governed by ADR 0020. |
 | DG-03 | RESOLVED by ADR 0019: 10-minute token TTL, canonical binding/replay semantics, event ID/sequence and reconnect cursor behavior. | T004, T029-T035, T037, T039-T040 | ADR 0019 is the approved confirmation and SSE resume contract. |
-| DG-04 | Configurable retention bounds, definition/storage of rollback window and audit hold, and deletion behavior for protected backup copies. | T031, T035-T037, T039-T040, T042 | ADR 0012 gives defaults and protections, not the state model or enforceable boundaries needed for deterministic deletion. |
+| DG-04 | RESOLVED by ADR 0027: bounded versioned retention configuration, frozen expiration/rollback facts, auditable hold state machine and deterministic cleanup/backup-copy protection predicates. | T031, T035-T037, T039-T040, T042 | ADR 0027 supplies the enforceable retention/protection contract; T036 remains blocked by DG-08. |
 | DG-05 | Numeric latency/throughput/failure-recovery acceptance thresholds at the approved capacity baseline. | T038, T039 | ADR 0009 specifies dataset size, RPO and RTO but no API/task performance PASS/FAIL thresholds. |
 | DG-06 | RESOLVED by ADR 0020: all Agent AI calls run in Celery; PostgreSQL persists ordered event facts; durable task/retry, cancellation, heartbeat and backpressure rules apply. | T004, T029, T031-T035, T037, T039-T040 | ADR 0020 reconciles Worker and SSE without Redis facts. |
 | DG-07 | RESOLVED by ADR 0020: `REPORT`/`PROCESS`/`RESOLVE` fields, risk/todo/timeline/audit effects, idempotency and lifecycle transitions. | T004, T029-T035, T037, T039-T040 | ADR 0020 is the approved domain-command contract. |
