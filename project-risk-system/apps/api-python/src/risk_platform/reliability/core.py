@@ -207,6 +207,11 @@ async def finish_task(
 async def reconcile(session: AsyncSession, *, now: datetime | None = None, limit: int = 100) -> int:
     """Rebuild dispatch facts and recover expired attempts from PostgreSQL alone."""
 
+    # T025 task directories are never recovery state; periodic reconciliation removes stale ones.
+    from risk_platform.mailbox.parsing import cleanup_stale_temp_directories
+
+    cleanup_stale_temp_directories()
+
     current = now or datetime.now(UTC)
     recovered = 0
     query: Select[tuple[DurableTask]] = (

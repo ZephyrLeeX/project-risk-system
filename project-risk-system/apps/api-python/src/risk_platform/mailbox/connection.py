@@ -104,6 +104,35 @@ class MailboxConnection:
             if client is not None:
                 await asyncio.to_thread(self._close, client)
 
+    async def fetch_source(
+        self,
+        *,
+        email: str,
+        auth_code: str,
+        host: str,
+        port: int,
+        encryption: str,
+        folder: str,
+        uid_validity: int,
+        imap_uid: int,
+    ) -> bytes:
+        """Re-fetch one UID source; no caller may persist its returned bytes."""
+
+        endpoint = await self._outbound.resolve_imap(host, port)
+        client: object | None = None
+        try:
+            client = await asyncio.to_thread(
+                self._create, endpoint.connection_address, host, port, encryption
+            )
+            await asyncio.to_thread(self._login, client, email, auth_code)
+            await asyncio.to_thread(self._select_readonly, client, folder)
+            if await asyncio.to_thread(self._uid_validity, client) != uid_validity:
+                raise MailSourceUnavailable("UIDVALIDITY_CHANGED")
+            return await asyncio.to_thread(self._fetch_source, client, imap_uid)
+        finally:
+            if client is not None:
+                await asyncio.to_thread(self._close, client)
+
     @staticmethod
     def _since(weeks: int) -> str:
         from datetime import timedelta
@@ -130,6 +159,16 @@ class MailboxConnection:
         if typ != "OK":
             raise RuntimeError("IMAP message fetch failed")
         return b"".join(item for item in data if isinstance(item, bytes))
+
+    @staticmethod
+    def _fetch_source(client: object, uid: int) -> bytes:
+        typ, data = client.uid("fetch", str(uid), "(UID RFC822.SIZE BODY.PEEK[])")  # type: ignore[attr-defined]
+        if typ != "OK" or not data:
+            raise MailSourceUnavailable("MAIL_SOURCE_MISSING")
+        source = b"".join(item for item in data if isinstance(item, bytes))
+        if not source:
+            raise MailSourceUnavailable("MAIL_SOURCE_MISSING")
+        return source
 
     @staticmethod
     def _parse_envelope(uid: int, validity: int, raw: bytes) -> MailEnvelope:
@@ -190,4 +229,8 @@ class MailboxConnection:
         return "IMAP_UNREACHABLE", "无法连接IMAP服务器或服务器拒绝访问"
 
 
-__all__ = ["ConnectionOutcome", "MailboxConnection"]
+class MailSourceUnavailable(RuntimeError):
+    """A UID source cannot be re-fetched and is terminal under ADR 0022."""
+
+
+__all__ = ["ConnectionOutcome", "MailSourceUnavailable", "MailboxConnection"]
