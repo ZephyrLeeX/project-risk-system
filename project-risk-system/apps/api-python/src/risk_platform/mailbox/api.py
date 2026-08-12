@@ -6,11 +6,14 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Request
 
 from risk_platform.auth.service import SessionIdentity
+from risk_platform.mailbox.extraction import MailRiskCandidateService
 from risk_platform.mailbox.schemas import (
     MailboxConfigRequest,
     MailboxConnectionTestResult,
     MailboxOverview,
     MailboxStatusRequest,
+    MailRiskCandidateResponse,
+    MailRiskCandidateUpdateRequest,
     MailSyncBatchResponse,
 )
 from risk_platform.mailbox.service import MailboxService
@@ -19,6 +22,7 @@ from risk_platform.shared.http import ApiResponse, ok
 from risk_platform.shared.tracing import get_trace_id
 
 router = APIRouter(prefix="/mailbox/me", tags=["mailbox"])
+candidate_router = APIRouter(prefix="/mailbox", tags=["mailbox"])
 Identity = Annotated[SessionIdentity, Depends(require_permissions("mailbox.manage_self"))]
 
 
@@ -27,6 +31,59 @@ def get_mailbox_service(request: Request) -> MailboxService:
     if not isinstance(service, MailboxService):
         raise RuntimeError("mailbox service is not configured")
     return service
+
+
+def get_candidate_service(request: Request) -> MailRiskCandidateService:
+    service = getattr(request.app.state, "mail_risk_candidate_service", None)
+    if not isinstance(service, MailRiskCandidateService):
+        raise RuntimeError("mail risk candidate service is not configured")
+    return service
+
+
+CandidateIdentity = Annotated[
+    SessionIdentity, Depends(require_permissions("mailbox.sync_self", "risk.resolve"))
+]
+
+
+@candidate_router.patch(
+    "/risk-candidates/{candidate_id}", response_model=ApiResponse[MailRiskCandidateResponse]
+)
+async def update_candidate(
+    request: Request,
+    candidate_id: UUID,
+    payload: MailRiskCandidateUpdateRequest,
+    identity: CandidateIdentity,
+    service: Annotated[MailRiskCandidateService, Depends(get_candidate_service)],
+) -> ApiResponse[MailRiskCandidateResponse]:
+    return ok(
+        request, await service.update(candidate_id, payload, identity, UUID(get_trace_id(request)))
+    )
+
+
+@candidate_router.post(
+    "/risk-candidates/{candidate_id}/ignore", response_model=ApiResponse[MailRiskCandidateResponse]
+)
+async def ignore_candidate(
+    request: Request,
+    candidate_id: UUID,
+    identity: CandidateIdentity,
+    service: Annotated[MailRiskCandidateService, Depends(get_candidate_service)],
+) -> ApiResponse[MailRiskCandidateResponse]:
+    return ok(request, await service.ignore(candidate_id, identity, UUID(get_trace_id(request))))
+
+
+@candidate_router.post(
+    "/risk-candidates/{candidate_id}/confirm", response_model=ApiResponse[MailRiskCandidateResponse]
+)
+async def confirm_candidate(
+    request: Request,
+    candidate_id: UUID,
+    identity: CandidateIdentity,
+    service: Annotated[MailRiskCandidateService, Depends(get_candidate_service)],
+) -> ApiResponse[MailRiskCandidateResponse]:
+    return ok(
+        request, await service.confirm_response(candidate_id, identity, UUID(get_trace_id(request)))
+    )
 
 
 @router.get("", response_model=ApiResponse[MailboxOverview])
@@ -92,4 +149,4 @@ async def sync(
     )
 
 
-__all__ = ["get_mailbox_service", "router"]
+__all__ = ["candidate_router", "get_candidate_service", "get_mailbox_service", "router"]

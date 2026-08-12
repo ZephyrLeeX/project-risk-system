@@ -63,6 +63,50 @@ class AiProviderClient:
             False, int((time.monotonic() - started) * 1000), last_code, last_summary
         )
 
+    async def extract_risks(
+        self,
+        endpoint: str,
+        model: str,
+        api_key: str,
+        timeout_seconds: int,
+        payload: dict[str, object],
+    ) -> tuple[str, dict[str, int], int]:
+        """Call the approved OpenAI-compatible extraction endpoint.
+
+        ``payload`` is intentionally caller-owned and only exists for this request.
+        No request/response content is retained by this client.
+        """
+        resolved = await self._guard.resolve_provider(endpoint)
+        url = provider_subresource_url(resolved, "chat/completions")
+        await self._guard.revalidate(resolved)
+        started = time.monotonic()
+        try:
+            status, body = await asyncio.to_thread(
+                self._completion_request, url, api_key, model, payload, timeout_seconds
+            )
+        except TimeoutError:
+            raise ProviderRequestError("UPSTREAM_TIMEOUT", retryable=True) from None
+        except (OSError, urllib.error.URLError, ValueError, json.JSONDecodeError):
+            raise ProviderRequestError("UPSTREAM_UNREACHABLE", retryable=True) from None
+        if status in {408, 429} or status >= 500:
+            raise ProviderRequestError(f"HTTP_{status}", retryable=True)
+        if not 200 <= status < 300:
+            raise ProviderRequestError(f"HTTP_{status}", retryable=False)
+        try:
+            value = json.loads(body)
+            content = value["choices"][0]["message"]["content"]
+            usage = value.get("usage", {})
+            if not isinstance(content, str) or not isinstance(usage, dict):
+                raise ValueError
+            tokens = {
+                "input": int(usage.get("prompt_tokens", 0)),
+                "output": int(usage.get("completion_tokens", 0)),
+                "total": int(usage.get("total_tokens", 0)),
+            }
+        except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError):
+            raise ProviderRequestError("PROVIDER_INVALID_OUTPUT", retryable=False) from None
+        return content, tokens, int((time.monotonic() - started) * 1000)
+
     @staticmethod
     def _request(url: str, api_key: str, timeout_seconds: int) -> tuple[int, str]:
         request = urllib.request.Request(
@@ -72,5 +116,37 @@ class AiProviderClient:
         with opener.open(request, timeout=timeout_seconds) as response:
             return int(response.status), response.read(64 * 1024).decode("utf-8")
 
+    @staticmethod
+    def _completion_request(
+        url: str, api_key: str, model: str, payload: dict[str, object], timeout_seconds: int
+    ) -> tuple[int, str]:
+        request = urllib.request.Request(
+            url,
+            data=json.dumps(
+                {
+                    "model": model,
+                    "temperature": 0,
+                    "response_format": {"type": "json_object"},
+                    "messages": [{"role": "user", "content": json.dumps(payload)}],
+                },
+                ensure_ascii=False,
+            ).encode(),
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            method="POST",
+        )
+        opener = urllib.request.build_opener(_NoRedirect())
+        try:
+            with opener.open(request, timeout=timeout_seconds) as response:
+                return int(response.status), response.read(128 * 1024).decode("utf-8")
+        except urllib.error.HTTPError as error:
+            return error.code, error.read(64 * 1024).decode("utf-8", errors="replace")
 
-__all__ = ["AiProviderClient", "ConnectionOutcome"]
+
+class ProviderRequestError(RuntimeError):
+    def __init__(self, code: str, *, retryable: bool) -> None:
+        super().__init__(code)
+        self.code = code
+        self.retryable = retryable
+
+
+__all__ = ["AiProviderClient", "ConnectionOutcome", "ProviderRequestError"]

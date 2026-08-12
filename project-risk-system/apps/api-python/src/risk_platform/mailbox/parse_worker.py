@@ -22,7 +22,8 @@ from risk_platform.mailbox.models import (
 )
 from risk_platform.mailbox.parsing import MailParseError, cleanup_stale_temp_directories, parse_mail
 from risk_platform.model_types import JSONValue
-from risk_platform.reliability.models import DurableTask
+from risk_platform.reliability.core import enqueue_task
+from risk_platform.reliability.models import DurableTask, DurableTaskKind
 from risk_platform.shared.crypto import LegacySecretFields, SecretCipher, SecretCryptoError
 
 
@@ -106,6 +107,16 @@ class MailParseWorker:
                 )
             handoff.parseStatus = MailStageStatus.SUCCEEDED
             handoff.failureCode = handoff.failureSummary = None
+            await enqueue_task(
+                session,
+                DurableTaskKind.MAIL_AI_REVIEW_PUBLISH,
+                f"mail-ai:{mailbox_id}:{uid_validity}:{imap_uid}",
+                {
+                    "mailbox_config_id": str(mailbox_id),
+                    "uid_validity": uid_validity,
+                    "imap_uid": imap_uid,
+                },
+            )
 
     async def _refetch(
         self, mailbox_id: UUID, uid_validity: int, imap_uid: int

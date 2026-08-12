@@ -91,6 +91,8 @@ class ParsedMail:
     evidence: list[str]
     attachment_metadata: list[dict[str, object]]
     text: str
+    body_text: str
+    attachment_texts: list[str]
 
 
 class MailParseError(RuntimeError):
@@ -413,6 +415,8 @@ def parse_mail(source: bytes, fallback_message_id: str) -> ParsedMail:
             evidence=[text[:EVIDENCE_LIMIT]] if text else [],
             attachment_metadata=metadata,
             text=text,
+            body_text=body or html_body,
+            attachment_texts=[item.text for item in attachments if item.status == "PARSED"],
         )
     finally:
         shutil.rmtree(temp_dir, ignore_errors=True)

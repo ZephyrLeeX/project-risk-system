@@ -98,7 +98,9 @@ def register_executor(
 ) -> None:
     """Register the small JSON-only Celery entrypoint in a worker process."""
 
-    @celery.task(name="risk_platform.reliability.execute")  # type: ignore[untyped-decorator]
+    @celery.task(  # type: ignore[untyped-decorator]
+        name="risk_platform.reliability.execute", shared=False, lazy=False
+    )
     def execute(task_id: str, dispatch_generation: int) -> None:
         import asyncio
 

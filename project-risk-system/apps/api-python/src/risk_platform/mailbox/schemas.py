@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Literal
+from uuid import UUID
 
 from pydantic import Field, field_validator
 
@@ -126,3 +127,29 @@ class MailSyncBatchResponse(StrictRequestModel):
     failedCount: int
     riskCandidateCount: int
     errorSummary: str | None
+
+
+class MailRiskCandidateUpdateRequest(StrictRequestModel):
+    projectId: UUID
+    categoryId: UUID
+    level: Literal["HIGH", "MEDIUM", "LOW"]
+    description: str = Field(min_length=4, max_length=4000)
+    evidence: str = Field(min_length=2, max_length=4000)
+    suggestion: str = Field(min_length=2, max_length=4000)
+
+
+class MailRiskCandidateResponse(StrictRequestModel):
+    id: UUID
+    projectId: UUID
+    projectName: str
+    categoryId: UUID
+    categoryName: str
+    level: Literal["HIGH", "MEDIUM", "LOW"]
+    levelLabel: str
+    description: str
+    evidence: str
+    suggestion: str
+    confidence: int
+    status: Literal["PENDING", "CONFIRMED", "IGNORED"]
+    confirmedRiskId: UUID | None
+    reviewedAt: str | None

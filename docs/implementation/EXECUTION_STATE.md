@@ -59,7 +59,7 @@ Current:
 - Wave 9 Integration: PASS; the six stale test-baseline assertions were updated only in tests, followed by full validation. No production redesign or next-Wave task started.
 - Wave 10 Integration: PASS; cross-module/full validation and PostgreSQL 16/Alembic validation complete. Minimal integration fix changed T025 helper IPC from Queue to Pipe; no safety boundary was widened. See `docs/implementation/reports/WAVE-10.md`.
 - Current Wave: Wave 11 IN_PROGRESS.
-- T026: READY (ADR 0026 resolves DG-12 with the V2 Provider classification option/mapping contract; no T026 implementation has started).
+- T026: REVIEW_PASSED (Celery worker isolation remediation complete. PostgreSQL 16 + Redis + real Celery `solo` worker acceptance/negative tests pass: `16 passed`; each worker handler asserts the random Alembic-created temporary PostgreSQL schema. `register_executor` is app-local (`shared=False, lazy=False`), preventing stale executor/handler/factory leakage across test Celery apps. Independent Review passed; no dispatcher direct execution was used as worker proof. Checkpoint: pending this state commit.)
 - T042: BLOCKED by DG-04; not started.
 - DG-01: RESOLVED by ADR 0019
 - DG-02: RESOLVED by ADR 0018

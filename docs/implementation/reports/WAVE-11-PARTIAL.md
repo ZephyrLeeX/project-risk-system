@@ -6,9 +6,17 @@
 
 ## Readiness
 
-- T026：ADR 0025/0026 已分别批准派生内容和 Provider-visible 分类选择/确定性本地映射契约；现为 `READY`，未实施。
+- T026：`REVIEW_PASSED`。PostgreSQL 16、Redis broker 与真实 Celery `solo` worker 通过随机临时 schema
+  隔离完成 fake Provider acceptance/negative validation；已完成 Independent Review 和 checkpoint。
 - T042：其直接依赖已完成，但继续为 `BLOCKED`，原因是 `DG-04`；本次未处理该 gap。
 
 ## 本工作单元
 
-本工作单元仅以 ADR 0026 解决 DG-12 并同步 T026 设计/状态；未实施 T026。未启动 T042、Wave 11 Integration 或下一 Wave。
+本工作单元完成 T026 Celery worker isolation remediation。发现 shared Celery executor registration 会跨 app
+泄漏已删除 schema 的 handler/factory，改为 app-local registration；真实 outbox→Redis→worker 路径 `16 passed`。
+未启动 T042、Wave 11 Integration 或下一 Wave。
+
+## 暂停原因
+
+T026 已通过，T042 仍因 DG-04 `BLOCKED`。根据用户指令，本次恢复 Wave 11 为 `IN_PROGRESS` 后停止；
+不进入 Integration。
