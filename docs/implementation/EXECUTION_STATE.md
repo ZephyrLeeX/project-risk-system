@@ -82,6 +82,7 @@ Current:
 - DG-14: RESOLVED by ADR 0028
 
 Checkpoint commits:
+- T029 design: `51074211d3fd388514c4c8405b32295a9dd214cc`
 - T031: `6545fdaf6ad4029c044c2338cc2fb36b7e385b03`
 - T027: `8beeb062069ddc5dd6104e0b80178fcb90da9e3b`
 - T025 design: ad37f90a6ae0cb643a19c09d9c91b02b8eacbad7
@@ -169,4 +170,4 @@ Integration blockers:
 - Wave 13 Integration: `PASS`; T028 Agent conversation/tool registry 与 Dashboard、Risk、Todo、Weekly Report 的授权和 scope 路径联合验证 `27 passed`，完整 PostgreSQL 16 + Redis 7 pytest `236 passed, 1 skipped`。Ruff、mypy、`uv lock --check`、`git diff --check` 及 PostgreSQL 16 空库 Alembic `upgrade head`/`check` 均通过；无 integration fix。T029 未执行，未启动下一 Wave，DG-05/DG-08 未处理。详见 `docs/implementation/reports/WAVE-13.md`。
 - Wave 14 readiness: `READY`。T029 dependencies T004/T007/T008/T010/T014/T028 均已完成，ADR 0019/0020 提供 SSE/Worker 总体边界；Wave 14 已标记为 `IN_PROGRESS`，仅授权 T029。
 - T029 execution stop: `DESIGN_GAP`。ADR 0020 要求 Agent invocation 使用 durable task/outbox，但没有定义新增的 Agent execution task kind、稳定 idempotency/retry/timeout definition 或 execution configuration identifier 的权威持久化来源；现有 `DurableTaskKind`/PostgreSQL enum/registry 也没有该 kind，而 ADR 0018 禁止未登记自由 kind。ADR 0020 还未定义不可信 Provider 的 intent/tool-call/arguments/text-delta/preview proposal protocol 及 malformed-output 到 SSE error 的映射。选择任一结构都会自行扩张安全/契约边界，故未实施、未审查、未执行 PostgreSQL 16/SSE validation，未创建 code checkpoint。T030、Wave 14 Integration、下一 Wave、DG-05/DG-08 均未处理。详见 `docs/implementation/reports/T029.md` 与 `docs/implementation/reports/WAVE-14-PARTIAL.md`。
-- T029 DESIGN_GAP resolution: ADR 0028 approves `AGENT_EXECUTION`, a PostgreSQL immutable execution-configuration snapshot and the closed `AGENT_PROVIDER_EXECUTION_V1` request/response protocol. It fixes Provider output validation, retry/timeout/cancellation, and the PostgreSQL-backed SSE/metadata-only boundary. T029 is `READY` only; no T029 implementation/review/validation, T030, Wave 14 Integration, next-Wave, DG-05 or DG-08 work was started. Design/metadata checkpoint: pending.
+- T029 DESIGN_GAP resolution: ADR 0028 approves `AGENT_EXECUTION`, a PostgreSQL immutable execution-configuration snapshot and the closed `AGENT_PROVIDER_EXECUTION_V1` request/response protocol. It fixes Provider output validation, retry/timeout/cancellation, and the PostgreSQL-backed SSE/metadata-only boundary. T029 is `READY` only; no T029 implementation/review/validation, T030, Wave 14 Integration, next-Wave, DG-05 or DG-08 work was started. Design checkpoint: `51074211d3fd388514c4c8405b32295a9dd214cc`.
