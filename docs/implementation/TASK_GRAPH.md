@@ -83,7 +83,7 @@ flowchart TD
 | 22 | T038 | Blocked by DG-05 until numeric performance criteria exist; capacity/reliability validation. |
 | 23 | T039 | External mailbox/provider, restore, frontend E2E and Python-only production cutover evidence. |
 
-Tasks in a wave may run concurrently only when every dependency from an earlier wave is `PASS`; a blocked task is skipped, never treated as passed. Alembic revisions are strictly serialized in the order T003 → T006 → T041 → T004 → T042. No parallel task may create an opportunistic revision. Shared app/Celery bootstrap is owned by T002 then T040; production Compose/proxy/env examples by T035; generated OpenAPI/types by T032. Feature tasks expose module-local entry points and test them with T002/T003/T008 fixtures without editing those shared files. T037/T038 record findings only and route fixes back to the owning task.
+Tasks in a wave may run concurrently only when every dependency from an earlier wave is `PASS`; a blocked task is skipped, never treated as passed. Alembic revisions are strictly serialized in the order T003 → T006 → T041 → T004 → T042. No parallel task may create an opportunistic revision. Shared app/Celery bootstrap is owned by T002 then T040; production Compose/proxy/env examples by T035; generated OpenAPI/types by T032. Feature tasks expose module-local entry points and test them with T002/T003/T008 fixtures without editing those shared files. Specifically, T029 owns the dependency-injected module-local `AGENT_EXECUTION` handler mapping and may validate it with an isolated Celery app; T040 exclusively constructs production dependencies, merges module handlers and registers them once on the shared `celery_app`. T037/T038 record findings only and route fixes back to the owning task.
 
 ## Task catalog
 
@@ -117,7 +117,7 @@ Tasks in a wave may run concurrently only when every dependency from an earlier 
 | T026 | READY | T006, T007, T008, T014, T022, T025 | Extract, review and transactionally publish mail risk candidates under ADR 0025/0026 Provider contracts. |
 | T027 | REVIEW_PASSED | T004, T010, T020, T025, T026 | Build and expose authorized current-week report aggregates/details. |
 | T028 | TODO | T004, T010, T014, T020, T022, T026, T027 | Persist Agent conversations and expose authorized read-only business tools. |
-| T029 | READY | T004, T007, T008, T010, T014, T028 | Stream Agent text, progress, errors and mutation previews over SSE under ADR 0028. |
+| T029 | READY | T004, T007, T008, T010, T014, T028 | Stream Agent text, progress, errors and mutation previews over SSE under ADR 0028 and expose its module-local Worker entrypoint without production composition wiring. |
 | T030 | TODO | T004, T006, T010, T021, T022, T029 | Execute previewed Agent writes through bound one-use REST confirmations. |
 | T031 | REVIEW_PASSED | T004, T006, T008, T013, T019, T024, T025, T042 | Run auditable import/conversation/temp retention cleanup with protections. |
 | T032 | TODO | T040 | Freeze OpenAPI authority and generate reproducible frontend types. |
@@ -128,7 +128,7 @@ Tasks in a wave may run concurrently only when every dependency from an earlier 
 | T037 | Inherits DG-05/DG-08 | T033, T034, T036 | Prove full compatibility and security across the release candidate. |
 | T038 | DESIGN_GAP DG-05 | T037 | Validate performance and resilience at the approved capacity baseline. |
 | T039 | External inputs + inherits DG-05/DG-08 | T038 | Complete real mailbox/Provider E2E, restore evidence and Python-only cutover. |
-| T040 | TODO | T008-T031 | Compose all routers, dependencies, lifecycles and worker tasks once. |
+| T040 | TODO | T008-T031 | Compose all routers, dependencies and lifecycles, then merge module-local handlers and register production worker tasks once. |
 | T041 | READY | T006 | Add the ADR 0018 durable task/outbox persistence schema. |
 | T042 | READY | T004, T013, T019 | Implement ADR 0027's approved retention configuration, hold-management API and deletion-protection policy. |
 

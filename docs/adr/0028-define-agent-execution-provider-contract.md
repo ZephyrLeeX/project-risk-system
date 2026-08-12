@@ -126,10 +126,33 @@ task kind、冻结 execution configuration 的权威事实，或不可信 Provid
   intent 是已本地验证的 `preview` 和其 ADR 0019 confirmation token；T030 仍是该 token
   消费和领域写入的唯一授权 Task。
 
+### Module-local Celery entrypoint 与 composition ownership
+
+- T029 必须在 Agent 模块内暴露一个显式 dependency-injected 的 Worker entrypoint factory。
+  它接收 T029 执行所需的 session factory、受限 Provider adapter 和 T028 read-tool registry，
+  并返回只包含 `AGENT_EXECUTION` 的 T008-compatible handler mapping/registration descriptor。
+  该 entrypoint 不得 import、修改或隐式注册到 shared production `celery_app`，不得创建全局
+  session/Provider 实例，也不得合并其他模块的 handler。
+- T029 可在测试 composition 中创建隔离的 Celery app，把上述 module-local entrypoint 传给
+  T008 `register_executor`，并用 fake Provider 与真实 worker process 验证 task discovery、
+  durable claim/fencing、Provider/SSE success、invalid output、timeout 和 cancellation。该验证
+  满足 T029 的 Worker/Provider acceptance；production worker discovery 不属于 T029。
+- T040 是 T002 之后 shared FastAPI/Celery composition root 的唯一 owner。T040 才能创建并
+  管理 production session factory 生命周期、从 settings/secret boundary 构造 Provider
+  adapter、组装 T028 registry、合并所有 module-local handler mappings，并对 shared
+  `celery_app` 恰好一次调用 T008 registration。T040 还负责 production startup/readiness、
+  shutdown 和所有 worker task discoverability smoke tests；不得把业务 orchestration 回收到
+  composition root 或改变 T029 module contract。
+- 因此 T029 无需也不得修改 T040 的 shared bootstrap/composition write-set 即可满足自身
+  acceptance criteria。若 module-local entrypoint 无法仅通过显式依赖完成，T029 必须再次
+  报告 `DESIGN_DEVIATION`，不能提前实施 production wiring。
+
 ## Consequences
 
 - T029 现在可新增 `AGENT_EXECUTION` migration/registry、immutable execution configuration
   repository、Provider adapter/orchestrator、SSE persistence，以及 fake Provider 的
-  success/invalid/timeout/cancellation tests。
+  success/invalid/timeout/cancellation tests 和上述 module-local Worker entrypoint。
+- T040 消费该 entrypoint 完成 production registration；T029 不拥有 shared FastAPI/Celery
+  composition root。
 - 本 ADR 不授权开始 T029 implementation、T030、Wave 14 Integration、下一 Wave，亦不处理
   DG-05 或 DG-08。
