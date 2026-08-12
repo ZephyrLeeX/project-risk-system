@@ -4,7 +4,7 @@
 - **结果：** `PASS`
 - **范围：** T016、T019、T020、T025；未启动 Wave 11、T026、T042
 - **Integration fix checkpoint：** `7b9722075ca3bc8358789198b7ef6b0e6282fcfa`
-- **Final metadata checkpoint：** `92d6338873165e2de8d98461ad9e65deaa811905`
+- **Final checkpoint：** `7b9722075ca3bc8358789198b7ef6b0e6282fcfa`
 
 ## 集成结果
 

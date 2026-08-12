@@ -72,7 +72,7 @@ Checkpoint commits:
 - T025 design: ad37f90a6ae0cb643a19c09d9c91b02b8eacbad7
 - T025: ec403f99c606ba7c6ff429b0f375c9cc85d04439
 - Wave 10 integration fix: `7b9722075ca3bc8358789198b7ef6b0e6282fcfa`
-- Wave 10 final metadata checkpoint: `92d6338873165e2de8d98461ad9e65deaa811905`
+- Wave 10 final checkpoint: `7b9722075ca3bc8358789198b7ef6b0e6282fcfa` (metadata recorded in the following report commit)
 - T010: e30dd45
 - T004: 1b4cfa8
 - T011: baa3208
