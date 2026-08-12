@@ -117,7 +117,7 @@ Tasks in a wave may run concurrently only when every dependency from an earlier 
 | T026 | READY | T006, T007, T008, T014, T022, T025 | Extract, review and transactionally publish mail risk candidates under ADR 0025/0026 Provider contracts. |
 | T027 | REVIEW_PASSED | T004, T010, T020, T025, T026 | Build and expose authorized current-week report aggregates/details. |
 | T028 | TODO | T004, T010, T014, T020, T022, T026, T027 | Persist Agent conversations and expose authorized read-only business tools. |
-| T029 | READY | T004, T007, T008, T010, T014, T028 | Stream Agent text, progress, errors and mutation previews over SSE under ADR 0028 and expose its module-local Worker entrypoint without production composition wiring. |
+| T029 | REVIEW_PASSED | T004, T007, T008, T010, T014, T028 | Stream Agent text, progress, errors and mutation previews over SSE under ADR 0028 and expose its module-local Worker entrypoint without production composition wiring. |
 | T030 | TODO | T004, T006, T010, T021, T022, T029 | Execute previewed Agent writes through bound one-use REST confirmations. |
 | T031 | REVIEW_PASSED | T004, T006, T008, T013, T019, T024, T025, T042 | Run auditable import/conversation/temp retention cleanup with protections. |
 | T032 | TODO | T040 | Freeze OpenAPI authority and generate reproducible frontend types. |

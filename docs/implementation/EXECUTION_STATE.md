@@ -37,6 +37,7 @@ Completed tasks:
 - T027 REVIEW_PASSED
 - T031 REVIEW_PASSED
 - T028 REVIEW_PASSED
+- T029 REVIEW_PASSED
 
 Current:
 - Wave 6: PASS (T004/T008/T010 remain REVIEW_PASSED; PostgreSQL integration validation passed)
@@ -65,7 +66,7 @@ Current:
 - Wave 9 Integration: PASS; the six stale test-baseline assertions were updated only in tests, followed by full validation. No production redesign or next-Wave task started.
 - Wave 10 Integration: PASS; cross-module/full validation and PostgreSQL 16/Alembic validation complete. Minimal integration fix changed T025 helper IPC from Queue to Pipe; no safety boundary was widened. See `docs/implementation/reports/WAVE-10.md`.
 - Current Wave: Wave 12 PASS. T027 is REVIEW_PASSED (code checkpoint `8beeb062069ddc5dd6104e0b80178fcb90da9e3b`). T031 is REVIEW_PASSED (code checkpoint `6545fdaf6ad4029c044c2338cc2fb36b7e385b03`). Wave 12 Integration PASS; no integration fix. Wave 11 PASS (T026/T042 REVIEW_PASSED; Integration PASS).
-- Current Wave: Wave 14 IN_PROGRESS. T029 is READY after the approved ADR 0028 composition-ownership addendum resolved its `DESIGN_DEVIATION`: T029 owns a dependency-injected module-local `AGENT_EXECUTION` Worker entrypoint and isolated real-worker acceptance, while T040 exclusively owns production dependency construction, handler merging and shared Celery registration. T029 has not resumed or been executed; its retained candidate remains uncheckpointed. T030, Wave 14 Integration, next-Wave, DG-05 and DG-08 remain untouched.
+- Current Wave: Wave 14 IN_PROGRESS. T029 is REVIEW_PASSED (code checkpoint `b57e831e68e47cdfba43f78285d10481c15000e1`): module-local `AGENT_EXECUTION` handler, restricted Provider/tool/preview execution and PostgreSQL-backed SSE acceptance complete. T040 production composition write-set remains untouched. T030, Wave 14 Integration, next-Wave, DG-05 and DG-08 remain untouched.
 - T026: REVIEW_PASSED (Celery worker isolation remediation complete. PostgreSQL 16 + Redis + real Celery `solo` worker acceptance/negative tests pass: `16 passed`; each worker handler asserts the random Alembic-created temporary PostgreSQL schema. `register_executor` is app-local (`shared=False, lazy=False`), preventing stale executor/handler/factory leakage across test Celery apps. Independent Review passed; no dispatcher direct execution was used as worker proof. Checkpoint: `76c5ef6cb50705b63ad86e7a9b05d00bf9a45da4`.)
 - T042: REVIEW_PASSED (approved retention configuration, frozen facts, hold persistence/API, terminal-state trigger, metadata-only audit and lock-ordered protection recheck complete. PostgreSQL 16 focused validation `17 passed`; Independent Review passed. Code checkpoint: `d6652c82529c2d2902a5f476d225e582b38ebaf3`. See `docs/implementation/reports/T042.md`.)
 - DG-01: RESOLVED by ADR 0019
@@ -83,6 +84,7 @@ Current:
 
 Checkpoint commits:
 - T029 design: `51074211d3fd388514c4c8405b32295a9dd214cc`
+- T029: `b57e831e68e47cdfba43f78285d10481c15000e1`
 - T031: `6545fdaf6ad4029c044c2338cc2fb36b7e385b03`
 - T027: `8beeb062069ddc5dd6104e0b80178fcb90da9e3b`
 - T025 design: ad37f90a6ae0cb643a19c09d9c91b02b8eacbad7
@@ -174,3 +176,4 @@ Integration blockers:
 - T029 remediation: `DESIGN_DEVIATION`. Production Celery registration requires shared worker composition (session factory, Provider adapter and handler registry) in T040's exclusive FastAPI/Celery bootstrap write-set. Per the task stop condition, remediation stopped before further implementation, Independent Review or real worker/SSE acceptance; this is not merely `ENVIRONMENT_BLOCKED`. Existing candidate changes remain uncheckpointed. T030, Integration, next Wave, DG-05 and DG-08 untouched.
 - T029 DESIGN_DEVIATION resolution: ADR 0028's approved composition-ownership addendum makes the boundary executable. T029 must deliver an explicit dependency-injected module-local `AGENT_EXECUTION` handler mapping and prove it with an isolated Celery app, T008 `register_executor`, a real test worker and fake Provider; it must not edit or register the shared production FastAPI/Celery composition root. T040 alone constructs production session/Provider/tool-registry dependencies, merges module handler mappings and registers the shared Celery executor exactly once. T029 is restored to `READY` without resuming implementation. Wave 14 remains `IN_PROGRESS`; T030, Integration, next Wave, DG-05 and DG-08 remain untouched.
 - T029 composition-ownership design/metadata checkpoint: `db3d4889353d71452f1d5e6affaed84930bc8415`.
+- T029 implementation: `REVIEW_PASSED`. Closed raw Provider/tool/preview validation, fail-closed durable execution, PostgreSQL ordered SSE resume, cancellation/retry/attempt-wide heartbeat/backpressure and module-local isolated real-worker acceptance are complete. Independent Review passed after two remediation rounds. Ruff, mypy, lock, diff, Alembic and PostgreSQL 16 + Redis 7 + real Celery/SSE focused validation (`27 passed`) are green. Code checkpoint: `b57e831e68e47cdfba43f78285d10481c15000e1`. T040 shared production composition was not modified; T030, Wave 14 Integration, next Wave, DG-05 and DG-08 remain untouched.
