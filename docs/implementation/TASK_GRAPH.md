@@ -114,7 +114,7 @@ Tasks in a wave may run concurrently only when every dependency from an earlier 
 | T023 | READY | T002, T003, T006, T007, T010, T013 | Migrate encrypted per-user mailbox configuration and connection testing. |
 | T024 | READY | T008, T013, T023 | Implement durable scheduled/manual/retry UID synchronization. |
 | T025 | READY | T007, T013, T024 | Parse mail safely and match projects under ADR 0024's fixed attachment safety policy. |
-| T026 | TODO | T006, T007, T008, T014, T022, T025 | Extract, review and transactionally publish mail risk candidates. |
+| T026 | READY | T006, T007, T008, T014, T022, T025 | Extract, review and transactionally publish mail risk candidates under ADR 0025's derived-content contract. |
 | T027 | TODO | T004, T010, T020, T025, T026 | Build and expose authorized current-week report aggregates/details. |
 | T028 | TODO | T004, T010, T014, T020, T022, T026, T027 | Persist Agent conversations and expose authorized read-only business tools. |
 | T029 | TODO | T004, T007, T008, T010, T014, T028 | Stream Agent text, progress, errors and mutation previews over SSE. |
