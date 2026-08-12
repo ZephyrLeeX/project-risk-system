@@ -12,6 +12,7 @@ Completed waves:
 - Wave 6: PASS
 - Wave 8: PASS
 - Wave 9: PASS (T018/T024 integration validation and test baseline maintenance)
+- Wave 10: PASS (T016/T019/T020/T025 integration validation complete)
 
 Completed tasks:
 - T001 REVIEW_PASSED
@@ -47,7 +48,7 @@ Current:
 - T022: REVIEW_PASSED
 - T023: REVIEW_PASSED
 - Wave 8: PASS (T022 import-cycle fix reviewed; full pytest and PostgreSQL/Alembic integration validation passed)
-- Current Wave: Wave 10 IN_PROGRESS (T016/T019/T020/T025 REVIEW_PASSED); Wave 9 complete (T018/T024 REVIEW_PASSED; Integration PASS).
+- Current Wave: Wave 10 PASS (T016/T019/T020/T025 REVIEW_PASSED; Integration PASS); Wave 9 complete (T018/T024 REVIEW_PASSED; Integration PASS).
 - Wave 10 design resolution: ADR 0023 supplies the missing T016 admin overview item contract. No Wave 10 Integration or next-Wave work was started. DG-04/DG-05/DG-08 remain out of scope.
 - T019: REVIEW_PASSED (selected as the single Wave 10 work unit; see `docs/implementation/reports/T019.md`).
 - T020: REVIEW_PASSED (collection/department remediation, Independent Review and PostgreSQL 16 focused validation complete; see `docs/implementation/reports/T020.md`).
@@ -56,7 +57,8 @@ Current:
 - T018: REVIEW_PASSED (checkpoint `b8a5a5f`; see `docs/implementation/reports/T018.md`).
 - T024: REVIEW_PASSED (DG-10 resolved; implementation and Independent Review complete; checkpoint `597a43b830e2e639d17b775c069a8fbfb896efd4`).
 - Wave 9 Integration: PASS; the six stale test-baseline assertions were updated only in tests, followed by full validation. No production redesign or next-Wave task started.
-- Next Wave: NOT_STARTED; Wave 10 is the current execution wave.
+- Wave 10 Integration: PASS; cross-module/full validation and PostgreSQL 16/Alembic validation complete. Minimal integration fix changed T025 helper IPC from Queue to Pipe; no safety boundary was widened. See `docs/implementation/reports/WAVE-10.md`.
+- Next Wave: NOT_STARTED; Wave 11 has not started.
 - DG-01: RESOLVED by ADR 0019
 - DG-02: RESOLVED by ADR 0018
 - DG-03: RESOLVED by ADR 0019
@@ -69,6 +71,8 @@ Current:
 Checkpoint commits:
 - T025 design: ad37f90a6ae0cb643a19c09d9c91b02b8eacbad7
 - T025: ec403f99c606ba7c6ff429b0f375c9cc85d04439
+- Wave 10 integration fix: `7b9722075ca3bc8358789198b7ef6b0e6282fcfa`
+- Wave 10 final metadata checkpoint: `92d6338873165e2de8d98461ad9e65deaa811905`
 - T010: e30dd45
 - T004: 1b4cfa8
 - T011: baa3208
