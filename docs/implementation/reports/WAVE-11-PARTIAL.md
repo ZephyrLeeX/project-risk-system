@@ -42,3 +42,15 @@ T026 已通过，T042 仍因 DG-04 `BLOCKED`。根据用户指令，本次恢复
 - T042 恢复为 `READY`，但候选实现未接受、未复审且没有代码 checkpoint。Wave 11 仍为 `IN_PROGRESS`；本次没有
   启动 Integration、下一 Wave、DG-05 或 DG-08。
 - Design checkpoint：`ee4de76840f9181caf3158a448cb45af9949112d`。
+
+## 2026-08-12 T042 completion
+
+- T042：`REVIEW_PASSED`。已完成 approved retention configuration、冻结事实、hold persistence/API、
+  terminal-state trigger、metadata-only audit 和 lock-ordered protection recheck；`BACKUP_COPY` 保持 DG-08
+  fail-closed。
+- Independent Review 在修复锁定式 predicate、认证后权限失败审计和历史 release default fallback 后为
+  `REVIEW_PASSED`。
+- PostgreSQL 16 focused validation 为 `17 passed`；Ruff、mypy、`uv lock --check`、`git diff --check` 和
+  isolated-schema Alembic `upgrade head`/`check` 均为 `PASS`。
+- T042 code checkpoint：`d6652c82529c2d2902a5f476d225e582b38ebaf3`。
+- Wave 11 仍为 `IN_PROGRESS`；未执行 Integration、下一 Wave、DG-05 或 DG-08。
