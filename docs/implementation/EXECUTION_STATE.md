@@ -65,6 +65,7 @@ Current:
 - Wave 9 Integration: PASS; the six stale test-baseline assertions were updated only in tests, followed by full validation. No production redesign or next-Wave task started.
 - Wave 10 Integration: PASS; cross-module/full validation and PostgreSQL 16/Alembic validation complete. Minimal integration fix changed T025 helper IPC from Queue to Pipe; no safety boundary was widened. See `docs/implementation/reports/WAVE-10.md`.
 - Current Wave: Wave 12 PASS. T027 is REVIEW_PASSED (code checkpoint `8beeb062069ddc5dd6104e0b80178fcb90da9e3b`). T031 is REVIEW_PASSED (code checkpoint `6545fdaf6ad4029c044c2338cc2fb36b7e385b03`). Wave 12 Integration PASS; no integration fix. Wave 11 PASS (T026/T042 REVIEW_PASSED; Integration PASS).
+- Current Wave: Wave 14 IN_PROGRESS. T029 is READY after ADR 0028 resolved DG-14; it has not been implemented. T030, Wave 14 Integration, next-Wave, DG-05 and DG-08 remain untouched.
 - T026: REVIEW_PASSED (Celery worker isolation remediation complete. PostgreSQL 16 + Redis + real Celery `solo` worker acceptance/negative tests pass: `16 passed`; each worker handler asserts the random Alembic-created temporary PostgreSQL schema. `register_executor` is app-local (`shared=False, lazy=False`), preventing stale executor/handler/factory leakage across test Celery apps. Independent Review passed; no dispatcher direct execution was used as worker proof. Checkpoint: `76c5ef6cb50705b63ad86e7a9b05d00bf9a45da4`.)
 - T042: REVIEW_PASSED (approved retention configuration, frozen facts, hold persistence/API, terminal-state trigger, metadata-only audit and lock-ordered protection recheck complete. PostgreSQL 16 focused validation `17 passed`; Independent Review passed. Code checkpoint: `d6652c82529c2d2902a5f476d225e582b38ebaf3`. See `docs/implementation/reports/T042.md`.)
 - DG-01: RESOLVED by ADR 0019
@@ -78,6 +79,7 @@ Current:
 - DG-11: RESOLVED by ADR 0024
 - DG-12: RESOLVED by ADR 0026
 - DG-13: RESOLVED by ADR 0021 immutable received-time addendum
+- DG-14: RESOLVED by ADR 0028
 
 Checkpoint commits:
 - T031: `6545fdaf6ad4029c044c2338cc2fb36b7e385b03`
@@ -110,6 +112,7 @@ Architecture changes:
 - ADR 0024: Mail attachment type allowlist, parser isolation, resource limits, metadata-only outcomes and ADR 0022 retry handoff.
 - ADR 0025: Mail source-refetch-to-Provider versioned derived-content, redaction, size, retry and metadata-only observability contract for T026.
 - ADR 0026: Mail Provider risk-category option projection, deterministic local mapping, fail-closed classification and compatibility contract for T026.
+- ADR 0028: Agent execution task/configuration snapshot, restricted Provider protocol, invalid-output, retry/timeout/cancellation and PostgreSQL SSE fact boundary for T029.
 
 Environment:
 - Python validation via mise explicit tool selection.
@@ -166,3 +169,4 @@ Integration blockers:
 - Wave 13 Integration: `PASS`; T028 Agent conversation/tool registry 与 Dashboard、Risk、Todo、Weekly Report 的授权和 scope 路径联合验证 `27 passed`，完整 PostgreSQL 16 + Redis 7 pytest `236 passed, 1 skipped`。Ruff、mypy、`uv lock --check`、`git diff --check` 及 PostgreSQL 16 空库 Alembic `upgrade head`/`check` 均通过；无 integration fix。T029 未执行，未启动下一 Wave，DG-05/DG-08 未处理。详见 `docs/implementation/reports/WAVE-13.md`。
 - Wave 14 readiness: `READY`。T029 dependencies T004/T007/T008/T010/T014/T028 均已完成，ADR 0019/0020 提供 SSE/Worker 总体边界；Wave 14 已标记为 `IN_PROGRESS`，仅授权 T029。
 - T029 execution stop: `DESIGN_GAP`。ADR 0020 要求 Agent invocation 使用 durable task/outbox，但没有定义新增的 Agent execution task kind、稳定 idempotency/retry/timeout definition 或 execution configuration identifier 的权威持久化来源；现有 `DurableTaskKind`/PostgreSQL enum/registry 也没有该 kind，而 ADR 0018 禁止未登记自由 kind。ADR 0020 还未定义不可信 Provider 的 intent/tool-call/arguments/text-delta/preview proposal protocol 及 malformed-output 到 SSE error 的映射。选择任一结构都会自行扩张安全/契约边界，故未实施、未审查、未执行 PostgreSQL 16/SSE validation，未创建 code checkpoint。T030、Wave 14 Integration、下一 Wave、DG-05/DG-08 均未处理。详见 `docs/implementation/reports/T029.md` 与 `docs/implementation/reports/WAVE-14-PARTIAL.md`。
+- T029 DESIGN_GAP resolution: ADR 0028 approves `AGENT_EXECUTION`, a PostgreSQL immutable execution-configuration snapshot and the closed `AGENT_PROVIDER_EXECUTION_V1` request/response protocol. It fixes Provider output validation, retry/timeout/cancellation, and the PostgreSQL-backed SSE/metadata-only boundary. T029 is `READY` only; no T029 implementation/review/validation, T030, Wave 14 Integration, next-Wave, DG-05 or DG-08 work was started. Design/metadata checkpoint: pending.
