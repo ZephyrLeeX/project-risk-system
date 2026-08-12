@@ -59,7 +59,7 @@ Current:
 - Wave 9 Integration: PASS; the six stale test-baseline assertions were updated only in tests, followed by full validation. No production redesign or next-Wave task started.
 - Wave 10 Integration: PASS; cross-module/full validation and PostgreSQL 16/Alembic validation complete. Minimal integration fix changed T025 helper IPC from Queue to Pipe; no safety boundary was widened. See `docs/implementation/reports/WAVE-10.md`.
 - Current Wave: Wave 11 IN_PROGRESS.
-- T026: DESIGN_GAP DG-12 (ADR 0025 does not approve a Provider-visible risk-category selection/mapping contract; no T026 implementation has started).
+- T026: READY (ADR 0026 resolves DG-12 with the V2 Provider classification option/mapping contract; no T026 implementation has started).
 - T042: BLOCKED by DG-04; not started.
 - DG-01: RESOLVED by ADR 0019
 - DG-02: RESOLVED by ADR 0018
@@ -69,7 +69,7 @@ Current:
 - DG-09: RESOLVED by ADR 0021
 - DG-10: RESOLVED by ADR 0022
 - DG-11: RESOLVED by ADR 0024
-- DG-12: OPEN (T026 Provider risk-category selection/mapping contract)
+- DG-12: RESOLVED by ADR 0026
 
 Checkpoint commits:
 - T025 design: ad37f90a6ae0cb643a19c09d9c91b02b8eacbad7
@@ -96,6 +96,7 @@ Architecture changes:
 - ADR 0023: Admin overview health, attention, recent-audit item and partial-data contract.
 - ADR 0024: Mail attachment type allowlist, parser isolation, resource limits, metadata-only outcomes and ADR 0022 retry handoff.
 - ADR 0025: Mail source-refetch-to-Provider versioned derived-content, redaction, size, retry and metadata-only observability contract for T026.
+- ADR 0026: Mail Provider risk-category option projection, deterministic local mapping, fail-closed classification and compatibility contract for T026.
 
 Environment:
 - Python validation via mise explicit tool selection.
@@ -128,7 +129,7 @@ Integration blockers:
 - DG-11 design resolution: ADR 0024 approves the attachment safety policy and returns T025 to READY. No T025 implementation, Wave 10 Integration or next-Wave work was started; DG-04/DG-05/DG-08 remain out of scope.
 - T026 design resolution: ADR 0025 approves `MAIL_PROVIDER_DERIVED_CONTENT_V1`, including the only permitted derived text, deny-list, filtering, limits and retry/log/audit boundary. T026 is READY; no implementation, T042, Wave 11 Integration or next-Wave work has started. DG-04/DG-05/DG-08 remain out of scope.
 - T026 design checkpoint: `56368827d42406dc73fc371dfa31db2a03a3c096`.
-- T026 implementation attempt stopped at DG-12: `MAIL_PROVIDER_DERIVED_CONTENT_V1` has no approved category option/mapping field, yet T026 candidates require a validated local `categoryId`. No code, migration, API, test, T042, Wave 11 Integration or next-Wave work was started.
+- DG-12 design resolution: ADR 0026 approves `MAIL_PROVIDER_DERIVED_CONTENT_V2` plus `RISK_CATEGORY_OPTIONS_V1`, one opaque classification choice, deterministic active-local-category mapping, fail-closed invalid/ambiguous handling and retry/audit boundaries. T026 is READY; no implementation, T042, Wave 11 Integration or next-Wave work has started. DG-04/DG-05/DG-08 remain out of scope.
 - T024 implementation and Independent Review: `REVIEW_PASSED`; see `docs/implementation/reports/T024.md` and `docs/implementation/reports/WAVE-09-PARTIAL.md`.
 - T024 checkpoint: `597a43b830e2e639d17b775c069a8fbfb896efd4`.
 - T019 implementation, Independent Review and validation are complete; checkpoint is recorded in `docs/implementation/reports/T019.md`.
