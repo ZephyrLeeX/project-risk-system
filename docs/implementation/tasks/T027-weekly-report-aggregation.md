@@ -1,7 +1,7 @@
 # T027 — Implement weekly report aggregation
 - **Task ID:** T027
 - **Title:** Implement weekly report aggregation
-- **Status:** READY
+- **Status:** REVIEW_PASSED
 - **Objective:** Expose authorized current-week report summary/detail from processed mail and published business state.
 - **Design baseline:** `CONTEXT.md` “本周周报”; design §§3,6.
 - **Authoritative source references:** ADRs 0019/0021 including the approved immutable received-time addendum; T004/T024/T025/T026 schemas and services; `project-risk-system/apps/web/src/views/DashboardView.vue` only for visible placement.
