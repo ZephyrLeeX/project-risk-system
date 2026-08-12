@@ -45,6 +45,7 @@ from risk_platform.mailbox.models import (
     MailMessage,
     MailMessageProjectMatch,
     MailProjectMatchType,
+    MailReceivedAtSource,
     MailRiskCandidate,
     MailRiskCandidateStatus,
     MailSourceHandoff,
@@ -443,8 +444,11 @@ async def _seed(
             mailboxConfigId=mailbox.id,
             batchId=batch.id,
             messageId=f"<{suffix}>",
+            uidValidity=42,
             imapUid=7,
             subject="weekly",
+            receivedAt=datetime(2026, 8, 11, tzinfo=UTC),
+            receivedAtSource=MailReceivedAtSource.FIRST_DURABLE_OBSERVATION,
         )
         handoff = MailSourceHandoff(
             mailboxConfigId=mailbox.id,
@@ -452,6 +456,8 @@ async def _seed(
             parseTaskId=parse_task.id,
             uidValidity=42,
             imapUid=7,
+            receivedAt=datetime(2026, 8, 11, tzinfo=UTC),
+            receivedAtSource=MailReceivedAtSource.FIRST_DURABLE_OBSERVATION,
             parseStatus=MailStageStatus.SUCCEEDED,
         )
         session.add_all((message, handoff))

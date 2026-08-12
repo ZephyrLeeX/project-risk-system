@@ -125,7 +125,7 @@ def test_enum_values_and_single_alembic_head(
     expected_enums["AgentEventType"] = [event_type.value for event_type in AgentEventType]
     assert actual_enums == expected_enums
     config = Config(ROOT / "alembic.ini")
-    assert ScriptDirectory.from_config(config).get_heads() == ["20260812_0006"]
+    assert ScriptDirectory.from_config(config).get_heads() == ["20260812_0007"]
 
 
 def test_downgrade_policy_never_restores_forbidden_audit_schema(
@@ -134,7 +134,7 @@ def test_downgrade_policy_never_restores_forbidden_audit_schema(
     config = Config(ROOT / "alembic.ini")
     config.attributes["connection"] = migrated_postgresql_schema
     with pytest.raises(
-        NotImplementedError, match="T042 migration is not destructively downgradable"
+        NotImplementedError, match="T027 immutable received-time facts"
     ):
         command.downgrade(config, "base")
     migrated_postgresql_schema.rollback()
@@ -160,6 +160,8 @@ def test_audit_enforcement_is_installed_by_t006(
         "agent_messages_assign_sequence_trigger",
         "agent_events_assign_sequence_trigger",
         "retention_holds_lifecycle_guard",
+        "mail_source_handoffs_envelope_times_guard",
+        "mail_messages_envelope_times_guard",
     }
 
 

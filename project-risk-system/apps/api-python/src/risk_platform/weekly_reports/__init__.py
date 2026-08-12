@@ -1,1 +1,1 @@
-"""Weekly-report aggregate bounded context."""
+"""Weekly-report materialization and authorized query boundary."""

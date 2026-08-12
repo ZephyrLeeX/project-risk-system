@@ -35,6 +35,7 @@ from risk_platform.todos.schemas import (
     TodoRiskResponse,
     UpdateTodoRequest,
 )
+from risk_platform.weekly_reports.service import invalidate_risk
 
 
 class TodosService:
@@ -136,6 +137,8 @@ class TodosService:
                 trace_id=trace_id,
                 project_id=project.id,
             )
+            if risk is not None:
+                await invalidate_risk(session, risk.id)
         return self._detail((todo, project, department, assignee, risk, category))
 
     async def ensure_for_risk(

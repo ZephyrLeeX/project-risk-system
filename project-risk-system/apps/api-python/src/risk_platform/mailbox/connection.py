@@ -3,11 +3,12 @@ from __future__ import annotations
 import asyncio
 import email.utils
 import imaplib
+import re
 import time
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from email.parser import BytesHeaderParser
 
 from risk_platform.shared.outbound import OutboundEndpointGuard
@@ -29,6 +30,7 @@ class MailEnvelope:
     subject: str | None
     sender: str | None
     sent_at: datetime | None
+    received_at: datetime | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,8 +99,8 @@ class MailboxConnection:
             uids = await asyncio.to_thread(self._search, client, criterion)
             envelopes = []
             for uid in uids:
-                raw = await asyncio.to_thread(self._fetch_header, client, uid)
-                envelopes.append(self._parse_envelope(uid, validity, raw))
+                raw, internal_date = await asyncio.to_thread(self._fetch_header, client, uid)
+                envelopes.append(self._parse_envelope(uid, validity, raw, internal_date))
             return MailSyncSnapshot(validity, tuple(envelopes))
         finally:
             if client is not None:
@@ -154,11 +156,27 @@ class MailboxConnection:
         return sorted(int(value) for value in data[0].split())
 
     @staticmethod
-    def _fetch_header(client: object, uid: int) -> bytes:
-        typ, data = client.uid("fetch", str(uid), "(UID BODY.PEEK[HEADER])")  # type: ignore[attr-defined]
+    def _fetch_header(client: object, uid: int) -> tuple[bytes, str | None]:
+        typ, data = client.uid(  # type: ignore[attr-defined]
+            "fetch", str(uid), "(UID INTERNALDATE BODY.PEEK[HEADER])"
+        )
         if typ != "OK":
             raise RuntimeError("IMAP message fetch failed")
-        return b"".join(item for item in data if isinstance(item, bytes))
+        header_parts: list[bytes] = []
+        internal_date: str | None = None
+        for item in data:
+            if isinstance(item, tuple):
+                metadata, body = item
+                if isinstance(metadata, bytes):
+                    match = re.search(rb'INTERNALDATE\s+"([^"]+)"', metadata, re.IGNORECASE)
+                    if match is not None:
+                        try:
+                            internal_date = match.group(1).decode("ascii", errors="strict")
+                        except UnicodeDecodeError:
+                            internal_date = None
+                if isinstance(body, bytes):
+                    header_parts.append(body)
+        return b"".join(header_parts), internal_date
 
     @staticmethod
     def _fetch_source(client: object, uid: int) -> bytes:
@@ -171,15 +189,11 @@ class MailboxConnection:
         return source
 
     @staticmethod
-    def _parse_envelope(uid: int, validity: int, raw: bytes) -> MailEnvelope:
+    def _parse_envelope(
+        uid: int, validity: int, raw: bytes, internal_date: str | None
+    ) -> MailEnvelope:
         header = BytesHeaderParser().parsebytes(raw)
-        parsed = (
-            email.utils.parsedate_to_datetime(header.get("Date", ""))
-            if header.get("Date")
-            else None
-        )
-        if parsed is not None and parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=UTC)
+        parsed = _parse_sent_at(header.get("Date"))
         return MailEnvelope(
             uid=uid,
             uid_validity=validity,
@@ -187,6 +201,7 @@ class MailboxConnection:
             subject=header.get("Subject"),
             sender=header.get("From"),
             sent_at=parsed,
+            received_at=_parse_internal_date(internal_date),
         )
 
     def _create(self, resolved: str, host: str, port: int, encryption: str) -> object:
@@ -233,4 +248,70 @@ class MailSourceUnavailable(RuntimeError):
     """A UID source cannot be re-fetched and is terminal under ADR 0022."""
 
 
-__all__ = ["ConnectionOutcome", "MailSourceUnavailable", "MailboxConnection"]
+_INTERNAL_DATE = re.compile(
+    r"^(?P<day>(?: \d|\d{2}))-(?P<month>[A-Za-z]{3})-(?P<year>\d{4}) "
+    r"(?P<hour>\d{2}):(?P<minute>\d{2}):(?P<second>\d{2}) "
+    r"(?P<sign>[+-])(?P<offset_hour>\d{2})(?P<offset_minute>\d{2})$"
+)
+_MONTHS = {
+    value: index
+    for index, value in enumerate(
+        ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"),
+        1,
+    )
+}
+
+
+def _utc_milliseconds(value: datetime) -> datetime:
+    utc = value.astimezone(UTC)
+    return utc.replace(microsecond=(utc.microsecond // 1000) * 1000)
+
+
+def _parse_sent_at(raw: str | None) -> datetime | None:
+    if not raw or re.search(r"(?:^|\s)-0000(?:\s|$)", raw):
+        return None
+    try:
+        parsed = email.utils.parsedate_to_datetime(raw)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if parsed is None or parsed.tzinfo is None or parsed.utcoffset() is None:
+        return None
+    return _utc_milliseconds(parsed)
+
+
+def _parse_internal_date(raw: str | None) -> datetime | None:
+    if raw is None:
+        return None
+    match = _INTERNAL_DATE.fullmatch(raw)
+    if match is None:
+        return None
+    values = match.groupdict()
+    month = _MONTHS.get(values["month"].lower())
+    offset_hour, offset_minute = int(values["offset_hour"]), int(values["offset_minute"])
+    if month is None or offset_hour > 23 or offset_minute > 59:
+        return None
+    offset = timedelta(hours=offset_hour, minutes=offset_minute)
+    if values["sign"] == "-":
+        offset = -offset
+    try:
+        parsed = datetime(
+            int(values["year"]),
+            month,
+            int(values["day"]),
+            int(values["hour"]),
+            int(values["minute"]),
+            int(values["second"]),
+            tzinfo=timezone(offset),
+        )
+    except ValueError:
+        return None
+    return _utc_milliseconds(parsed)
+
+
+__all__ = [
+    "ConnectionOutcome",
+    "MailEnvelope",
+    "MailSourceUnavailable",
+    "MailSyncSnapshot",
+    "MailboxConnection",
+]

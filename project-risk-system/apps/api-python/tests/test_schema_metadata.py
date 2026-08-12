@@ -68,6 +68,7 @@ def test_metadata_has_final_prisma_tables_with_approved_audit_override() -> None
             "cursorAdvanced",
         }
     )
+    expected["mail_messages"].update({"uidValidity", "receivedAt", "receivedAtSource"})
     expected["durable_tasks"] = {
         "id",
         "kind",
@@ -178,6 +179,9 @@ def test_metadata_has_final_prisma_tables_with_approved_audit_override() -> None
         "uidValidity",
         "imapUid",
         "messageId",
+        "sentAt",
+        "receivedAt",
+        "receivedAtSource",
         "envelopeMetadata",
         "fetchStatus",
         "handoffStatus",

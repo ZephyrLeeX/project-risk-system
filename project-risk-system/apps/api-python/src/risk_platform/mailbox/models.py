@@ -262,6 +262,11 @@ class MailStageStatus(StrEnum):
     PERMANENT_FAILURE = "PERMANENT_FAILURE"
 
 
+class MailReceivedAtSource(StrEnum):
+    IMAP_INTERNALDATE = "IMAP_INTERNALDATE"
+    FIRST_DURABLE_OBSERVATION = "FIRST_DURABLE_OBSERVATION"
+
+
 class MailSourceHandoff(Base):
     """UID-only durable handoff; mail content is deliberately absent."""
 
@@ -298,6 +303,15 @@ class MailSourceHandoff(Base):
     uidValidity: Mapped[int] = mapped_column(BigInteger, nullable=False)
     imapUid: Mapped[int] = mapped_column(BigInteger, nullable=False)
     messageId: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    sentAt: Mapped[datetime | None] = mapped_column(
+        TIMESTAMP(timezone=True, precision=3), nullable=True
+    )
+    receivedAt: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True, precision=3), nullable=False
+    )
+    receivedAtSource: Mapped[MailReceivedAtSource] = mapped_column(
+        Enum(MailReceivedAtSource, name="MailReceivedAtSource", native_enum=True), nullable=False
+    )
     envelopeMetadata: Mapped[JSONValue] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )
@@ -337,11 +351,16 @@ class MailMessage(Base):
     __tablename__ = "mail_messages"
     __table_args__ = (
         Index(
-            "mail_messages_mailboxConfigId_imapUid_key", "mailboxConfigId", "imapUid", unique=True
+            "mail_messages_mailbox_uidValidity_uid_key",
+            "mailboxConfigId",
+            "uidValidity",
+            "imapUid",
+            unique=True,
         ),
         Index("mail_messages_mailboxConfigId_messageId_idx", "mailboxConfigId", "messageId"),
         Index("mail_messages_batchId_status_idx", "batchId", "status"),
         Index("mail_messages_mailboxConfigId_sentAt_idx", "mailboxConfigId", "sentAt"),
+        Index("mail_messages_mailboxConfigId_receivedAt_idx", "mailboxConfigId", "receivedAt"),
         Index("mail_messages_status_updatedAt_idx", "status", "updatedAt"),
     )
     id: Mapped[UUID] = mapped_column(
@@ -358,12 +377,19 @@ class MailMessage(Base):
         nullable=False,
     )
     messageId: Mapped[str] = mapped_column(String(500), nullable=False)
+    uidValidity: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     imapUid: Mapped[int] = mapped_column(BigInteger, nullable=False)
     subject: Mapped[str] = mapped_column(String(500), nullable=False)
     senderName: Mapped[str | None] = mapped_column(String(255), nullable=True)
     senderAddress: Mapped[str | None] = mapped_column(String(255), nullable=True)
     sentAt: Mapped[datetime | None] = mapped_column(
         TIMESTAMP(timezone=True, precision=3), nullable=True
+    )
+    receivedAt: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True, precision=3), nullable=False
+    )
+    receivedAtSource: Mapped[MailReceivedAtSource] = mapped_column(
+        Enum(MailReceivedAtSource, name="MailReceivedAtSource", native_enum=True), nullable=False
     )
     processedAt: Mapped[datetime | None] = mapped_column(
         TIMESTAMP(timezone=True, precision=3), nullable=True

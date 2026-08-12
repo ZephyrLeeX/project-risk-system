@@ -48,6 +48,7 @@ from risk_platform.timeline.models import RiskTimelineEvent, RiskTimelineEventTy
 from risk_platform.timeline.policy import event_presentation
 from risk_platform.todos.models import ActionItem, ActionItemStatus
 from risk_platform.todos.service import TodosService
+from risk_platform.weekly_reports.service import invalidate_risk
 
 
 @dataclass(frozen=True, slots=True)
@@ -233,6 +234,7 @@ class RisksService:
                 trace_id=trace_id,
                 project_id=project.id,
             )
+            await invalidate_risk(session, risk.id)
         return _detail((risk, project, department, category, reporter, resolved_by))
 
     async def reopen(
@@ -322,6 +324,7 @@ class RisksService:
                 trace_id=trace_id,
                 project_id=project.id,
             )
+            await invalidate_risk(session, risk.id)
         return _detail((risk, project, department, category, reporter, resolved_by))
 
     async def detail(self, identity: SessionIdentity, risk_id: UUID) -> RiskDetail:

@@ -25,6 +25,7 @@ from risk_platform.model_types import JSONValue
 from risk_platform.reliability.core import enqueue_task
 from risk_platform.reliability.models import DurableTask, DurableTaskKind
 from risk_platform.shared.crypto import LegacySecretFields, SecretCipher, SecretCryptoError
+from risk_platform.weekly_reports.service import invalidate_message_project
 
 
 class MailParseWorker:
@@ -66,7 +67,11 @@ class MailParseWorker:
                 return
             existing = await session.scalar(
                 select(MailMessage)
-                .where(MailMessage.mailboxConfigId == mailbox_id, MailMessage.imapUid == imap_uid)
+                .where(
+                    MailMessage.mailboxConfigId == mailbox_id,
+                    MailMessage.uidValidity == uid_validity,
+                    MailMessage.imapUid == imap_uid,
+                )
                 .with_for_update()
             )
             if existing is None:
@@ -74,11 +79,14 @@ class MailParseWorker:
                     mailboxConfigId=mailbox_id,
                     batchId=handoff.batchId,
                     messageId=parsed.message_id,
+                    uidValidity=uid_validity,
                     imapUid=imap_uid,
                     subject=parsed.subject,
                     senderName=parsed.sender_name,
                     senderAddress=parsed.sender_address,
-                    sentAt=cast(datetime | None, parsed.sent_at),
+                    sentAt=handoff.sentAt,
+                    receivedAt=handoff.receivedAt,
+                    receivedAtSource=handoff.receivedAtSource,
                 )
                 session.add(message)
                 await session.flush()
@@ -90,12 +98,20 @@ class MailParseWorker:
             message.status = MailMessageStatus.COMPLETED
             message.processedAt = datetime.now(UTC)
             message.failureCode = message.failureSummary = None
+            old_project_ids = set(
+                await session.scalars(
+                    select(MailMessageProjectMatch.projectId).where(
+                        MailMessageProjectMatch.messageId == message.id
+                    )
+                )
+            )
             await session.execute(
                 delete(MailMessageProjectMatch).where(
                     MailMessageProjectMatch.messageId == message.id
                 )
             )
-            for match in await self._matcher.match(session, parsed.subject, parsed.text):
+            matches = await self._matcher.match(session, parsed.subject, parsed.text)
+            for match in matches:
                 session.add(
                     MailMessageProjectMatch(
                         messageId=message.id,
@@ -105,6 +121,9 @@ class MailParseWorker:
                         matchedText=match.matched_text,
                     )
                 )
+            affected_projects = old_project_ids | {match.project_id for match in matches}
+            for project_id in sorted(affected_projects, key=str):
+                await invalidate_message_project(session, message, project_id)
             handoff.parseStatus = MailStageStatus.SUCCEEDED
             handoff.failureCode = handoff.failureSummary = None
             await enqueue_task(

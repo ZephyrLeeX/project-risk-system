@@ -32,6 +32,7 @@ from risk_platform.mailbox.models import (
     MailboxConfig,
     MailMessage,
     MailMessageProjectMatch,
+    MailProjectMatchType,
     MailRiskCandidate,
     MailRiskCandidateStatus,
     MailSourceHandoff,
@@ -50,6 +51,7 @@ from risk_platform.risks.models import RiskCategory, RiskSourceType
 from risk_platform.risks.service import RiskCreate, RisksService
 from risk_platform.shared.crypto import LegacySecretFields, SecretCipher, SecretCryptoError
 from risk_platform.shared.errors import ApiError
+from risk_platform.weekly_reports.service import invalidate_candidate
 
 SCHEMA_VERSION = "MAIL_PROVIDER_DERIVED_CONTENT_V2"
 CATEGORY_OPTIONS_VERSION = "RISK_CATEGORY_OPTIONS_V1"
@@ -334,7 +336,9 @@ class MailRiskExtractionWorker:
                 return
             message = await session.scalar(
                 select(MailMessage).where(
-                    MailMessage.mailboxConfigId == mailbox_id, MailMessage.imapUid == imap_uid
+                    MailMessage.mailboxConfigId == mailbox_id,
+                    MailMessage.uidValidity == uid_validity,
+                    MailMessage.imapUid == imap_uid,
                 )
             )
             mailbox = await session.get(MailboxConfig, mailbox_id)
@@ -566,6 +570,7 @@ class MailRiskCandidateService:
                 candidate.reviewedById,
                 candidate.reviewedAt,
             ) = MailRiskCandidateStatus.CONFIRMED, risk.id, actor_id, datetime.now(UTC)
+            await invalidate_candidate(session, candidate)
             await self._audit_candidate(
                 session,
                 actor_id=actor_id,
@@ -585,6 +590,7 @@ class MailRiskCandidateService:
         async with transaction(self._sessions) as session:
             candidate = await self._owned(session, candidate_id, identity, lock=True)
             self._pending(candidate)
+            old_project_id = candidate.projectId
             project = await get_scoped_project(
                 session,
                 payload.projectId,
@@ -606,6 +612,24 @@ class MailRiskCandidateService:
                 payload.suggestion.strip(),
             )
             candidate.reviewedById, candidate.reviewedAt = UUID(identity.user.id), datetime.now(UTC)
+            match = await session.scalar(
+                select(MailMessageProjectMatch).where(
+                    MailMessageProjectMatch.messageId == candidate.messageId,
+                    MailMessageProjectMatch.projectId == project.id,
+                )
+            )
+            if match is None:
+                session.add(
+                    MailMessageProjectMatch(
+                        messageId=candidate.messageId,
+                        projectId=project.id,
+                        matchType=MailProjectMatchType.MANUAL,
+                        confidence=100,
+                        matchedText=project.name,
+                        confirmedById=UUID(identity.user.id),
+                    )
+                )
+            await invalidate_candidate(session, candidate, old_project_id=old_project_id)
             await self._audit_candidate(
                 session,
                 actor_id=UUID(identity.user.id),
@@ -663,6 +687,7 @@ class MailRiskCandidateService:
             )
             candidate.status, candidate.confirmedRiskId = MailRiskCandidateStatus.CONFIRMED, risk.id
             candidate.reviewedById, candidate.reviewedAt = UUID(identity.user.id), datetime.now(UTC)
+            await invalidate_candidate(session, candidate)
             await self._audit_candidate(
                 session,
                 actor_id=UUID(identity.user.id),

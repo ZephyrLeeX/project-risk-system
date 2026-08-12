@@ -7,13 +7,14 @@ from datetime import UTC, datetime
 from typing import Final
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from risk_platform.db import transaction
 from risk_platform.mailbox.connection import MailboxConnection, MailEnvelope, MailSyncSnapshot
 from risk_platform.mailbox.models import (
     MailboxConfig,
+    MailReceivedAtSource,
     MailSourceHandoff,
     MailStageStatus,
     MailSyncBatch,
@@ -236,6 +237,15 @@ class MailboxSyncService:
                 "imap_uid": envelope.uid,
             },
         )
+        received_at = envelope.received_at
+        received_at_source = MailReceivedAtSource.IMAP_INTERNALDATE
+        if received_at is None:
+            received_at = await session.scalar(
+                select(func.date_trunc("milliseconds", func.current_timestamp()))
+            )
+            if received_at is None:
+                raise RuntimeError("PostgreSQL transaction timestamp unavailable")
+            received_at_source = MailReceivedAtSource.FIRST_DURABLE_OBSERVATION
         session.add(
             MailSourceHandoff(
                 mailboxConfigId=config.id,
@@ -244,6 +254,9 @@ class MailboxSyncService:
                 uidValidity=envelope.uid_validity,
                 imapUid=envelope.uid,
                 messageId=envelope.message_id,
+                sentAt=envelope.sent_at,
+                receivedAt=received_at,
+                receivedAtSource=received_at_source,
                 envelopeMetadata=_metadata(envelope),
             )
         )
