@@ -156,3 +156,9 @@ task kind、冻结 execution configuration 的权威事实，或不可信 Provid
   composition root。
 - 本 ADR 不授权开始 T029 implementation、T030、Wave 14 Integration、下一 Wave，亦不处理
   DG-05 或 DG-08。
+
+## 后续批准补充
+
+ADR 0029 为 T030 的 `REPORT` category binding 将 Provider protocol 显式升级为
+`AGENT_PROVIDER_EXECUTION_V2`。V1 的其他执行、安全、限制、retry、SSE 与 composition 规则继续有效；
+V1 response 不得被静默解释为 V2。

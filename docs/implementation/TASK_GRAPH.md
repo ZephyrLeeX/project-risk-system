@@ -118,7 +118,7 @@ Tasks in a wave may run concurrently only when every dependency from an earlier 
 | T027 | REVIEW_PASSED | T004, T010, T020, T025, T026 | Build and expose authorized current-week report aggregates/details. |
 | T028 | TODO | T004, T010, T014, T020, T022, T026, T027 | Persist Agent conversations and expose authorized read-only business tools. |
 | T029 | REVIEW_PASSED | T004, T007, T008, T010, T014, T028 | Stream Agent text, progress, errors and mutation previews over SSE under ADR 0028 and expose its module-local Worker entrypoint without production composition wiring. |
-| T030 | TODO | T004, T006, T010, T021, T022, T029 | Execute previewed Agent writes through bound one-use REST confirmations. |
+| T030 | READY | T004, T006, T010, T021, T022, T029 | Execute category-bound previewed Agent writes through bound one-use REST confirmations under ADR 0029. |
 | T031 | REVIEW_PASSED | T004, T006, T008, T013, T019, T024, T025, T042 | Run auditable import/conversation/temp retention cleanup with protections. |
 | T032 | TODO | T040 | Freeze OpenAPI authority and generate reproducible frontend types. |
 | T033 | TODO | T016, T032 | Cut admin pages to Python APIs and remove fixed business states. |
@@ -149,7 +149,8 @@ Tasks in a wave may run concurrently only when every dependency from an earlier 
 | DG-11 | RESOLVED by ADR 0024: fixed attachment allowlist, parser isolation, MIME/content validation, input/decompression/resource bounds, temporary-file cleanup and parse-stage failure mapping. | T025-T027, T031-T035, T037-T041 | ADR 0024 makes the attachment boundary sufficiently specific for T025 without deriving a security policy from the legacy implementation. |
 | DG-12 | RESOLVED by ADR 0026: `MAIL_PROVIDER_DERIVED_CONTENT_V2` sends bounded `RISK_CATEGORY_OPTIONS_V1`; Provider returns one opaque option and T026 maps it deterministically to an active local `categoryId`. | T026-T027 | Unknown, invalid and ambiguous classification fails closed; no free taxonomy, fallback or legacy-derived mapping is permitted. |
 | DG-13 | RESOLVED by ADR 0021 immutable received-time addendum: IMAP `INTERNALDATE`, first durable observation fallback, UTC normalization, immutable handoff/message facts, backfill and retry/refetch stability are approved. | T027 | T027 owns the explicitly bounded metadata revision and T024/T025 ingestion compatibility wiring; no mail content retention or pipeline redesign is authorized. |
-| DG-14 | RESOLVED by ADR 0028: `AGENT_EXECUTION` registry/retry contract, PostgreSQL immutable execution-configuration snapshot, closed `AGENT_PROVIDER_EXECUTION_V1` protocol, invalid-output mapping and cancellation boundary. | T029, T030, T034-T035, T037, T039-T040 | ADR 0028 supplies the only approved Agent Provider/orchestration boundary; Provider/raw execution payload remains non-factual. |
+| DG-14 | RESOLVED by ADR 0028: `AGENT_EXECUTION` registry/retry contract, PostgreSQL immutable execution-configuration snapshot, closed Provider protocol, invalid-output mapping and cancellation boundary; ADR 0029 explicitly upgrades the protocol to V2 only for category-bound `REPORT`. | T029, T030, T034-T035, T037, T039-T040 | ADR 0028 plus ADR 0029 supply the approved Agent Provider/orchestration boundary; Provider/raw execution payload remains non-factual. |
+| DG-15 | RESOLVED by ADR 0029: Agent `REPORT` reuses `RISK_CATEGORY_OPTIONS_V1`, maps one opaque Provider choice to an active local `categoryId`, binds the category revision into canonical preview content, and revalidates it under lock at confirmation. | T030, T034, T037, T039-T040 | Missing, invalid, disabled, stale and legacy category bindings fail closed; no default, inference, free taxonomy or legacy fallback is permitted. |
 
 ## Integration checkpoints
 

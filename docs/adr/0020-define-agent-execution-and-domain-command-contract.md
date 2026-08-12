@@ -35,3 +35,8 @@ DG-06 未协调“AI 调用由 Celery Worker 执行”与实时 SSE；DG-07 未�
 - T030 只经现有领域服务执行上述命令；不得引入新 risk state、任意 SQL 或独立 Agent 写模型。
 - T004 需保存与本 ADR 对应的 task/event/confirmation references，但不实现 Worker 或命令服务。
 - DG-06 与 DG-07 解决；本 ADR 不决定邮件 transient handoff、retention protection 或容量阈值。
+
+## 后续批准补充
+
+ADR 0029 将 `REPORT` 的服务端映射 `categoryId` 与 `categoryBindingDigest` 加入必填 canonical 字段，
+并规定 preview/confirmation 的 active-category revalidation。`REPORT` 的其他领域效果与幂等规则不变。

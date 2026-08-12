@@ -50,3 +50,8 @@ DG-01 和 DG-03 未定义 Agent、周报和管理概览的公开契约，亦未�
 - T004 可以以此 ADR 唯一确定 Agent conversation/message/event/confirmation schema、约束和索引。
 - T016、T027-T030、T034、T037、T039、T040 必须遵循此 API、错误、权限和 SSE contract。
 - DG-01 与 DG-03 解决；本 ADR 不定义 Agent 领域写操作或周报物化生命周期。
+
+## 后续批准补充
+
+ADR 0029 为 `REPORT` canonical content 增加 `categoryId` 与 `categoryBindingDigest`，并为
+`PROCESS`/`RESOLVE` 增加对应的固定 `null` 字段；其他 confirmation 与 SSE contract 不变。
