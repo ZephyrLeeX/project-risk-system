@@ -47,11 +47,11 @@ Current:
 - T022: REVIEW_PASSED
 - T023: REVIEW_PASSED
 - Wave 8: PASS (T022 import-cycle fix reviewed; full pytest and PostgreSQL/Alembic integration validation passed)
-- Current Wave: Wave 10 IN_PROGRESS (T016/T019/T020 REVIEW_PASSED; T025 DESIGN_GAP); Wave 9 complete (T018/T024 REVIEW_PASSED; Integration PASS).
+- Current Wave: Wave 10 IN_PROGRESS (T016/T019/T020 REVIEW_PASSED; T025 READY); Wave 9 complete (T018/T024 REVIEW_PASSED; Integration PASS).
 - Wave 10 design resolution: ADR 0023 supplies the missing T016 admin overview item contract. No Wave 10 Integration or next-Wave work was started. DG-04/DG-05/DG-08 remain out of scope.
 - T019: REVIEW_PASSED (selected as the single Wave 10 work unit; see `docs/implementation/reports/T019.md`).
 - T020: REVIEW_PASSED (collection/department remediation, Independent Review and PostgreSQL 16 focused validation complete; see `docs/implementation/reports/T020.md`).
-- T025: DESIGN_GAP (approved attachment type/parser/timeout/resource policy is missing; legacy behavior must not be used to self-design the boundary).
+- T025: READY (DG-11 resolved by ADR 0024's approved fixed attachment safety policy; implementation has not started).
 - T016: REVIEW_PASSED (ADR 0023 admin overview implementation, Independent Review and PostgreSQL 16 focused validation complete; code checkpoint `cbd5569869cb36c5b7ae93645edeeecfbfb49842`).
 - T018: REVIEW_PASSED (checkpoint `b8a5a5f`; see `docs/implementation/reports/T018.md`).
 - T024: REVIEW_PASSED (DG-10 resolved; implementation and Independent Review complete; checkpoint `597a43b830e2e639d17b775c069a8fbfb896efd4`).
@@ -64,8 +64,10 @@ Current:
 - DG-07: RESOLVED by ADR 0020
 - DG-09: RESOLVED by ADR 0021
 - DG-10: RESOLVED by ADR 0022
+- DG-11: RESOLVED by ADR 0024
 
 Checkpoint commits:
+- T025 design: ad37f90a6ae0cb643a19c09d9c91b02b8eacbad7
 - T010: e30dd45
 - T004: 1b4cfa8
 - T011: baa3208
@@ -84,6 +86,7 @@ Architecture changes:
 - ADR 0021: PostgreSQL weekly aggregate lifecycle contract.
 - ADR 0022: Mail fetch-to-parse/AI UID/UIDVALIDITY-only durable handoff, stage terminal states, crash recovery and cursor contract.
 - ADR 0023: Admin overview health, attention, recent-audit item and partial-data contract.
+- ADR 0024: Mail attachment type allowlist, parser isolation, resource limits, metadata-only outcomes and ADR 0022 retry handoff.
 
 Environment:
 - Python validation via mise explicit tool selection.
@@ -113,6 +116,7 @@ Integration blockers:
 - Wave 8 final Integration Fix checkpoint: `5f5d421f5bc4f7a86c0f70c1febda6c1c8ae515a`; see `docs/implementation/reports/WAVE-08.md`.
 - T018 checkpoint: `b8a5a5f`; see `docs/implementation/reports/T018.md` and `docs/implementation/reports/WAVE-09-PARTIAL.md`.
 - DG-10 design checkpoint: created by ADR 0022 and synchronized task/design state; T024 implementation is complete and reviewed.
+- DG-11 design resolution: ADR 0024 approves the attachment safety policy and returns T025 to READY. No T025 implementation, Wave 10 Integration or next-Wave work was started; DG-04/DG-05/DG-08 remain out of scope.
 - T024 implementation and Independent Review: `REVIEW_PASSED`; see `docs/implementation/reports/T024.md` and `docs/implementation/reports/WAVE-09-PARTIAL.md`.
 - T024 checkpoint: `597a43b830e2e639d17b775c069a8fbfb896efd4`.
 - T019 implementation, Independent Review and validation are complete; checkpoint is recorded in `docs/implementation/reports/T019.md`.
