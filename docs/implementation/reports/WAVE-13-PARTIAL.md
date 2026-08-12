@@ -17,4 +17,4 @@ T028 完成 Agent conversation persistence/API、owner/scope recheck、封闭 re
 
 T028 的 Ruff、mypy、focused pytest、PostgreSQL 16、`uv lock --check` 与 `git diff --check` 均 PASS。全量 pytest 额外尝试因既有 Redis connection wait 在 `61 passed, 1 skipped` 后中断，不作为 T028 required focused validation 结果。
 
-Code checkpoint 与 metadata checkpoint 在本工作单元提交后回填。
+Code checkpoint：`21cb6a9e541dfed311b33f2355c6e8358ba6dda3`。Metadata checkpoint 在本报告/状态回填提交后记录。
