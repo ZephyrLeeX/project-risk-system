@@ -115,7 +115,7 @@ Tasks in a wave may run concurrently only when every dependency from an earlier 
 | T024 | READY | T008, T013, T023 | Implement durable scheduled/manual/retry UID synchronization. |
 | T025 | READY | T007, T013, T024 | Parse mail safely and match projects under ADR 0024's fixed attachment safety policy. |
 | T026 | READY | T006, T007, T008, T014, T022, T025 | Extract, review and transactionally publish mail risk candidates under ADR 0025/0026 Provider contracts. |
-| T027 | TODO | T004, T010, T020, T025, T026 | Build and expose authorized current-week report aggregates/details. |
+| T027 | READY | T004, T010, T020, T025, T026 | Build and expose authorized current-week report aggregates/details. |
 | T028 | TODO | T004, T010, T014, T020, T022, T026, T027 | Persist Agent conversations and expose authorized read-only business tools. |
 | T029 | TODO | T004, T007, T008, T010, T014, T028 | Stream Agent text, progress, errors and mutation previews over SSE. |
 | T030 | TODO | T004, T006, T010, T021, T022, T029 | Execute previewed Agent writes through bound one-use REST confirmations. |
@@ -148,6 +148,7 @@ Tasks in a wave may run concurrently only when every dependency from an earlier 
 | DG-10 | RESOLVED by ADR 0022: UID/UIDVALIDITY-only durable handoff, downstream refetch, separate fetch/handoff/parse/AI terminal states, crash/retry recovery, explicit UIDVALIDITY reset/rebaseline and batch cursor advancement only after all UIDs reach terminal state. | T024-T027, T031-T035, T037, T039-T040 | ADR 0022 defines the cross-task handoff while reusing ADR 0018 durable task/outbox and preserving ADR 0007 minimal content retention. |
 | DG-11 | RESOLVED by ADR 0024: fixed attachment allowlist, parser isolation, MIME/content validation, input/decompression/resource bounds, temporary-file cleanup and parse-stage failure mapping. | T025-T027, T031-T035, T037-T041 | ADR 0024 makes the attachment boundary sufficiently specific for T025 without deriving a security policy from the legacy implementation. |
 | DG-12 | RESOLVED by ADR 0026: `MAIL_PROVIDER_DERIVED_CONTENT_V2` sends bounded `RISK_CATEGORY_OPTIONS_V1`; Provider returns one opaque option and T026 maps it deterministically to an active local `categoryId`. | T026-T027 | Unknown, invalid and ambiguous classification fails closed; no free taxonomy, fallback or legacy-derived mapping is permitted. |
+| DG-13 | RESOLVED by ADR 0021 immutable received-time addendum: IMAP `INTERNALDATE`, first durable observation fallback, UTC normalization, immutable handoff/message facts, backfill and retry/refetch stability are approved. | T027 | T027 owns the explicitly bounded metadata revision and T024/T025 ingestion compatibility wiring; no mail content retention or pipeline redesign is authorized. |
 
 ## Integration checkpoints
 
