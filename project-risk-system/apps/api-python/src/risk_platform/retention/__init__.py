@@ -1,1 +1,1 @@
-"""Retention configuration, auditable holds, and deletion protection predicates."""
+"""Retention configuration, protection, and bounded cleanup."""
