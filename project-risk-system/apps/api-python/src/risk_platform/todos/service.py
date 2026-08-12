@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from builtins import list as builtin_list
-from datetime import UTC
+from dataclasses import dataclass
+from datetime import UTC, date
 from typing import Any, cast
 from uuid import UUID
 
@@ -18,7 +19,7 @@ from risk_platform.db import transaction
 from risk_platform.projects.models import Project
 from risk_platform.rbac.models import DataScopeType
 from risk_platform.rbac.scopes import project_scope_predicate
-from risk_platform.risks.models import Risk, RiskCategory
+from risk_platform.risks.models import Risk, RiskCategory, RiskStatus
 from risk_platform.shared.errors import ApiError
 from risk_platform.todos.models import ActionItem, ActionItemSourceType, ActionItemStatus
 from risk_platform.todos.policy import (
@@ -36,6 +37,15 @@ from risk_platform.todos.schemas import (
     UpdateTodoRequest,
 )
 from risk_platform.weekly_reports.service import invalidate_risk
+
+
+@dataclass(frozen=True, slots=True)
+class TodoProcessCommand:
+    project_id: UUID
+    risk_id: UUID
+    description: str
+    due_date: date | None = None
+    assignee_user_id: UUID | None = None
 
 
 class TodosService:
@@ -91,55 +101,128 @@ class TodosService:
         if "assigneeName" in payload.model_fields_set and not payload.assigneeName:
             raise ApiError(400, "BAD_REQUEST", "负责人不能为空")
         async with transaction(self._session_factory) as session:
-            row = await self._one(session, identity, todo_id, for_update=True)
-            if row is None:
-                raise ApiError(404, "NOT_FOUND", "待办事项不存在或已超出数据范围")
-            todo, project, department, assignee, risk, category = row
-            before = self._snapshot(todo)
-            if payload.status is not None:
-                todo.status = payload.status
-                if payload.status is ActionItemStatus.COMPLETED:
-                    todo.completedAt = _now()
-                    todo.completedById = UUID(identity.user.id)
-                else:
-                    todo.completedAt = None
-                    todo.completedById = None
-            if payload.assigneeName is not None:
-                todo.assigneeNameSource = payload.assigneeName
-                assignee_rows = (
-                    await session.scalars(
-                        select(User)
-                        .where(
-                            User.displayName == payload.assigneeName,
-                            User.status == UserStatus.ACTIVE,
-                        )
-                        .limit(2)
-                    )
-                ).all()
-                todo.assigneeUserId = assignee_rows[0].id if len(assignee_rows) == 1 else None
-            if "dueDate" in payload.model_fields_set:
-                todo.dueDate = payload.dueDate
-            if "completionNote" in payload.model_fields_set:
-                todo.completionNote = (
-                    payload.completionNote.strip() or None if payload.completionNote else None
-                )
-            await session.flush()
-            after = self._snapshot(todo)
-            if risk is not None and before != after:
-                session.add(_timeline_for_update(todo, project.id, risk.id, identity))
-            await AuditService(session).record_success(
-                actor_id=UUID(identity.user.id),
-                actor_type=AuditActorType.USER,
-                module="TODO",
-                action="ACTION_ITEM_UPDATED",
-                resource_type="ACTION_ITEM",
-                resource_id=str(todo.id),
-                trace_id=trace_id,
-                project_id=project.id,
+            row = await self.update_in_session(
+                session, identity, todo_id, payload, trace_id=trace_id
             )
-            if risk is not None:
-                await invalidate_risk(session, risk.id)
+            todo, project, department, assignee, risk, category = row
         return self._detail((todo, project, department, assignee, risk, category))
+
+    async def update_in_session(
+        self,
+        session: AsyncSession,
+        identity: SessionIdentity,
+        todo_id: UUID,
+        payload: UpdateTodoRequest,
+        *,
+        trace_id: UUID,
+    ) -> tuple[Any, ...]:
+        """Apply the public todo update policy inside a caller-owned transaction."""
+        if not payload.model_fields_set:
+            raise ApiError(400, "BAD_REQUEST", "请至少修改一项待办信息")
+        if "assigneeName" in payload.model_fields_set and not payload.assigneeName:
+            raise ApiError(400, "BAD_REQUEST", "负责人不能为空")
+        row = await self._one(session, identity, todo_id, for_update=True)
+        if row is None:
+            raise ApiError(404, "NOT_FOUND", "待办事项不存在或已超出数据范围")
+        todo, project, _department, _assignee, risk, _category = row
+        before = self._snapshot(todo)
+        if payload.status is not None:
+            todo.status = payload.status
+            if payload.status is ActionItemStatus.COMPLETED:
+                todo.completedAt = _now()
+                todo.completedById = UUID(identity.user.id)
+            else:
+                todo.completedAt = None
+                todo.completedById = None
+        if payload.assigneeName is not None:
+            todo.assigneeNameSource = payload.assigneeName
+            assignee_rows = (
+                await session.scalars(
+                    select(User)
+                    .where(
+                        User.displayName == payload.assigneeName,
+                        User.status == UserStatus.ACTIVE,
+                    )
+                    .limit(2)
+                )
+            ).all()
+            todo.assigneeUserId = assignee_rows[0].id if len(assignee_rows) == 1 else None
+        if "dueDate" in payload.model_fields_set:
+            todo.dueDate = payload.dueDate
+        if "completionNote" in payload.model_fields_set:
+            todo.completionNote = (
+                payload.completionNote.strip() or None if payload.completionNote else None
+            )
+        await self._finish_update(session, identity, todo, project.id, risk, before, trace_id)
+        return row
+
+    async def process_in_session(
+        self,
+        session: AsyncSession,
+        identity: SessionIdentity,
+        todo_id: UUID,
+        command: TodoProcessCommand,
+        *,
+        trace_id: UUID,
+    ) -> ActionItem:
+        """Apply the approved Agent PROCESS command through todo domain policy."""
+        if not command.description.strip():
+            raise ApiError(400, "BAD_REQUEST", "处理说明不能为空")
+        row = await self._one(session, identity, todo_id, for_update=True)
+        if row is None:
+            raise ApiError(404, "NOT_FOUND", "待办事项不存在或已超出数据范围")
+        todo, project, _department, _assignee, risk, _category = row
+        if (
+            risk is None
+            or risk.id != command.risk_id
+            or project.id != command.project_id
+            or todo.projectId != command.project_id
+            or risk.status is not RiskStatus.ACTIVE
+        ):
+            raise ApiError(404, "NOT_FOUND", "待办事项不存在或已超出数据范围")
+        before = self._snapshot(todo)
+        if command.due_date is not None:
+            todo.dueDate = command.due_date
+        if command.assignee_user_id is not None:
+            assignee = await session.scalar(
+                select(User).where(
+                    User.id == command.assignee_user_id, User.status == UserStatus.ACTIVE
+                )
+            )
+            if assignee is None:
+                raise ApiError(404, "NOT_FOUND", "负责人不存在或不可用")
+            todo.assigneeUserId = assignee.id
+            todo.assigneeNameSource = assignee.displayName
+        todo.completionNote = command.description.strip()
+        await self._finish_update(session, identity, todo, project.id, risk, before, trace_id)
+        return cast(ActionItem, todo)
+
+    async def _finish_update(
+        self,
+        session: AsyncSession,
+        identity: SessionIdentity,
+        todo: ActionItem,
+        project_id: UUID,
+        risk: Risk | None,
+        before: tuple[object, ...],
+        trace_id: UUID,
+    ) -> None:
+        await session.flush()
+        after = self._snapshot(todo)
+        if risk is not None and before != after:
+            session.add(_timeline_for_update(todo, project_id, risk.id, identity))
+        await AuditService(session).record_success(
+            actor_id=UUID(identity.user.id),
+            actor_type=AuditActorType.USER,
+            module="TODO",
+            action="ACTION_ITEM_UPDATED",
+            resource_type="ACTION_ITEM",
+            resource_id=str(todo.id),
+            trace_id=trace_id,
+            project_id=project_id,
+        )
+        if risk is not None:
+            await invalidate_risk(session, risk.id)
 
     async def ensure_for_risk(
         self,
@@ -327,4 +410,4 @@ def _source_label(source: str) -> str:
     }.get(source, "其他来源")
 
 
-__all__ = ["TodosService"]
+__all__ = ["TodoProcessCommand", "TodosService"]

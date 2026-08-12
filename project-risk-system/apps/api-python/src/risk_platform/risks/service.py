@@ -176,66 +176,79 @@ class RisksService:
         self, identity: SessionIdentity, risk_id: UUID, payload: LifecycleRequest, trace_id: UUID
     ) -> RiskDetail:
         async with transaction(self._session_factory) as session:
-            row = await self._risk_row(session, identity, risk_id, for_update=True)
-            if row is None:
-                raise ApiError(404, "NOT_FOUND", "风险不存在或不在当前数据范围内")
+            row = await self.resolve_in_session(session, identity, risk_id, payload, trace_id)
             risk, project, department, category, reporter, resolved_by = row
-            if risk.status is RiskStatus.RESOLVED:
-                raise ApiError(400, "RISK_ALREADY_RESOLVED", "该风险已经解除，无需重复操作")  # noqa: RUF001
-            now = datetime.now(UTC)
-            risk.status, risk.resolvedAt = RiskStatus.RESOLVED, now
-            risk.resolvedById, risk.resolutionReason = UUID(identity.user.id), payload.reason
-            todo = await session.scalar(
-                select(ActionItem).where(ActionItem.riskId == risk.id).with_for_update()
+        return _detail((risk, project, department, category, reporter, resolved_by))
+
+    async def resolve_in_session(
+        self,
+        session: AsyncSession,
+        identity: SessionIdentity,
+        risk_id: UUID,
+        payload: LifecycleRequest,
+        trace_id: UUID,
+    ) -> tuple[Any, ...]:
+        """Resolve through the domain service inside a caller-owned transaction."""
+        row = await self._risk_row(session, identity, risk_id, for_update=True)
+        if row is None:
+            raise ApiError(404, "NOT_FOUND", "风险不存在或不在当前数据范围内")
+        risk, project, _department, _category, _reporter, _resolved_by = row
+        if risk.status is RiskStatus.RESOLVED:
+            raise ApiError(400, "RISK_ALREADY_RESOLVED", "该风险已经解除，无需重复操作")  # noqa: RUF001
+        now = datetime.now(UTC)
+        risk.status, risk.resolvedAt = RiskStatus.RESOLVED, now
+        risk.resolvedById, risk.resolutionReason = UUID(identity.user.id), payload.reason
+        todo = await session.scalar(
+            select(ActionItem).where(ActionItem.riskId == risk.id).with_for_update()
+        )
+        if todo is not None and todo.status is not ActionItemStatus.COMPLETED:
+            old = todo.status
+            todo.status, todo.completedAt, todo.completedById = (
+                ActionItemStatus.COMPLETED,
+                now,
+                UUID(identity.user.id),
             )
-            if todo is not None and todo.status is not ActionItemStatus.COMPLETED:
-                old = todo.status
-                todo.status, todo.completedAt, todo.completedById = (
-                    ActionItemStatus.COMPLETED,
-                    now,
-                    UUID(identity.user.id),
-                )
-                todo.completionNote = _resolution_note(todo.completionNote, payload.reason)
-                session.add(
-                    _event(
-                        risk,
-                        project.id,
-                        todo.id,
-                        RiskTimelineEventType.ACTION_COMPLETED,
-                        "待办事项随风险解除完成",
-                        f"风险已解除，关联待办同步完成：{payload.reason}",  # noqa: RUF001
-                        old.value,
-                        todo.status.value,
-                        identity,
-                        now,
-                    )
-                )
+            todo.completionNote = _resolution_note(todo.completionNote, payload.reason)
             session.add(
                 _event(
                     risk,
                     project.id,
-                    todo.id if todo else None,
-                    RiskTimelineEventType.RISK_RESOLVED,
-                    "风险已解除",
-                    payload.reason,
-                    RiskStatus.ACTIVE.value,
-                    RiskStatus.RESOLVED.value,
+                    todo.id,
+                    RiskTimelineEventType.ACTION_COMPLETED,
+                    "待办事项随风险解除完成",
+                    f"风险已解除，关联待办同步完成：{payload.reason}",  # noqa: RUF001
+                    old.value,
+                    todo.status.value,
                     identity,
                     now,
                 )
             )
-            await AuditService(session).record_success(
-                actor_id=UUID(identity.user.id),
-                actor_type=AuditActorType.USER,
-                module="RISK",
-                action="RISK_RESOLVED",
-                resource_type="RISK",
-                resource_id=str(risk.id),
-                trace_id=trace_id,
-                project_id=project.id,
+        session.add(
+            _event(
+                risk,
+                project.id,
+                todo.id if todo else None,
+                RiskTimelineEventType.RISK_RESOLVED,
+                "风险已解除",
+                payload.reason,
+                RiskStatus.ACTIVE.value,
+                RiskStatus.RESOLVED.value,
+                identity,
+                now,
             )
-            await invalidate_risk(session, risk.id)
-        return _detail((risk, project, department, category, reporter, resolved_by))
+        )
+        await AuditService(session).record_success(
+            actor_id=UUID(identity.user.id),
+            actor_type=AuditActorType.USER,
+            module="RISK",
+            action="RISK_RESOLVED",
+            resource_type="RISK",
+            resource_id=str(risk.id),
+            trace_id=trace_id,
+            project_id=project.id,
+        )
+        await invalidate_risk(session, risk.id)
+        return row
 
     async def reopen(
         self, identity: SessionIdentity, risk_id: UUID, payload: LifecycleRequest, trace_id: UUID

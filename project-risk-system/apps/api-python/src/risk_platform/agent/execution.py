@@ -27,7 +27,7 @@ from risk_platform.rbac.scopes import get_scoped_project, project_scope_predicat
 from risk_platform.reliability.core import TaskHandler, heartbeat
 from risk_platform.reliability.dispatcher import DurableTaskCancelled, DurableTaskFailure
 from risk_platform.reliability.models import DurableTask, DurableTaskStatus
-from risk_platform.risks.models import Risk, RiskStatus
+from risk_platform.risks.models import Risk, RiskCategory, RiskStatus
 from risk_platform.shared.errors import ApiError
 from risk_platform.todos.models import ActionItem
 
@@ -43,7 +43,7 @@ from .models import (
 )
 from .tools import AgentToolRegistry
 
-PROTOCOL = "AGENT_PROVIDER_EXECUTION_V1"
+PROTOCOL = "AGENT_PROVIDER_EXECUTION_V2"
 INVALID_OUTPUT = "AGENT_PROVIDER_INVALID_OUTPUT"
 CONFIG_INVALID = "AGENT_EXECUTION_CONFIG_INVALID"
 MAX_REQUEST_BYTES = 64 * 1024
@@ -84,11 +84,17 @@ class PreviewContent(_ProtocolModel):
     riskLevel: Literal["HIGH", "MEDIUM", "LOW"] | None
     dueDate: date | None
     assigneeUserId: UUID | None
+    categoryOptionId: str | None = Field(default=None, pattern=r"^C[1-9][0-9]*$")
 
     @model_validator(mode="after")
     def required_for_operation(self) -> PreviewContent:
         if self.operation == "REPORT":
-            if not self.title.strip() or not self.description.strip() or self.riskLevel is None:
+            if (
+                not self.title.strip()
+                or not self.description.strip()
+                or self.riskLevel is None
+                or self.categoryOptionId is None
+            ):
                 raise ValueError("REPORT fields are incomplete")
             if any(
                 value is not None
@@ -98,7 +104,11 @@ class PreviewContent(_ProtocolModel):
         elif self.operation == "PROCESS":
             if self.riskId is None or self.todoId is None or not self.description.strip():
                 raise ValueError("PROCESS fields are incomplete")
-            if self.title or self.riskLevel is not None:
+            if (
+                self.title
+                or self.riskLevel is not None
+                or "categoryOptionId" in self.model_fields_set
+            ):
                 raise ValueError("PROCESS contains risk core fields")
         else:
             if self.riskId is None or not self.description.strip():
@@ -106,7 +116,7 @@ class PreviewContent(_ProtocolModel):
             if any(
                 value is not None
                 for value in (self.todoId, self.riskLevel, self.dueDate, self.assigneeUserId)
-            ) or self.title:
+            ) or self.title or "categoryOptionId" in self.model_fields_set:
                 raise ValueError("RESOLVE contains fields outside its command contract")
         return self
 
@@ -124,7 +134,7 @@ class PreviewAction(_ProtocolModel):
 
 
 class ProviderResponse(_ProtocolModel):
-    protocol: Literal["AGENT_PROVIDER_EXECUTION_V1"]
+    protocol: Literal["AGENT_PROVIDER_EXECUTION_V2"]
     phase: Literal["PLAN", "RESPOND"]
     actions: list[dict[str, JSONValue]] = Field(max_length=64)
 
@@ -156,6 +166,10 @@ class AgentProviderError(RuntimeError):
 
 
 class AgentProviderInvalidOutput(RuntimeError):
+    pass
+
+
+class AgentReportCategoryStale(RuntimeError):
     pass
 
 
@@ -235,12 +249,14 @@ class AgentExecutionWorker:
                 config.id, task_id, lease_token, plan, identity, started
             )
             await self._check_cancelled(config.id, task_id, lease_token)
+            categories = await self._category_options()
             respond_request = self._request(
                 phase="RESPOND",
                 message=message.content,
                 history=history,
                 tools=cast(list[JSONValue], self._tools.catalogue(identity)),
                 tool_results=tool_results,
+                categories=categories,
             )
             response_raw = await self._provider_round(
                 config, task_id, lease_token, respond_request, started
@@ -252,7 +268,7 @@ class AgentExecutionWorker:
             ):
                 raise AgentProviderInvalidOutput
             await self._check_cancelled(config.id, task_id, lease_token)
-            await self._persist_response(config.id, task_id, lease_token, response)
+            await self._persist_response(config.id, task_id, lease_token, response, categories)
         except AgentCancellationAlreadyPersisted:
             raise
         except DurableTaskCancelled:
@@ -270,6 +286,16 @@ class AgentExecutionWorker:
                 "AGENT_STREAM_BACKPRESSURE",
                 retryable=False,
                 summary="agent stream capacity reached",
+            ) from None
+        except AgentReportCategoryStale:
+            assert ids is not None
+            await self._terminal_event(
+                ids[3], task_id, lease_token, "AGENT_REPORT_CATEGORY_STALE", True, force=True
+            )
+            raise DurableTaskFailure(
+                "AGENT_REPORT_CATEGORY_STALE",
+                retryable=True,
+                summary="agent report category mapping changed before preview issue",
             ) from None
         except AgentProviderInvalidOutput:
             assert ids is not None
@@ -396,6 +422,7 @@ class AgentExecutionWorker:
         history: list[dict[str, JSONValue]],
         tools: list[JSONValue],
         tool_results: list[JSONValue] | None = None,
+        categories: dict[str, RiskCategory] | None = None,
     ) -> dict[str, JSONValue]:
         request: dict[str, JSONValue] = {
             "protocol": PROTOCOL,
@@ -406,6 +433,20 @@ class AgentExecutionWorker:
         }
         if phase == "RESPOND":
             request["toolResults"] = tool_results or []
+            request["riskCategoryOptions"] = {
+                "schema": "RISK_CATEGORY_OPTIONS_V1",
+                "items": [
+                    {
+                        "option_id": option_id,
+                        "name": category.name,
+                        "description": category.description,
+                        "default_level": category.defaultLevel.value
+                        if category.defaultLevel is not None
+                        else None,
+                    }
+                    for option_id, category in (categories or {}).items()
+                ],
+            }
         if len(self._json_bytes(request)) > MAX_REQUEST_BYTES:
             raise AgentProviderInvalidOutput
         return request
@@ -582,6 +623,7 @@ class AgentExecutionWorker:
         task_id: UUID,
         lease_token: UUID,
         actions: list[ProgressAction | ToolCallAction | TextAction | PreviewAction],
+        categories: dict[str, RiskCategory],
     ) -> None:
         async with self._sessions.begin() as session:
             config, _ = await self._locked_context(session, config_id, task_id, lease_token)
@@ -590,7 +632,7 @@ class AgentExecutionWorker:
             identity = await self._identity(session, config.requestedByUserId)
             previews = [action for action in actions if isinstance(action, PreviewAction)]
             for preview in previews:
-                await self._validate_preview(session, identity, preview.content)
+                await self._validate_preview(session, identity, preview.content, categories)
             text = "".join(action.text for action in actions if isinstance(action, TextAction))
             assistant: AgentMessage | None = None
             if text:
@@ -630,7 +672,9 @@ class AgentExecutionWorker:
                         message_id=assistant.id,
                     )
                 elif isinstance(action, PreviewAction):
-                    await self._issue_preview(session, identity, config, task_id, action.content)
+                    await self._issue_preview(
+                        session, identity, config, task_id, action.content, categories
+                    )
             await self._append(
                 session,
                 config,
@@ -641,7 +685,11 @@ class AgentExecutionWorker:
             )
 
     async def _validate_preview(
-        self, session: AsyncSession, identity: SessionIdentity, content: PreviewContent
+        self,
+        session: AsyncSession,
+        identity: SessionIdentity,
+        content: PreviewContent,
+        categories: dict[str, RiskCategory],
     ) -> None:
         permission = "risk.report" if content.operation == "REPORT" else "risk.resolve"
         if permission not in identity.user.permissions:
@@ -655,6 +703,8 @@ class AgentExecutionWorker:
         if project is None:
             raise AgentProviderInvalidOutput
         if content.operation == "REPORT":
+            if content.categoryOptionId not in categories:
+                raise AgentProviderInvalidOutput
             return
         risk = await session.get(Risk, content.riskId)
         if risk is None or risk.projectId != project.id or risk.status is not RiskStatus.ACTIVE:
@@ -675,8 +725,31 @@ class AgentExecutionWorker:
         config: AgentExecutionConfig,
         task_id: UUID,
         content: PreviewContent,
+        categories: dict[str, RiskCategory],
     ) -> None:
         canonical_object = content.model_dump(mode="json")
+        category = categories.get(content.categoryOptionId or "")
+        if content.operation == "REPORT":
+            if category is None:
+                raise AgentProviderInvalidOutput
+            locked = await session.scalar(
+                select(RiskCategory)
+                .where(RiskCategory.id == category.id, RiskCategory.isActive.is_(True))
+                .with_for_update(read=True)
+            )
+            if locked is None:
+                raise AgentReportCategoryStale
+            projected_binding = self._category_binding(category)
+            binding = self._category_binding(locked)
+            if binding != projected_binding:
+                raise AgentReportCategoryStale
+            canonical_object.pop("categoryOptionId")
+            canonical_object["categoryId"] = str(locked.id)
+            canonical_object["categoryBindingDigest"] = binding
+        else:
+            canonical_object.pop("categoryOptionId")
+            canonical_object["categoryId"] = None
+            canonical_object["categoryBindingDigest"] = None
         canonical = self._canonical(canonical_object)
         digest = hashlib.sha256(canonical.encode()).hexdigest()
         raw_token = secrets.token_urlsafe(32)
@@ -709,6 +782,30 @@ class AgentExecutionWorker:
                 "expiresAt": self._timestamp(token.expiresAt),
             },
         )
+
+    async def _category_options(self) -> dict[str, RiskCategory]:
+        async with self._sessions() as session:
+            rows = list(
+                (
+                    await session.scalars(
+                        select(RiskCategory)
+                        .where(RiskCategory.isActive.is_(True))
+                        .order_by(RiskCategory.sortOrder, RiskCategory.code, RiskCategory.id)
+                    )
+                ).all()
+            )
+        return {f"C{index}": value for index, value in enumerate(rows, start=1)}
+
+    @classmethod
+    def _category_binding(cls, category: RiskCategory) -> str:
+        value = {
+            "categoryId": str(category.id),
+            "updatedAt": cls._timestamp(category.updatedAt),
+            "name": category.name,
+            "description": category.description,
+            "defaultLevel": category.defaultLevel.value if category.defaultLevel else None,
+        }
+        return hashlib.sha256(cls._canonical(value).encode()).hexdigest()
 
     async def _check_cancelled(
         self, config_id: UUID, task_id: UUID, lease_token: UUID

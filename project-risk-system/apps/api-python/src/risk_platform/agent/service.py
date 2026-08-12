@@ -40,6 +40,11 @@ class AgentConversationService:
         self._sessions = session_factory
         self._trace_id = trace_id or (lambda: str(uuid4()))
 
+    @property
+    def session_factory(self) -> async_sessionmaker[AsyncSession]:
+        """Expose the module-owned session dependency without shared app wiring."""
+        return self._sessions
+
     async def create(self, identity: SessionIdentity, message: str) -> AgentConversationEnvelope:
         return await self._create(identity, message, status="created")
 

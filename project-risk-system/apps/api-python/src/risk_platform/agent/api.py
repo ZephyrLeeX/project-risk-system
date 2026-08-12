@@ -11,8 +11,12 @@ from fastapi.responses import StreamingResponse
 from risk_platform.auth.service import SessionIdentity
 from risk_platform.rbac.guards import require_permissions
 from risk_platform.shared.http import ApiResponse, ok
+from risk_platform.shared.tracing import get_trace_id
 
+from .confirmation import AgentConfirmationService
 from .schemas import (
+    AgentConfirmationRequest,
+    AgentConfirmationResponse,
     AgentConversationEnvelope,
     AgentConversationHistory,
     AgentHelpResponse,
@@ -38,6 +42,10 @@ def get_agent_tools(request: Request) -> AgentToolRegistry:
     if not isinstance(registry, AgentToolRegistry):
         raise RuntimeError("agent tool registry is not configured")
     return registry
+
+
+def get_confirmation_service(request: Request) -> AgentConfirmationService:
+    return AgentConfirmationService(get_agent_service(request).session_factory)
 
 
 @router.get("/help", response_model=ApiResponse[AgentHelpResponse])
@@ -131,6 +139,26 @@ async def events(
         event_stream,
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.post(
+    "/confirmations/{token}",
+    response_model=ApiResponse[AgentConfirmationResponse],
+)
+async def confirm(
+    request: Request,
+    token: str,
+    payload: AgentConfirmationRequest,
+    identity: Annotated[SessionIdentity, Depends(require_permissions("agent.use"))],
+    service: Annotated[AgentConfirmationService, Depends(get_confirmation_service)],
+) -> ApiResponse[AgentConfirmationResponse]:
+    del payload
+    return ok(
+        request,
+        AgentConfirmationResponse.model_validate(
+            await service.confirm(identity, token, UUID(get_trace_id(request)))
+        ),
     )
 
 

@@ -77,6 +77,17 @@ class AgentHelpResponse(_Contract):
     tools: list[AgentToolHelp]
 
 
+class AgentConfirmationResponse(_Contract):
+    operation: str
+    resourceType: str
+    resourceId: UUID
+    completedAt: datetime
+
+
+class AgentConfirmationRequest(StrictRequestModel):
+    pass
+
+
 class AgentToolResult(_Contract):
     tool: str
     data: JSONValue
@@ -116,6 +127,8 @@ class WeeklyDetailToolArguments(StrictRequestModel):
 
 
 __all__ = [
+    "AgentConfirmationRequest",
+    "AgentConfirmationResponse",
     "AgentConversationEnvelope",
     "AgentConversationHistory",
     "AgentConversationResponse",

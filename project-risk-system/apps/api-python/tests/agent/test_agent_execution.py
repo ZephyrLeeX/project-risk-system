@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import re
@@ -23,7 +24,8 @@ from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from risk_platform.admin.models import User
-from risk_platform.agent.api import get_agent_service, router
+from risk_platform.agent.api import get_agent_service, get_confirmation_service, router
+from risk_platform.agent.confirmation import AgentConfirmationService
 from risk_platform.agent.events import append_event, open_event_stream, request_cancellation
 from risk_platform.agent.execution import (
     AgentExecutionWorker,
@@ -34,7 +36,9 @@ from risk_platform.agent.execution import (
     agent_execution_handlers,
 )
 from risk_platform.agent.models import (
+    AgentConfirmationOperation,
     AgentConfirmationToken,
+    AgentConversation,
     AgentEvent,
     AgentEventType,
     AgentExecutionConfig,
@@ -44,6 +48,8 @@ from risk_platform.agent.service import AgentConversationService
 from risk_platform.agent.tools import AgentToolRegistry
 from risk_platform.ai_providers.models import AiConnectionStatus, AiProviderConfig
 from risk_platform.app import AppComposition, create_app
+from risk_platform.audit.models import AuditLog, AuditResult
+from risk_platform.audit.service import AuditService
 from risk_platform.auth.api import current_identity
 from risk_platform.auth.schemas import AuthenticatedUser
 from risk_platform.auth.service import SessionIdentity
@@ -54,9 +60,9 @@ from risk_platform.projects.models import Project
 from risk_platform.rbac.models import DataScopeType, Role, UserRole
 from risk_platform.reliability.celery_app import create_celery_app
 from risk_platform.reliability.core import TaskHandler
-from risk_platform.reliability.dispatcher import register_executor
+from risk_platform.reliability.dispatcher import execute_message, register_executor
 from risk_platform.reliability.models import DurableTask, DurableTaskKind, DurableTaskStatus
-from risk_platform.risks.models import Risk
+from risk_platform.risks.models import ProjectRiskLevel, Risk, RiskCategory
 from risk_platform.risks.service import RisksService
 from risk_platform.seed import SeedSettings, seed_reference_data
 from risk_platform.shared.errors import ApiError
@@ -96,7 +102,7 @@ class FakeProvider:
                     for _ in range(count)
                 )
             return self._response(
-                {"protocol": "AGENT_PROVIDER_EXECUTION_V1", "phase": phase, "actions": actions}
+                {"protocol": "AGENT_PROVIDER_EXECUTION_V2", "phase": phase, "actions": actions}
             )
         response_actions: list[JSONValue] = [{"type": "text_delta", "text": "已完成分析"}]
         if message == "preview":
@@ -114,12 +120,13 @@ class FakeProvider:
                         "riskLevel": "HIGH",
                         "dueDate": None,
                         "assigneeUserId": None,
+                        "categoryOptionId": "C1",
                     },
                 }
             )
         return self._response(
             {
-                "protocol": "AGENT_PROVIDER_EXECUTION_V1",
+                "protocol": "AGENT_PROVIDER_EXECUTION_V2",
                 "phase": phase,
                 "actions": response_actions,
             }
@@ -130,6 +137,70 @@ class FakeProvider:
         return ProviderTransportResponse(
             200,
             json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode(),
+        )
+
+
+class CategoryStaleProvider(FakeProvider):
+    def __init__(
+        self,
+        factory: async_sessionmaker[AsyncSession],
+        *,
+        stale_attempts: int,
+        mutation: str = "revision",
+    ) -> None:
+        super().__init__()
+        self.factory = factory
+        self.stale_attempts = stale_attempts
+        self.mutation = mutation
+        self.respond_attempts = 0
+        self.respond_options: list[object] = []
+
+    async def __call__(
+        self, config: AgentExecutionConfig, request: dict[str, JSONValue]
+    ) -> ProviderTransportResponse:
+        if request["phase"] != "RESPOND":
+            return await super().__call__(config, request)
+        self.requests.append(request)
+        self.respond_attempts += 1
+        self.respond_options.append(request["riskCategoryOptions"])
+        if self.respond_attempts <= self.stale_attempts:
+            async with transaction(self.factory) as session:
+                category = await session.scalar(
+                    select(RiskCategory)
+                    .where(RiskCategory.isActive.is_(True))
+                    .order_by(RiskCategory.sortOrder, RiskCategory.code, RiskCategory.id)
+                    .limit(1)
+                )
+                assert category is not None
+                if self.mutation == "missing":
+                    await session.delete(category)
+                elif self.mutation == "disabled":
+                    category.isActive = False
+                else:
+                    category.description = f"changed-attempt-{self.respond_attempts}"
+        return self._response(
+            {
+                "protocol": "AGENT_PROVIDER_EXECUTION_V2",
+                "phase": "RESPOND",
+                "actions": [
+                    {
+                        "type": "preview_proposal",
+                        "operation": "REPORT",
+                        "content": {
+                            "operation": "REPORT",
+                            "projectId": str(PROJECT),
+                            "riskId": None,
+                            "todoId": None,
+                            "title": "Stale retry risk",
+                            "description": "Retry acceptance",
+                            "riskLevel": "HIGH",
+                            "dueDate": None,
+                            "assigneeUserId": None,
+                            "categoryOptionId": "C1",
+                        },
+                    }
+                ],
+            }
         )
 
 
@@ -330,8 +401,13 @@ async def _wait(
 def test_protocol_models_reject_unknown_and_mismatched_preview_fields() -> None:
     with pytest.raises(AgentProviderInvalidOutput):
         AgentExecutionWorker._validate_response(
+            {"protocol": "AGENT_PROVIDER_EXECUTION_V1", "phase": "PLAN", "actions": []},
+            "PLAN",
+        )
+    with pytest.raises(AgentProviderInvalidOutput):
+        AgentExecutionWorker._validate_response(
             {
-                "protocol": "AGENT_PROVIDER_EXECUTION_V1",
+                "protocol": "AGENT_PROVIDER_EXECUTION_V2",
                 "phase": "PLAN",
                 "actions": [{"type": "text_delta", "text": "not allowed"}],
             },
@@ -343,7 +419,7 @@ def test_protocol_models_reject_unknown_and_mismatched_preview_fields() -> None:
     with pytest.raises(AgentProviderInvalidOutput):
         AgentExecutionWorker._validate_response(
             {
-                "protocol": "AGENT_PROVIDER_EXECUTION_V1",
+                "protocol": "AGENT_PROVIDER_EXECUTION_V2",
                 "phase": "PLAN",
                 "actions": too_many_calls,
             },
@@ -426,6 +502,81 @@ def test_protocol_models_reject_unknown_and_mismatched_preview_fields() -> None:
                     "content": content,
                 }
             )
+
+    base = {
+        "projectId": str(PROJECT),
+        "riskId": None,
+        "todoId": None,
+        "title": "risk",
+        "description": "description",
+        "riskLevel": "HIGH",
+        "dueDate": None,
+        "assigneeUserId": None,
+    }
+    for invalid_category in (
+        {},
+        {"categoryOptionId": ["C1", "C2"]},
+        {"categoryOptionId": {"value": "C1"}},
+        {"categoryOptionId": None},
+    ):
+        with pytest.raises(ValidationError):
+            PreviewAction.model_validate(
+                {
+                    "type": "preview_proposal",
+                    "operation": "REPORT",
+                    "content": {"operation": "REPORT", **base, **invalid_category},
+                }
+            )
+    for operation in ("PROCESS", "RESOLVE"):
+        content = {
+            **base,
+            "operation": operation,
+            "riskId": str(uuid.uuid4()),
+            "todoId": str(uuid.uuid4()) if operation == "PROCESS" else None,
+            "title": "",
+            "riskLevel": None,
+            "categoryOptionId": None,
+        }
+        with pytest.raises(ValidationError):
+            PreviewAction.model_validate(
+                {"type": "preview_proposal", "operation": operation, "content": content}
+            )
+
+
+def test_v2_respond_request_reuses_exact_adr0026_category_projection_shape() -> None:
+    category = RiskCategory(
+        id=uuid.uuid4(),
+        code="TEST",
+        name="Test category",
+        description="Description",
+        defaultLevel=ProjectRiskLevel.MEDIUM,
+        sortOrder=1,
+        isActive=True,
+    )
+    worker = AgentExecutionWorker(
+        cast(async_sessionmaker[AsyncSession], None),
+        FakeProvider(),
+        cast(AgentToolRegistry, None),
+    )
+    request = worker._request(
+        phase="RESPOND",
+        message="test",
+        history=[],
+        tools=[],
+        tool_results=[],
+        categories={"C1": category},
+    )
+    assert request["riskCategoryOptions"] == {
+        "schema": "RISK_CATEGORY_OPTIONS_V1",
+        "items": [
+            {
+                "option_id": "C1",
+                "name": "Test category",
+                "description": "Description",
+                "default_level": "MEDIUM",
+            }
+        ],
+    }
 
 
 def test_real_module_local_worker_success_preview_invalid_timeout_and_cancellation(
@@ -826,6 +977,89 @@ def test_postgresql_sse_resume_cursor_and_asgi_framing(
     asyncio.run(run())
 
 
+def test_postgresql_category_stale_uses_durable_retry_budget_and_rebuilds_options(
+    database: async_sessionmaker[AsyncSession],
+) -> None:
+    async def redispatch(task_id: UUID) -> int:
+        async with database.begin() as session:
+            task = await session.get(DurableTask, task_id)
+            assert task is not None and task.status is DurableTaskStatus.RETRY_WAIT
+            task.status = DurableTaskStatus.QUEUED
+            task.nextRetryAt = None
+            task.dispatchGeneration += 1
+            return task.dispatchGeneration
+
+    async def execute(
+        task_id: UUID, generation: int, provider: CategoryStaleProvider
+    ) -> None:
+        await execute_message(
+            database,
+            create_celery_app(),
+            task_id,
+            generation,
+            owner=f"t030-{uuid.uuid4()}",
+            handlers=agent_execution_handlers(database, provider, tools(database)),
+        )
+
+    async def one_retry(provider: CategoryStaleProvider) -> None:
+        _conversation, task_id = await _created(database, "preview")
+        await execute(task_id, 1, provider)
+        retry = await _wait(database, task_id, {DurableTaskStatus.RETRY_WAIT})
+        assert retry.failureCode == "AGENT_REPORT_CATEGORY_STALE"
+        assert retry.attemptCount == 1
+        generation = await redispatch(task_id)
+        await execute(task_id, generation, provider)
+        succeeded = await _wait(database, task_id, {DurableTaskStatus.SUCCEEDED})
+        assert succeeded.attemptCount == 2
+        assert len(provider.respond_options) == 2
+        assert provider.respond_options[0] != provider.respond_options[1]
+        async with database() as session:
+            assert int(
+                await session.scalar(
+                        select(func.count(AgentConfirmationToken.id)).where(
+                        AgentConfirmationToken.idempotencyKey.like(
+                            f"agent-preview:{task_id}:%"
+                        )
+                    )
+                )
+                or 0
+            ) == 1
+
+    for mutation in ("missing", "disabled", "revision"):
+        provider = CategoryStaleProvider(database, stale_attempts=1, mutation=mutation)
+        asyncio.run(one_retry(provider))
+
+    exhausted_provider = CategoryStaleProvider(
+        database, stale_attempts=3, mutation="missing"
+    )
+
+    async def exhausted() -> None:
+        _conversation, task_id = await _created(database, "preview")
+        generation = 1
+        for attempt in range(1, 4):
+            await execute(task_id, generation, exhausted_provider)
+            expected = (
+                DurableTaskStatus.FAILED
+                if attempt == 3
+                else DurableTaskStatus.RETRY_WAIT
+            )
+            task = await _wait(database, task_id, {expected})
+            assert task.failureCode == "AGENT_REPORT_CATEGORY_STALE"
+            assert task.attemptCount == attempt
+            if expected is DurableTaskStatus.RETRY_WAIT:
+                generation = await redispatch(task_id)
+        async with database() as session:
+            assert await session.scalar(
+                select(AgentConfirmationToken.id).where(
+                    AgentConfirmationToken.idempotencyKey.like(
+                        f"agent-preview:{task_id}:%"
+                    )
+                )
+            ) is None
+
+    asyncio.run(exhausted())
+
+
 async def _latest_completed_conversation(
     factory: async_sessionmaker[AsyncSession],
 ) -> UUID:
@@ -838,3 +1072,523 @@ async def _latest_completed_conversation(
         )
         assert value is not None
         return value
+
+
+async def _confirmation_token(
+    factory: async_sessionmaker[AsyncSession],
+    actor: SessionIdentity,
+    category: RiskCategory,
+    *,
+    expired: bool = False,
+    title: str | None = None,
+) -> tuple[str, UUID]:
+    raw = f"t030-{uuid.uuid4()}"
+    now = datetime.now(UTC)
+    async with transaction(factory) as session:
+        current_category = await session.get(RiskCategory, category.id)
+        assert current_category is not None
+        conversation = AgentConversation(
+            ownerUserId=UUID(actor.user.id),
+            createdAt=now,
+            updatedAt=now,
+            expiresAt=now + timedelta(days=1),
+            retentionConfigVersion="t030-test",
+        )
+        session.add(conversation)
+        await session.flush()
+        current = await AgentExecutionWorker._identity(session, UUID(actor.user.id))
+        scope = await AgentExecutionWorker._scope_fact(session, current)
+        content = {
+            "operation": "REPORT",
+            "projectId": str(PROJECT),
+            "riskId": None,
+            "todoId": None,
+            "title": title or f"T030 risk {uuid.uuid4()}",
+            "description": "T030 confirmation acceptance",
+            "riskLevel": "HIGH",
+            "dueDate": None,
+            "assigneeUserId": None,
+            "categoryId": str(current_category.id),
+            "categoryBindingDigest": AgentExecutionWorker._category_binding(current_category),
+        }
+        canonical = AgentExecutionWorker._canonical(content)
+        token = AgentConfirmationToken(
+            tokenDigest=hashlib.sha256(raw.encode()).hexdigest(),
+            ownerUserId=UUID(actor.user.id),
+            conversationId=conversation.id,
+            operation=AgentConfirmationOperation.REPORT,
+            canonicalContent=canonical,
+            contentDigest=hashlib.sha256(canonical.encode()).hexdigest(),
+            scopeDigest=hashlib.sha256(
+                AgentExecutionWorker._canonical(scope).encode()
+            ).hexdigest(),
+            idempotencyKey=f"agent-confirmation:{uuid.uuid4()}",
+            issuedAt=now - timedelta(minutes=20) if expired else now,
+            expiresAt=now - timedelta(minutes=1) if expired else now + timedelta(minutes=10),
+        )
+        session.add(token)
+        await session.flush()
+        return raw, token.id
+
+
+async def _command_confirmation_token(
+    factory: async_sessionmaker[AsyncSession],
+    actor: SessionIdentity,
+    operation: AgentConfirmationOperation,
+    content: dict[str, object],
+) -> str:
+    raw = f"t030-{uuid.uuid4()}"
+    now = datetime.now(UTC)
+    async with transaction(factory) as session:
+        conversation = AgentConversation(
+            ownerUserId=UUID(actor.user.id),
+            createdAt=now,
+            updatedAt=now,
+            expiresAt=now + timedelta(days=1),
+            retentionConfigVersion="t030-test",
+        )
+        session.add(conversation)
+        await session.flush()
+        current = await AgentExecutionWorker._identity(session, UUID(actor.user.id))
+        scope = await AgentExecutionWorker._scope_fact(session, current)
+        canonical = AgentExecutionWorker._canonical(content)
+        session.add(
+            AgentConfirmationToken(
+                tokenDigest=hashlib.sha256(raw.encode()).hexdigest(),
+                ownerUserId=UUID(actor.user.id),
+                conversationId=conversation.id,
+                operation=operation,
+                canonicalContent=canonical,
+                contentDigest=hashlib.sha256(canonical.encode()).hexdigest(),
+                scopeDigest=hashlib.sha256(
+                    AgentExecutionWorker._canonical(scope).encode()
+                ).hexdigest(),
+                idempotencyKey=f"agent-confirmation:{uuid.uuid4()}",
+                issuedAt=now,
+                expiresAt=now + timedelta(minutes=10),
+            )
+        )
+    return raw
+
+
+def test_postgresql_t030_confirmation_one_use_binding_audit_and_atomicity(
+    database: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def run() -> None:
+        async with database() as session:
+            category = await session.scalar(
+                select(RiskCategory)
+                .where(RiskCategory.isActive.is_(True))
+                .order_by(RiskCategory.sortOrder, RiskCategory.code, RiskCategory.id)
+                .limit(1)
+            )
+            before_risks = int(await session.scalar(select(func.count(Risk.id))) or 0)
+        assert category is not None
+        service = AgentConfirmationService(database)
+        trace_id = uuid.uuid4()
+
+        unknown_preview = PreviewAction.model_validate(
+            {
+                "type": "preview_proposal",
+                "operation": "REPORT",
+                "content": {
+                    "operation": "REPORT",
+                    "projectId": str(PROJECT),
+                    "riskId": None,
+                    "todoId": None,
+                    "title": "Unknown option",
+                    "description": "Must fail closed",
+                    "riskLevel": "HIGH",
+                    "dueDate": None,
+                    "assigneeUserId": None,
+                    "categoryOptionId": "C999",
+                },
+            }
+        )
+        async with database() as session:
+            with pytest.raises(AgentProviderInvalidOutput):
+                await AgentExecutionWorker(
+                    database, FakeProvider(), tools(database)
+                )._validate_preview(
+                    session,
+                    identity(),
+                    unknown_preview.content,
+                    {"C1": category},
+                )
+
+        legacy_raw = await _command_confirmation_token(
+            database,
+            identity(),
+            AgentConfirmationOperation.REPORT,
+            {
+                "operation": "REPORT",
+                "projectId": str(PROJECT),
+                "riskId": None,
+                "todoId": None,
+                "title": "Legacy report",
+                "description": "Missing category binding",
+                "riskLevel": "HIGH",
+                "dueDate": None,
+                "assigneeUserId": None,
+            },
+        )
+        with pytest.raises(ApiError) as legacy_error:
+            await service.confirm(identity(), legacy_raw, uuid.uuid4())
+        assert legacy_error.value.code == "AGENT_CONFIRMATION_CONTENT_MISMATCH"
+
+        with pytest.raises(ApiError) as unknown_error:
+            await service.confirm(identity(), f"unknown-{uuid.uuid4()}", uuid.uuid4())
+        assert unknown_error.value.code == "AGENT_CONFIRMATION_CONTENT_MISMATCH"
+
+        raw, token_id = await _confirmation_token(database, identity(), category)
+        concurrent_results = await asyncio.gather(
+            service.confirm(identity(), raw, trace_id),
+            service.confirm(identity(), raw, uuid.uuid4()),
+            return_exceptions=True,
+        )
+        successes = [item for item in concurrent_results if isinstance(item, dict)]
+        conflicts = [item for item in concurrent_results if isinstance(item, ApiError)]
+        assert successes
+        assert len(successes) + len(conflicts) == 2
+        assert all(item.code == "AGENT_CONFIRMATION_IN_PROGRESS" for item in conflicts)
+        assert len({item["resourceId"] for item in successes}) == 1
+        result = successes[0]
+        replay = await service.confirm(identity(), raw, uuid.uuid4())
+        assert replay == result
+        async with database() as session:
+            todo_id = await session.scalar(
+                select(ActionItem.id).where(ActionItem.riskId == result["resourceId"])
+            )
+        assert todo_id is not None
+        process_raw = await _command_confirmation_token(
+            database,
+            identity(),
+            AgentConfirmationOperation.PROCESS,
+            {
+                "operation": "PROCESS",
+                "projectId": str(PROJECT),
+                "riskId": str(result["resourceId"]),
+                "todoId": str(todo_id),
+                "title": "",
+                "description": "Agent process note",
+                "riskLevel": None,
+                "dueDate": "2026-08-31",
+                "assigneeUserId": str(OWNER),
+                "categoryId": None,
+                "categoryBindingDigest": None,
+            },
+        )
+        process_result = await service.confirm(identity(), process_raw, uuid.uuid4())
+        assert process_result["resourceId"] == result["resourceId"]
+        async with database() as session:
+            processed = await session.get(ActionItem, todo_id)
+            assert processed is not None
+            assert processed.completionNote == "Agent process note"
+            assert str(processed.dueDate) == "2026-08-31"
+            assert processed.assigneeUserId == OWNER
+        resolve_raw = await _command_confirmation_token(
+            database,
+            identity(),
+            AgentConfirmationOperation.RESOLVE,
+            {
+                "operation": "RESOLVE",
+                "projectId": str(PROJECT),
+                "riskId": str(result["resourceId"]),
+                "todoId": None,
+                "title": "",
+                "description": "Agent resolve reason",
+                "riskLevel": None,
+                "dueDate": None,
+                "assigneeUserId": None,
+                "categoryId": None,
+                "categoryBindingDigest": None,
+            },
+        )
+        resolve_result = await service.confirm(identity(), resolve_raw, uuid.uuid4())
+        assert resolve_result["resourceId"] == result["resourceId"]
+        async with database() as session:
+            resolved = await session.get(Risk, result["resourceId"])
+            resolved_todo = await session.get(ActionItem, todo_id)
+            assert resolved is not None and resolved.status.value == "RESOLVED"
+            assert resolved.resolutionReason == "Agent resolve reason"
+            assert resolved_todo is not None and resolved_todo.status.value == "COMPLETED"
+        async with database() as session:
+            token = await session.get(AgentConfirmationToken, token_id)
+            assert token is not None and token.usedAt is not None
+            assert token.resultResourceId == result["resourceId"]
+            assert int(await session.scalar(select(func.count(Risk.id))) or 0) == before_risks + 1
+            agent_audits = list(
+                await session.scalars(
+                    select(AuditLog).where(
+                        AuditLog.requestId == str(token_id),
+                        AuditLog.module == "AGENT",
+                    )
+                )
+            )
+            assert len(agent_audits) == 2
+            assert all(item.result is AuditResult.SUCCESS for item in agent_audits)
+            assert all(item.action == "AGENT_REPORT_CONFIRMED" for item in agent_audits)
+
+        expired_raw, expired_id = await _confirmation_token(
+            database, identity(), category, expired=True
+        )
+        with pytest.raises(ApiError) as expired_error:
+            await service.confirm(identity(), expired_raw, uuid.uuid4())
+        assert expired_error.value.code == "AGENT_CONFIRMATION_EXPIRED"
+
+        other_id = uuid.uuid4()
+        async with transaction(database) as session:
+            role = await session.scalar(select(Role).where(Role.code == "VIEWER_AUDITOR"))
+            assert role is not None
+            session.add(
+                User(
+                    id=other_id,
+                    username=f"t030-other-{other_id}",
+                    passwordHash="not-used",
+                    displayName="T030 Other",
+                    mustChangePassword=False,
+                )
+            )
+            await session.flush()
+            session.add(UserRole(userId=other_id, roleId=role.id, dataScope=DataScopeType.ALL))
+        other_identity = SessionIdentity(
+            session_id=uuid.uuid4(),
+            expires_at=datetime.now(UTC) + timedelta(hours=1),
+            user=AuthenticatedUser(
+                id=str(other_id),
+                username="t030-other",
+                displayName="T030 Other",
+                departmentName=None,
+                roleCodes=["VIEWER_AUDITOR"],
+                permissions=["agent.use"],
+                dataScope="ALL",
+                mustChangePassword=False,
+            ),
+        )
+        owner_raw, _ = await _confirmation_token(database, identity(), category)
+        with pytest.raises(ApiError) as owner_error:
+            await service.confirm(other_identity, owner_raw, uuid.uuid4())
+        assert owner_error.value.code == "AGENT_CONFIRMATION_OWNER_MISMATCH"
+
+        permission_raw, permission_id = await _confirmation_token(
+            database, other_identity, category
+        )
+        with pytest.raises(ApiError) as permission_error:
+            await service.confirm(other_identity, permission_raw, uuid.uuid4())
+        assert permission_error.value.code == "AGENT_CONFIRMATION_CONTENT_MISMATCH"
+
+        tampered_raw, tampered_id = await _confirmation_token(database, identity(), category)
+        async with transaction(database) as session:
+            tampered = await session.get(AgentConfirmationToken, tampered_id)
+            assert tampered is not None
+            tampered.canonicalContent = tampered.canonicalContent.replace(
+                "T030 confirmation acceptance", "tampered content"
+            )
+        with pytest.raises(ApiError) as tampered_error:
+            await service.confirm(identity(), tampered_raw, uuid.uuid4())
+        assert tampered_error.value.code == "AGENT_CONFIRMATION_CONTENT_MISMATCH"
+
+        conversation_raw, conversation_id = await _confirmation_token(
+            database, identity(), category
+        )
+        async with transaction(database) as session:
+            conversation_token = await session.get(AgentConfirmationToken, conversation_id)
+            assert conversation_token is not None
+            conversation = await session.get(
+                AgentConversation, conversation_token.conversationId
+            )
+            assert conversation is not None
+            conversation.ownerUserId = other_id
+        with pytest.raises(ApiError) as conversation_error:
+            await service.confirm(identity(), conversation_raw, uuid.uuid4())
+        assert conversation_error.value.code == "AGENT_CONFIRMATION_CONTENT_MISMATCH"
+
+        scope_raw, scope_id = await _confirmation_token(database, identity(), category)
+        async with transaction(database) as session:
+            binding = await session.scalar(
+                select(UserRole).where(UserRole.userId == OWNER).with_for_update()
+            )
+            assert binding is not None
+            original_scope = binding.dataScope
+            binding.dataScope = DataScopeType.NONE
+        with pytest.raises(ApiError) as scope_error:
+            await service.confirm(identity(), scope_raw, uuid.uuid4())
+        assert scope_error.value.code == "AGENT_CONFIRMATION_CONTENT_MISMATCH"
+        async with transaction(database) as session:
+            binding = await session.scalar(
+                select(UserRole).where(UserRole.userId == OWNER).with_for_update()
+            )
+            assert binding is not None
+            binding.dataScope = original_scope
+
+        stale_raw, stale_id = await _confirmation_token(database, identity(), category)
+        async with transaction(database) as session:
+            locked = await session.get(RiskCategory, category.id)
+            assert locked is not None
+            locked.description = f"stale-{uuid.uuid4()}"
+        with pytest.raises(ApiError) as stale_error:
+            await service.confirm(identity(), stale_raw, uuid.uuid4())
+        assert stale_error.value.code == "AGENT_CONFIRMATION_CONTENT_MISMATCH"
+
+        missing_category = RiskCategory(
+            code=f"T030-{uuid.uuid4().hex[:8]}",
+            name="T030 missing category",
+            description=None,
+            isActive=True,
+            sortOrder=999,
+        )
+        async with transaction(database) as session:
+            session.add(missing_category)
+            await session.flush()
+        missing_raw, missing_id = await _confirmation_token(
+            database, identity(), missing_category
+        )
+        async with transaction(database) as session:
+            persisted = await session.get(RiskCategory, missing_category.id)
+            assert persisted is not None
+            await session.delete(persisted)
+        with pytest.raises(ApiError) as missing_error:
+            await service.confirm(identity(), missing_raw, uuid.uuid4())
+        assert missing_error.value.code == "AGENT_CONFIRMATION_CONTENT_MISMATCH"
+
+        disabled_raw, disabled_id = await _confirmation_token(database, identity(), category)
+        async with transaction(database) as session:
+            locked = await session.get(RiskCategory, category.id)
+            assert locked is not None
+            locked.isActive = False
+        with pytest.raises(ApiError) as disabled_error:
+            await service.confirm(identity(), disabled_raw, uuid.uuid4())
+        assert disabled_error.value.code == "AGENT_CONFIRMATION_CONTENT_MISMATCH"
+        async with transaction(database) as session:
+            locked = await session.get(RiskCategory, category.id)
+            assert locked is not None
+            locked.isActive = True
+
+        rollback_raw, rollback_id = await _confirmation_token(database, identity(), category)
+        original_record_success = AuditService.record_success
+
+        async def fail_audit(audit: AuditService, **kwargs: object) -> UUID:
+            if kwargs.get("action") == "AGENT_REPORT_CONFIRMED":
+                raise RuntimeError("injected audit failure")
+            return await original_record_success(audit, **kwargs)  # type: ignore[arg-type]
+
+        monkeypatch.setattr(AuditService, "record_success", fail_audit)
+        with pytest.raises(RuntimeError, match="injected audit failure"):
+            await service.confirm(identity(), rollback_raw, uuid.uuid4())
+        monkeypatch.setattr(AuditService, "record_success", original_record_success)
+        async with database() as session:
+            rollback_token = await session.get(AgentConfirmationToken, rollback_id)
+            assert rollback_token is not None and rollback_token.usedAt is None
+            assert await session.scalar(
+                select(Risk.id).where(Risk.dedupeFingerprint == rollback_token.idempotencyKey)
+            ) is None
+            failures = list(
+                await session.scalars(
+                    select(AuditLog).where(
+                        AuditLog.requestId.in_(
+                            [
+                                str(expired_id),
+                                str(permission_id),
+                                str(stale_id),
+                                str(disabled_id),
+                            ]
+                        )
+                    )
+                )
+            )
+            assert {item.failureCode for item in failures} == {
+                "AGENT_CONFIRMATION_EXPIRED",
+                "AGENT_CONFIRMATION_CONTENT_MISMATCH",
+            }
+            assert all(item.result is AuditResult.FAILURE for item in failures)
+
+            bound_failures = list(
+                await session.scalars(
+                    select(AuditLog).where(
+                        AuditLog.requestId.in_(
+                            [
+                                str(tampered_id),
+                                str(conversation_id),
+                                str(scope_id),
+                                str(missing_id),
+                            ]
+                        )
+                    )
+                )
+            )
+            assert len(bound_failures) == 4
+            assert all(
+                item.failureCode == "AGENT_CONFIRMATION_CONTENT_MISMATCH"
+                for item in bound_failures
+            )
+
+    asyncio.run(run())
+
+
+def test_postgresql_confirm_http_empty_object_envelope_and_error_contract(
+    database: async_sessionmaker[AsyncSession],
+) -> None:
+    async def run() -> None:
+        async with database() as session:
+            category = await session.scalar(
+                select(RiskCategory)
+                .where(RiskCategory.isActive.is_(True))
+                .order_by(RiskCategory.sortOrder, RiskCategory.code, RiskCategory.id)
+                .limit(1)
+            )
+        assert category is not None
+        raw, _ = await _confirmation_token(database, identity(), category)
+        expired_raw, _ = await _confirmation_token(
+            database, identity(), category, expired=True
+        )
+        conversation_service = AgentConversationService(database)
+
+        async def override_identity() -> SessionIdentity:
+            return identity()
+
+        def override_service() -> AgentConversationService:
+            return conversation_service
+
+        def override_confirmation() -> AgentConfirmationService:
+            return AgentConfirmationService(database)
+
+        app = create_app(
+            composition=AppComposition(
+                routers=(router,),
+                dependency_overrides={
+                    current_identity: override_identity,
+                    get_agent_service: override_service,
+                    get_confirmation_service: override_confirmation,
+                },
+            )
+        )
+        app.state.agent_service = conversation_service
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app), base_url="https://testserver"
+        ) as client:
+            response = await client.post(
+                f"/api/agent/confirmations/{raw}", json={}
+            )
+            assert response.status_code == 200
+            body = response.json()
+            assert body["code"] == "OK"
+            assert body["data"]["operation"] == "REPORT"
+            assert body["data"]["resourceType"] == "RISK"
+            assert UUID(body["data"]["resourceId"])
+            assert body["traceId"] == response.headers["x-trace-id"]
+
+            rejected_fields = await client.post(
+                f"/api/agent/confirmations/{raw}", json={"title": "not accepted"}
+            )
+            assert rejected_fields.status_code == 422
+            assert rejected_fields.json()["code"] == "VALIDATION_ERROR"
+            assert rejected_fields.json()["data"] is None
+
+            expired = await client.post(
+                f"/api/agent/confirmations/{expired_raw}", json={}
+            )
+            assert expired.status_code == 410
+            assert expired.json()["code"] == "AGENT_CONFIRMATION_EXPIRED"
+            assert expired.json()["data"] is None
+
+    asyncio.run(run())
