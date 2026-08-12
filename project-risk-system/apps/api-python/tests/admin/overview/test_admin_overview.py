@@ -99,6 +99,8 @@ async def _seed(factory: async_sessionmaker[AsyncSession]) -> None:
                 warningRows=0,
                 errorRows=1,
                 uploadedById=user.id,
+                sourceExpiresAt=datetime.now(UTC) + timedelta(days=365),
+                retentionConfigVersion="ADR0027_DEFAULT",
             )
         )
         session.add_all(

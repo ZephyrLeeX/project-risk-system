@@ -159,6 +159,7 @@ def test_audit_enforcement_is_installed_by_t006(
         "audit_logs_reject_update",
         "agent_messages_assign_sequence_trigger",
         "agent_events_assign_sequence_trigger",
+        "retention_holds_lifecycle_guard",
     }
 
 

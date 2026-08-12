@@ -13,6 +13,7 @@ Completed waves:
 - Wave 8: PASS
 - Wave 9: PASS (T018/T024 integration validation and test baseline maintenance)
 - Wave 10: PASS (T016/T019/T020/T025 integration validation complete)
+- Wave 11: PASS (T026/T042 integration validation and test baseline maintenance complete)
 
 Completed tasks:
 - T001 REVIEW_PASSED
@@ -58,7 +59,7 @@ Current:
 - T024: REVIEW_PASSED (DG-10 resolved; implementation and Independent Review complete; checkpoint `597a43b830e2e639d17b775c069a8fbfb896efd4`).
 - Wave 9 Integration: PASS; the six stale test-baseline assertions were updated only in tests, followed by full validation. No production redesign or next-Wave task started.
 - Wave 10 Integration: PASS; cross-module/full validation and PostgreSQL 16/Alembic validation complete. Minimal integration fix changed T025 helper IPC from Queue to Pipe; no safety boundary was widened. See `docs/implementation/reports/WAVE-10.md`.
-- Current Wave: Wave 11 IN_PROGRESS.
+- Current Wave: Wave 11 PASS (T026/T042 REVIEW_PASSED; Integration PASS). Wave 12 not started.
 - T026: REVIEW_PASSED (Celery worker isolation remediation complete. PostgreSQL 16 + Redis + real Celery `solo` worker acceptance/negative tests pass: `16 passed`; each worker handler asserts the random Alembic-created temporary PostgreSQL schema. `register_executor` is app-local (`shared=False, lazy=False`), preventing stale executor/handler/factory leakage across test Celery apps. Independent Review passed; no dispatcher direct execution was used as worker proof. Checkpoint: `76c5ef6cb50705b63ad86e7a9b05d00bf9a45da4`.)
 - T042: REVIEW_PASSED (approved retention configuration, frozen facts, hold persistence/API, terminal-state trigger, metadata-only audit and lock-ordered protection recheck complete. PostgreSQL 16 focused validation `17 passed`; Independent Review passed. Code checkpoint: `d6652c82529c2d2902a5f476d225e582b38ebaf3`. See `docs/implementation/reports/T042.md`.)
 - DG-01: RESOLVED by ADR 0019
@@ -77,6 +78,7 @@ Checkpoint commits:
 - T025: ec403f99c606ba7c6ff429b0f375c9cc85d04439
 - Wave 10 integration fix: `7b9722075ca3bc8358789198b7ef6b0e6282fcfa`
 - Wave 10 final checkpoint: `7b9722075ca3bc8358789198b7ef6b0e6282fcfa` (metadata recorded in the following report commit)
+- Wave 11 final checkpoint: completion commit pending metadata recording.
 - T010: e30dd45
 - T004: 1b4cfa8
 - T011: baa3208
@@ -142,3 +144,4 @@ Integration blockers:
 - Wave 9 final Integration checkpoint: created after recording the PASS result and test baseline maintenance in `docs/implementation/reports/WAVE-09.md` and this state file.
 - T042 execution stop: candidate implementation validation passed on isolated PostgreSQL 16, but Independent Review is `REVIEW_FAILED`. ADR 0027 requires a T042 human hold management surface without an approved public URL/envelope/error contract; this is `DESIGN_GAP` under T042's stop condition. The candidate additionally needs a single lock ordering and non-reactivatable terminal hold enforcement. Wave 11 remains `IN_PROGRESS`; no T042 checkpoint, Integration, DG-05, DG-08 or next-Wave work was started.
 - T042 DESIGN_GAP resolution: ADR 0027 addendum now approves the human hold create/release/query HTTP contract, fixed metadata-only audit boundary, exact retry/conflict outcomes, resource advisory/fact/hold PostgreSQL lock ordering, and database-enforced non-reactivatable terminal states. T042 is `READY` only; the retained candidate is neither accepted nor code-checkpointed and requires a fresh implementation/review cycle. Wave 11 remains `IN_PROGRESS`; no Integration, next-Wave, DG-05 or DG-08 work was started. Design checkpoint: `ee4de76840f9181caf3158a448cb45af9949112d`.
+- Wave 11 Integration: `PASS`; stale PostgreSQL test baselines now include T042 frozen import facts, Alembic head `20260812_0006` and `retention_holds_lifecycle_guard`. Cross-module `37 passed`, full pytest `204 passed, 1 skipped`, Ruff, mypy, lock, diff and PostgreSQL 16/Alembic validation all pass. Wave 12, T027 and T031 were not started; DG-05/DG-08 were not handled. See `docs/implementation/reports/WAVE-11.md`.
