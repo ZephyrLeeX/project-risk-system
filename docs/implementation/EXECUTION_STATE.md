@@ -47,7 +47,7 @@ Current:
 - T022: REVIEW_PASSED
 - T023: REVIEW_PASSED
 - Wave 8: PASS (T022 import-cycle fix reviewed; full pytest and PostgreSQL/Alembic integration validation passed)
-- Current Wave: Wave 10 IN_PROGRESS (T019 selected; T016/T020/T025 remain READY); Wave 9 complete (T018/T024 REVIEW_PASSED; Integration PASS).
+- Current Wave: Wave 10 IN_PROGRESS (T019/T020 REVIEW_PASSED; T016/T025 remain READY); Wave 9 complete (T018/T024 REVIEW_PASSED; Integration PASS).
 - Wave 10 readiness sync: DG-01 is resolved by ADR 0019; the stale T016 blocker was removed and T016 is READY. DG-04/DG-05/DG-08 do not block the Wave 10 READY tasks.
 - T019: REVIEW_PASSED (selected as the single Wave 10 work unit; see `docs/implementation/reports/T019.md`).
 - T020: REVIEW_PASSED (collection/department remediation, Independent Review and PostgreSQL 16 focused validation complete; see `docs/implementation/reports/T020.md`).
