@@ -3,7 +3,7 @@
 - **Wave：** Wave 11
 - **结果：** `PASS`
 - **范围：** T026、T042；未启动 Wave 12、T027、T031
-- **Final checkpoint：** 完成 checkpoint commit 后写入
+- **Final checkpoint：** `4487c09a2281c462e3b4c93e0553080a56af4531`
 
 ## 集成结果
 
