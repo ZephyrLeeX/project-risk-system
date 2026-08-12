@@ -1,0 +1,131 @@
+"""Public Agent conversation and read-only tool contracts."""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
+
+from risk_platform.model_types import JSONValue
+from risk_platform.shared.http import StrictRequestModel
+
+
+class _Contract(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    @field_serializer("*", when_used="json", check_fields=False)
+    def serialize_values(self, value: object) -> object:
+        if isinstance(value, datetime):
+            return value.astimezone(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        return value
+
+
+class AgentMessageResponse(_Contract):
+    id: UUID
+    sequence: int
+    role: str
+    content: str
+    traceId: str
+    dataAsOf: datetime | None
+    createdAt: datetime
+
+
+class AgentConversationResponse(_Contract):
+    id: UUID
+    createdAt: datetime
+    updatedAt: datetime
+    expiresAt: datetime
+    lastMessageSequence: int
+    lastEventSequence: int
+
+
+class AgentConversationEnvelope(_Contract):
+    conversation: AgentConversationResponse
+    userMessage: AgentMessageResponse
+    streamUrl: str
+
+
+class AgentMessageEnvelope(_Contract):
+    userMessage: AgentMessageResponse
+    streamUrl: str
+
+
+class AgentMessageRequest(StrictRequestModel):
+    message: str = Field(min_length=1, max_length=4000)
+
+
+class AgentConversationHistory(_Contract):
+    conversation: AgentConversationResponse
+    messages: list[AgentMessageResponse]
+    nextMessageSequence: int
+
+
+class AgentMessagePage(_Contract):
+    items: list[AgentMessageResponse]
+    nextAfterSequence: int
+
+
+class AgentToolHelp(_Contract):
+    name: str
+    description: str
+    requiredPermissions: list[str]
+    supportsPreview: bool
+
+
+class AgentHelpResponse(_Contract):
+    tools: list[AgentToolHelp]
+
+
+class AgentToolResult(_Contract):
+    tool: str
+    data: JSONValue
+    dataAsOf: datetime
+    traceId: str
+
+
+class RiskToolArguments(StrictRequestModel):
+    keyword: str | None = Field(default=None, max_length=100)
+    page: int = Field(default=1, ge=1)
+    pageSize: int = Field(default=20, ge=1, le=100)
+
+
+class RiskDetailToolArguments(StrictRequestModel):
+    riskId: UUID
+
+
+class TodoToolArguments(StrictRequestModel):
+    owner: str | None = Field(default=None, max_length=128)
+
+
+class TodoDetailToolArguments(StrictRequestModel):
+    todoId: UUID
+
+
+class WeeklyReportToolArguments(StrictRequestModel):
+    weekStart: datetime | None = None
+
+
+class WeeklyDetailToolArguments(StrictRequestModel):
+    weekStart: datetime
+    projectId: UUID
+
+
+__all__ = [
+    "AgentConversationEnvelope",
+    "AgentConversationHistory",
+    "AgentConversationResponse",
+    "AgentHelpResponse",
+    "AgentMessageEnvelope",
+    "AgentMessagePage",
+    "AgentMessageRequest",
+    "AgentMessageResponse",
+    "AgentToolHelp",
+    "AgentToolResult",
+    "RiskDetailToolArguments",
+    "RiskToolArguments",
+    "TodoDetailToolArguments",
+    "TodoToolArguments",
+    "WeeklyDetailToolArguments",
+    "WeeklyReportToolArguments",
+]

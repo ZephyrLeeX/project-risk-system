@@ -35,6 +35,7 @@ Completed tasks:
 - T023 REVIEW_PASSED
 - T027 REVIEW_PASSED
 - T031 REVIEW_PASSED
+- T028 REVIEW_PASSED
 
 Current:
 - Wave 6: PASS (T004/T008/T010 remain REVIEW_PASSED; PostgreSQL integration validation passed)
@@ -158,3 +159,5 @@ Integration blockers:
 - T027 implementation: `REVIEW_PASSED`. Weekly aggregate/query/invalidation/reconciliation and ADR 0021 immutable received-time ingestion/migration are implemented. Two independent reviews passed; Ruff, mypy, lock, diff and isolated PostgreSQL 16 focused validation (`65 passed`) are green. Code checkpoint: `8beeb062069ddc5dd6104e0b80178fcb90da9e3b`. T031 remains `TODO`; Wave 12 remains `IN_PROGRESS`; Integration, next Wave, DG-05 and DG-08 were not started.
 - T031 implementation: `REVIEW_PASSED`. Auditable import-source, Agent-conversation and bounded orphan-temp cleanup is implemented with ADR 0027 lock-ordered protection rechecks, durable `RETENTION_CLEANUP` task/outbox creation, dry-run reporting, two-phase filesystem tombstone recovery and fail-closed partial-failure handling. Independent Review passed after storage/split-brain regressions were remediated. Ruff, mypy, lock, diff and isolated PostgreSQL 16 focused validation (`40 passed`, including Alembic `upgrade head`/`check`) are green. Code checkpoint: `6545fdaf6ad4029c044c2338cc2fb36b7e385b03`. Wave 12 remains `IN_PROGRESS`; Integration, next Wave, DG-05 and DG-08 were not started.
 - Wave 12 Integration: `PASS`; cross-module focused pytest `66 passed`, full pytest `234 passed, 1 skipped`, Ruff, mypy, lock, diff and PostgreSQL 16/Alembic validation all pass. No integration fix was required. T028, next Wave, DG-05 and DG-08 were not started. See `docs/implementation/reports/WAVE-12.md`.
+- Wave 13 readiness: `READY`. T028 dependencies T004/T010/T014/T020/T022/T026/T027 are complete, and ADR 0012/0013/0019/0021 provide the required conversation, retention, authorization, and weekly-report read contracts. DG-05/DG-08 remain out of scope. Wave 13 is `IN_PROGRESS`; only T028 is authorized in this work unit.
+- T028 implementation: `REVIEW_PASSED`. Agent conversations/API, owner-scoped history, frozen retention metadata, closed read-only domain-tool registry and provenance metadata are implemented. Ruff, mypy, `uv lock --check`, `git diff --check` and isolated PostgreSQL 16 focused tests (`2 passed`) are green. Full-suite extra attempt reached `61 passed, 1 skipped` before an existing Redis connection wait was interrupted; no T028 failure was observed. See `docs/implementation/reports/T028.md` and `docs/implementation/reports/WAVE-13-PARTIAL.md`. Code checkpoint and metadata checkpoint are recorded in the following commits.

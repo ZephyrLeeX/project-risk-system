@@ -11,6 +11,9 @@ from fastapi import FastAPI
 
 from risk_platform.admin.overview.api import router as overview_router
 from risk_platform.admin.overview.service import AdminOverviewService, OverviewDependencyFailure
+from risk_platform.agent.api import router as agent_router
+from risk_platform.agent.service import AgentConversationService
+from risk_platform.agent.tools import AgentToolRegistry
 from risk_platform.app import AppComposition, create_app
 from risk_platform.auth.service import AuthService
 from risk_platform.dashboard.api import router as dashboard_router
@@ -26,6 +29,8 @@ from risk_platform.retention.service import RetentionHoldService
 from risk_platform.risks.api import router as risks_router
 from risk_platform.risks.service import RisksService
 from risk_platform.shared.crypto import KeyRing, SecretCipher, SecretCryptoError
+from risk_platform.todos.service import TodosService
+from risk_platform.weekly_reports.service import WeeklyReportService
 
 
 def _overview_cipher() -> SecretCipher | None:
@@ -49,7 +54,17 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     sessions = create_session_factory(engine)
     app.state.auth_service = AuthService.from_settings(sessions, app.state.settings)
     app.state.risks_service = RisksService(sessions)
+    app.state.todos_service = TodosService(sessions)
     app.state.dashboard_service = DashboardService(sessions)
+    weekly_reports = WeeklyReportService(sessions)
+    app.state.weekly_report_service = weekly_reports
+    app.state.agent_conversation_service = AgentConversationService(sessions)
+    app.state.agent_tool_registry = AgentToolRegistry(
+        app.state.dashboard_service,
+        app.state.risks_service,
+        app.state.todos_service,
+        weekly_reports,
+    )
     app.state.retention_hold_service = RetentionHoldService(sessions)
 
     async def api_check() -> None:
@@ -71,7 +86,13 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = create_app(
     composition=AppComposition(
-        routers=(dashboard_router, risks_router, overview_router, retention_router),
+        routers=(
+            dashboard_router,
+            risks_router,
+            overview_router,
+            retention_router,
+            agent_router,
+        ),
         lifespan=_lifespan,
     )
 )
