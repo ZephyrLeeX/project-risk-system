@@ -59,7 +59,7 @@ Current:
 - Wave 9 Integration: PASS; the six stale test-baseline assertions were updated only in tests, followed by full validation. No production redesign or next-Wave task started.
 - Wave 10 Integration: PASS; cross-module/full validation and PostgreSQL 16/Alembic validation complete. Minimal integration fix changed T025 helper IPC from Queue to Pipe; no safety boundary was widened. See `docs/implementation/reports/WAVE-10.md`.
 - Current Wave: Wave 11 IN_PROGRESS.
-- T026: DESIGN_GAP (T026 source-refetch-to-Provider minimum-content contract is not approved; see `docs/implementation/reports/T026.md`).
+- T026: READY (ADR 0025 approves the source-refetch-to-Provider derived-content contract; no T026 implementation has started).
 - T042: BLOCKED by DG-04; not started.
 - DG-01: RESOLVED by ADR 0019
 - DG-02: RESOLVED by ADR 0018
@@ -94,6 +94,7 @@ Architecture changes:
 - ADR 0022: Mail fetch-to-parse/AI UID/UIDVALIDITY-only durable handoff, stage terminal states, crash recovery and cursor contract.
 - ADR 0023: Admin overview health, attention, recent-audit item and partial-data contract.
 - ADR 0024: Mail attachment type allowlist, parser isolation, resource limits, metadata-only outcomes and ADR 0022 retry handoff.
+- ADR 0025: Mail source-refetch-to-Provider versioned derived-content, redaction, size, retry and metadata-only observability contract for T026.
 
 Environment:
 - Python validation via mise explicit tool selection.
@@ -124,6 +125,8 @@ Integration blockers:
 - T018 checkpoint: `b8a5a5f`; see `docs/implementation/reports/T018.md` and `docs/implementation/reports/WAVE-09-PARTIAL.md`.
 - DG-10 design checkpoint: created by ADR 0022 and synchronized task/design state; T024 implementation is complete and reviewed.
 - DG-11 design resolution: ADR 0024 approves the attachment safety policy and returns T025 to READY. No T025 implementation, Wave 10 Integration or next-Wave work was started; DG-04/DG-05/DG-08 remain out of scope.
+- T026 design resolution: ADR 0025 approves `MAIL_PROVIDER_DERIVED_CONTENT_V1`, including the only permitted derived text, deny-list, filtering, limits and retry/log/audit boundary. T026 is READY; no implementation, T042, Wave 11 Integration or next-Wave work has started. DG-04/DG-05/DG-08 remain out of scope.
+- T026 design checkpoint: `56368827d42406dc73fc371dfa31db2a03a3c096`.
 - T024 implementation and Independent Review: `REVIEW_PASSED`; see `docs/implementation/reports/T024.md` and `docs/implementation/reports/WAVE-09-PARTIAL.md`.
 - T024 checkpoint: `597a43b830e2e639d17b775c069a8fbfb896efd4`.
 - T019 implementation, Independent Review and validation are complete; checkpoint is recorded in `docs/implementation/reports/T019.md`.
