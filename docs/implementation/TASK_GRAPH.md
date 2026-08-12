@@ -104,11 +104,11 @@ Tasks in a wave may run concurrently only when every dependency from an earlier 
 | T013 | READY | T003, T006, T010 | Migrate versioned system configuration and project aliases. |
 | T014 | READY | T003, T006, T007, T010 | Migrate AI Provider administration, connection tests, strategy and safe call logs. |
 | T015 | READY | T006, T010 | Migrate audit query, integrity and metadata-only export APIs. |
-| T016 | DESIGN_GAP | T008, T011-T015, T018, T024 | Blocked: approved admin overview item contract is missing. |
+| T016 | READY | T008, T011-T015, T018, T024 | ADR 0023 defines the approved admin overview item contract. |
 | T017 | READY | T003, T006, T008, T010 | Move safe Excel upload and three-sheet preview parsing into durable workers. |
 | T018 | READY | T017, T022 | Migrate atomic import commit, history, source download and supplemental matching through shared risk/todo services. |
 | T019 | REVIEW_PASSED | T018 | Migrate safe import rollback and later-write conflict handling. |
-| T020 | READY | T003, T010, T018 | Migrate scoped dashboard project, collection and risk read models. |
+| T020 | REVIEW_PASSED | T003, T010, T018 | Migrate scoped dashboard project, collection and risk read models. |
 | T021 | READY | T003, T006, T010 | Migrate manager todo queries, updates and reusable risk-to-todo rules. |
 | T022 | READY | T003, T006, T010, T021 | Migrate reusable risk mutation, two-state lifecycle and append-only timeline behavior. |
 | T023 | READY | T002, T003, T006, T007, T010, T013 | Migrate encrypted per-user mailbox configuration and connection testing. |
