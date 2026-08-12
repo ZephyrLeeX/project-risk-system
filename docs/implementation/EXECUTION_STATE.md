@@ -58,7 +58,9 @@ Current:
 - T024: REVIEW_PASSED (DG-10 resolved; implementation and Independent Review complete; checkpoint `597a43b830e2e639d17b775c069a8fbfb896efd4`).
 - Wave 9 Integration: PASS; the six stale test-baseline assertions were updated only in tests, followed by full validation. No production redesign or next-Wave task started.
 - Wave 10 Integration: PASS; cross-module/full validation and PostgreSQL 16/Alembic validation complete. Minimal integration fix changed T025 helper IPC from Queue to Pipe; no safety boundary was widened. See `docs/implementation/reports/WAVE-10.md`.
-- Next Wave: NOT_STARTED; Wave 11 has not started.
+- Current Wave: Wave 11 IN_PROGRESS.
+- T026: DESIGN_GAP (T026 source-refetch-to-Provider minimum-content contract is not approved; see `docs/implementation/reports/T026.md`).
+- T042: BLOCKED by DG-04; not started.
 - DG-01: RESOLVED by ADR 0019
 - DG-02: RESOLVED by ADR 0018
 - DG-03: RESOLVED by ADR 0019
