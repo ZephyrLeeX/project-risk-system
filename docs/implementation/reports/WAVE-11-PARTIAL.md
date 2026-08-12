@@ -21,3 +21,23 @@
 
 T026 已通过，T042 仍因 DG-04 `BLOCKED`。根据用户指令，本次恢复 Wave 11 为 `IN_PROGRESS` 后停止；
 不进入 Integration。
+
+## 2026-08-12 T042 execution stop
+
+- T042 已开始实施并完成隔离 PostgreSQL 16、Alembic、Ruff、mypy、focused pytest 和 lockfile 的候选验证；
+  最终 focused suite 为 `30 passed`。
+- Independent Review 为 `REVIEW_FAILED`：发现 hold create/release 的锁顺序可能死锁，且数据库未不可逆地阻止
+  terminal hold reactivation。
+- 更根本地，ADR 0027 要求 T042 提供人工 hold 管理 surface，但没有批准相应 URL/envelope/error compatibility
+  contract；这命中 T042 stop condition，记录为 `DESIGN_GAP`。不得自行新增 API。
+- T042 当前为 `DESIGN_GAP`，Wave 11 保持 `IN_PROGRESS`；未创建 T042 checkpoint，未启动 Integration、下一
+  Wave、DG-05 或 DG-08 工作。
+
+## 2026-08-12 T042 DESIGN_GAP resolution
+
+- ADR 0027 addendum 已批准 hold create/release/query 的 URL、统一 envelope、权限、request/response、错误、
+  幂等与冲突语义；`BACKUP_COPY` surface 仍因 DG-08 fail-closed。
+- addendum 同时冻结 PostgreSQL resource advisory lock → resource fact row → hold row 的锁顺序，以及由 trigger
+  和 partial unique index 强制的不可重激活 terminal state。
+- T042 恢复为 `READY`，但候选实现未接受、未复审且没有代码 checkpoint。Wave 11 仍为 `IN_PROGRESS`；本次没有
+  启动 Integration、下一 Wave、DG-05 或 DG-08。

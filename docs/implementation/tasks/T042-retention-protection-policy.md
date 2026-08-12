@@ -3,7 +3,7 @@
 - **Title:** Implement retention configuration and protection policy
 - **Status:** READY
 - **Objective:** Provide the approved retention bounds, rollback-window and audit-hold state/predicate consumed by cleanup and backup rotation.
-- **Design baseline:** `../BASELINE.md`, `../GLOBAL_CONSTRAINTS.md`; design §§6,9.
+- **Design baseline:** `../BASELINE.md`, `../GLOBAL_CONSTRAINTS.md`; design §§6,9；ADR 0027（含 2026-08-12 hold 管理 API、终态和锁顺序 addendum）。
 - **Authoritative source references:** ADR 0012, ADR 0027, T013 configuration service and T019 rollback facts.
 - **Relevant ADR IDs:** 0008, 0009, 0012, 0015, 0027.
 - **Dependencies:** T004, T013, T019 and ADR 0027.
@@ -15,5 +15,5 @@
 - **Acceptance criteria:** Approved min/max/default/boundary cases and hold/rollback predicates yield deterministic PASS/FAIL results; migration chain has one head.
 - **Validation:** Fixed-clock PostgreSQL/API/policy tests; Alembic heads/check; Ruff/mypy/pytest.
 - **Required deliverables:** Validated configuration/persistence, protection interface and tests.
-- **Stop conditions:** ADR 0027 requires an unapproved public contract/destructive migration.
+- **Stop conditions:** 已批准 hold public contract 之外的 surface、任何 destructive migration，或与 ADR 0027/addendum 不一致的持久化语义。
 - **Known integration risks:** Configuration snapshot drift and hold races with cleanup.

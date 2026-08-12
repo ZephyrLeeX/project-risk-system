@@ -112,6 +112,88 @@ predicate 并记录固定 `BACKUP_COPY_DELETED`/失败审计，但其加密、�
 业务记录均不属于本 ADR 的删除目标，继续保留。Celery 任务只传稳定资源 ID、`asOf` 和配置版本引用，
 不得传文件/对话/备份内容；任务重试必须重新在 PostgreSQL 执行该 predicate。
 
+### Addendum：hold 管理 API、生命周期与并发（2026-08-12）
+
+本 addendum 是 ADR 0027 的组成部分，并冻结 T042 所需的人工管理 surface、失败语义和 PostgreSQL
+并发规则。它不定义备份副本的加密、清单或一致性机制；`BACKUP_COPY` 的实际资源解析仍受 DG-08 约束。
+
+#### HTTP surface、权限与数据形状
+
+新增且仅新增以下管理端点。它们使用既有 Cookie session、CSRF/request tracing 和统一 JSON envelope：成功
+响应为 `{code, message, data, traceId}`，其中 `code` 为 `OK`；失败响应同形且 `data` 为 `null`。所有时间为
+UTC RFC 3339 毫秒，所有 hold ID、导入批次 ID 和会话 ID 均为 UUID。请求 DTO 禁止 unknown field。
+
+| Endpoint | Request / query | 成功结果 |
+|---|---|---|
+| `POST /api/admin/retention-holds` | `{resourceType, resourceId, reason, expiresAt}`；`resourceType` 为 `IMPORT_BATCH`、`AGENT_CONVERSATION` 或 `BACKUP_COPY`，`reason` 为 ADR 中的封闭枚举，`expiresAt` 为 nullable UTC 时间且非空时必须严格晚于本事务 `asOf`。`IMPORT_BATCH`/`AGENT_CONVERSATION` 的 `resourceId` 为 UUID；`BACKUP_COPY` 为 1–128 位受约束 identifier。 | 新建时 `201`，返回一个 hold；同一有效 hold 的语义相同重试时 `200`，返回原 hold。 |
+| `GET /api/admin/retention-holds` | 可选 `resourceType`、`resourceId`、`status`，以及 `page`（`>=1`，默认 `1`）和 `pageSize`（`1..100`，默认 `30`）。结果按 `createdAt DESC, id DESC` 排序。 | `200`，`data` 为 `{items, total, page, pageSize}`。 |
+| `GET /api/admin/retention-holds/{holdId}` | `holdId` 为 UUID。 | `200`，返回一个 hold。 |
+| `POST /api/admin/retention-holds/{holdId}/release` | 空 object `{}`；不得提交 reason、expiry、resource 或任意业务字段。 | 首次有效 release 为 `200`，返回 `RELEASED` hold；对同一已 `RELEASED` hold 的重试同样为 `200`，不再产生审计事件。 |
+
+hold 响应只含 `id`、`resourceType`、`resourceId`、`reason`、`status`、`createdAt`、`createdById`、
+`expiresAt`、`releasedAt`、`releasedById`、`expiredAt`、`expiredById`。它不返回 trace ID、文件名、文件内容、
+对话正文、自由文本原因、备份内容或任意 metadata。列表/详情是管理读取，不创建 hold-change 审计事件。
+
+四个端点都要求 `admin.config.manage`；不新增 permission code，不按项目范围降级，也不授予 Agent 工具。缺少
+权限返回 `403 FORBIDDEN`，未认证沿用既有 `401 UNAUTHORIZED`，请求/ID/query 校验失败返回
+`422 VALIDATION_ERROR`。`IMPORT_BATCH` 或 `AGENT_CONVERSATION` 在创建时不存在，分别返回
+`404 IMPORT_BATCH_NOT_FOUND` 或 `404 AGENT_CONVERSATION_NOT_FOUND`。hold ID 不存在返回
+`404 RETENTION_HOLD_NOT_FOUND`。
+
+DG-08 未解决时，T042 不得猜测、读取或创建 `BACKUP_COPY` 的资源事实：对它的 create 和 release 返回
+`409 RETENTION_BACKUP_COPY_UNAVAILABLE`。表中的枚举和未来受认可的稳定 identifier 仅保留给 DG-08 批准后的
+备份实现；本条不构成备份管理 contract。
+
+#### 生命周期、幂等与冲突
+
+创建时对同一 `(resourceType, resourceId)` 先处理到期的有效 hold，再判断唯一有效 hold。若剩余 `ACTIVE`
+hold 的 `reason` 与 `expiresAt` 均与请求完全相同，则请求是幂等重试，返回既有 hold（`200`）且不另写审计；
+任何一个字段不同则返回 `409 RETENTION_HOLD_ALREADY_ACTIVE`。若没有有效 hold，创建一个新的 `ACTIVE` 行并
+返回 `201`。终态历史不能成为创建冲突；再次保全必须创建新的行，拥有新的 `id`、创建 actor 和时间。
+
+唯一允许的状态转换是 `ACTIVE -> RELEASED` 与 `ACTIVE -> EXPIRED`。`RELEASED` 和 `EXPIRED` 均为不可重新
+激活的终态：没有 update/extend/reopen endpoint，且需要新的 hold 而不是改写、清空或重用终态行。`expiresAt`
+与创建事实在创建后不可修改。release 仅允许人工操作；自动到期使用系统 actor。在 `asOf >= expiresAt` 时，
+任一保护/清理判定或 create/release 事务必须先将该行转换为 `EXPIRED` 并写 `RETENTION_HOLD_EXPIRED` 审计；
+随后 release 请求返回 `409 RETENTION_HOLD_EXPIRED`，不得伪报 release 成功。对已 `EXPIRED` 的 release 也返回
+该错误。除已 `RELEASED` 的上述重试外，重复 release 不产生成功事件。
+
+PostgreSQL 必须以 partial unique index 保证每个资源最多一个 `status = 'ACTIVE'` 行，并以数据库 trigger
+（而非仅 service 检查）强制以下规则：禁止 `DELETE`；`createdAt`、`createdById`、`createdTraceId`、
+`resourceType`、`resourceId`、`reason`、`expiresAt` 永远不可变；仅允许上述两条从 `ACTIVE` 出发的转换；终态行
+不得再更新；`RELEASED` 必须且只能具有 `releasedAt`、`releasedById`、`releasedTraceId`，`EXPIRED` 必须且只能
+具有 `expiredAt`、`expiredTraceId`（`expiredById` 为 nullable system actor reference）。该 trigger 是 T042
+migration 的 required persistence invariant，数据库直写也不得绕过它。
+
+#### PostgreSQL lock ordering
+
+所有改变 hold 或依据 hold 决定删除资格的事务都以同一个调用开始时取得的 UTC `asOf` 执行，并使用下列严格
+顺序；不得先锁 hold 行再取得资源锁。
+
+1. 对目标资源按 `(resourceType ordinal, resourceId UTF-8 byte order)` 排序，其中
+   `IMPORT_BATCH = 1`、`AGENT_CONVERSATION = 2`、`BACKUP_COPY = 3`；T042 的单资源 API 只有一个键。
+2. 对每个键按序取得 `pg_advisory_xact_lock(hashtextextended('retention:' || resourceType || ':' || resourceId, 0))`。
+   hash collision 只能额外串行化，不能降低正确性。
+3. 对 `IMPORT_BATCH` 或 `AGENT_CONVERSATION`，取得其事实行的 `SELECT ... FOR UPDATE`；create 在该行不存在时
+   失败关闭并返回对应 `404`。`BACKUP_COPY` 在 DG-08 前不进入该路径。
+4. 再以 `(createdAt, id)` 顺序 `SELECT ... FOR UPDATE` 该资源的 `ACTIVE` hold，及本次操作指定的 hold 行；
+   到期转换、唯一性检查、create/release、保护 predicate 复核和同事务审计随后完成。
+
+按 hold ID release 时，允许先做无锁、只读的资源键定位；行从不删除。随后必须从第 2 步重新取得资源 advisory
+lock，并在第 4 步重新锁定和读取该 hold，不能依赖定位读的状态。清理任务、Celery retry 和自动过期路径必须
+复用此顺序；它们不得仅锁业务资源或仅依赖 partial index。任何获取不到事实、hold、锁或一致 UTC 时间的情况
+均 fail-closed，不能报告 `ELIGIBLE` 或执行删除。
+
+#### metadata-only audit
+
+每个已认证且已进入 hold 授权/持久化边界的 create/release 结果，都使用 ADR 0017 的 `AuditService` 写入固定
+metadata-only 事件：成功为 `RETENTION_HOLD_CREATED`、`RETENTION_HOLD_RELEASED` 或
+`RETENTION_HOLD_EXPIRED`；拒绝/失败为 `RETENTION_HOLD_CHANGE_FAILED`，`failureCode` 只能是对应的固定 API
+machine code。module 固定 `RETENTION`，成功 resource 固定 `RETENTION_HOLD`/hold UUID；失败若 hold UUID 已知则
+使用它，否则 resource 为请求的受保护资源且仅使用其受约束 identifier。审计与成功状态转换在同一事务；失败
+审计在回滚业务变化后以单独事务保留。未认证请求仅走既有认证边界，不伪造 actor 审计。所有这些事件不得包含
+request body、expiry 以外的内容、文件名、对话内容、自由文本、备份内容或 JSON metadata。
+
 ## Consequences
 
 - T042 可以实现有边界的配置、冻结的留存事实、hold 持久化和 fail-closed protection service。

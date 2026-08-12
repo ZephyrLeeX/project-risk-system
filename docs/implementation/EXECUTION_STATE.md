@@ -60,7 +60,7 @@ Current:
 - Wave 10 Integration: PASS; cross-module/full validation and PostgreSQL 16/Alembic validation complete. Minimal integration fix changed T025 helper IPC from Queue to Pipe; no safety boundary was widened. See `docs/implementation/reports/WAVE-10.md`.
 - Current Wave: Wave 11 IN_PROGRESS.
 - T026: REVIEW_PASSED (Celery worker isolation remediation complete. PostgreSQL 16 + Redis + real Celery `solo` worker acceptance/negative tests pass: `16 passed`; each worker handler asserts the random Alembic-created temporary PostgreSQL schema. `register_executor` is app-local (`shared=False, lazy=False`), preventing stale executor/handler/factory leakage across test Celery apps. Independent Review passed; no dispatcher direct execution was used as worker proof. Checkpoint: `76c5ef6cb50705b63ad86e7a9b05d00bf9a45da4`.)
-- T042: READY (DG-04 resolved by ADR 0027); not started.
+- T042: READY (ADR 0027 addendum approves the hold management URL/envelope/error contract, exact idempotency/conflict semantics, PostgreSQL lock ordering and non-reactivatable terminal persistence invariant. The uncommitted candidate implementation remains unaccepted and must be repaired/re-reviewed; no code checkpoint. See `docs/implementation/reports/T042.md`.)
 - DG-01: RESOLVED by ADR 0019
 - DG-02: RESOLVED by ADR 0018
 - DG-03: RESOLVED by ADR 0019
@@ -140,3 +140,5 @@ Integration blockers:
 - T020 checkpoint: `8a0297ba1eaa5d72432a442cbda746d0ff480075`.
 - T016 checkpoint: `cbd5569869cb36c5b7ae93645edeeecfbfb49842`; see `docs/implementation/reports/T016.md` and `docs/implementation/reports/WAVE-10-PARTIAL.md`.
 - Wave 9 final Integration checkpoint: created after recording the PASS result and test baseline maintenance in `docs/implementation/reports/WAVE-09.md` and this state file.
+- T042 execution stop: candidate implementation validation passed on isolated PostgreSQL 16, but Independent Review is `REVIEW_FAILED`. ADR 0027 requires a T042 human hold management surface without an approved public URL/envelope/error contract; this is `DESIGN_GAP` under T042's stop condition. The candidate additionally needs a single lock ordering and non-reactivatable terminal hold enforcement. Wave 11 remains `IN_PROGRESS`; no T042 checkpoint, Integration, DG-05, DG-08 or next-Wave work was started.
+- T042 DESIGN_GAP resolution: ADR 0027 addendum now approves the human hold create/release/query HTTP contract, fixed metadata-only audit boundary, exact retry/conflict outcomes, resource advisory/fact/hold PostgreSQL lock ordering, and database-enforced non-reactivatable terminal states. T042 is `READY` only; the retained candidate is neither accepted nor code-checkpointed and requires a fresh implementation/review cycle. Wave 11 remains `IN_PROGRESS`; no Integration, next-Wave, DG-05 or DG-08 work was started. Design checkpoint: pending.
