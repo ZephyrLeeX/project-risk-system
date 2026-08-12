@@ -14,6 +14,7 @@ Completed waves:
 - Wave 9: PASS (T018/T024 integration validation and test baseline maintenance)
 - Wave 10: PASS (T016/T019/T020/T025 integration validation complete)
 - Wave 11: PASS (T026/T042 integration validation and test baseline maintenance complete)
+- Wave 12: PASS (T027/T031 Integration validation complete; no integration fix)
 
 Completed tasks:
 - T001 REVIEW_PASSED
@@ -61,7 +62,7 @@ Current:
 - T024: REVIEW_PASSED (DG-10 resolved; implementation and Independent Review complete; checkpoint `597a43b830e2e639d17b775c069a8fbfb896efd4`).
 - Wave 9 Integration: PASS; the six stale test-baseline assertions were updated only in tests, followed by full validation. No production redesign or next-Wave task started.
 - Wave 10 Integration: PASS; cross-module/full validation and PostgreSQL 16/Alembic validation complete. Minimal integration fix changed T025 helper IPC from Queue to Pipe; no safety boundary was widened. See `docs/implementation/reports/WAVE-10.md`.
-- Current Wave: Wave 12 IN_PROGRESS. T027 is REVIEW_PASSED (code checkpoint `8beeb062069ddc5dd6104e0b80178fcb90da9e3b`). T031 is REVIEW_PASSED (code checkpoint `6545fdaf6ad4029c044c2338cc2fb36b7e385b03`). Wave 12 Integration has not started. Wave 11 PASS (T026/T042 REVIEW_PASSED; Integration PASS).
+- Current Wave: Wave 12 PASS. T027 is REVIEW_PASSED (code checkpoint `8beeb062069ddc5dd6104e0b80178fcb90da9e3b`). T031 is REVIEW_PASSED (code checkpoint `6545fdaf6ad4029c044c2338cc2fb36b7e385b03`). Wave 12 Integration PASS; no integration fix. Wave 11 PASS (T026/T042 REVIEW_PASSED; Integration PASS).
 - T026: REVIEW_PASSED (Celery worker isolation remediation complete. PostgreSQL 16 + Redis + real Celery `solo` worker acceptance/negative tests pass: `16 passed`; each worker handler asserts the random Alembic-created temporary PostgreSQL schema. `register_executor` is app-local (`shared=False, lazy=False`), preventing stale executor/handler/factory leakage across test Celery apps. Independent Review passed; no dispatcher direct execution was used as worker proof. Checkpoint: `76c5ef6cb50705b63ad86e7a9b05d00bf9a45da4`.)
 - T042: REVIEW_PASSED (approved retention configuration, frozen facts, hold persistence/API, terminal-state trigger, metadata-only audit and lock-ordered protection recheck complete. PostgreSQL 16 focused validation `17 passed`; Independent Review passed. Code checkpoint: `d6652c82529c2d2902a5f476d225e582b38ebaf3`. See `docs/implementation/reports/T042.md`.)
 - DG-01: RESOLVED by ADR 0019
@@ -84,6 +85,7 @@ Checkpoint commits:
 - Wave 10 integration fix: `7b9722075ca3bc8358789198b7ef6b0e6282fcfa`
 - Wave 10 final checkpoint: `7b9722075ca3bc8358789198b7ef6b0e6282fcfa` (metadata recorded in the following report commit)
 - Wave 11 final checkpoint: `4487c09a2281c462e3b4c93e0553080a56af4531` (metadata recorded in the following report commit)
+- Wave 12 final checkpoint: pending metadata commit (integration report/state commit)
 - T010: e30dd45
 - T004: 1b4cfa8
 - T011: baa3208
@@ -155,3 +157,4 @@ Integration blockers:
 - Wave 12 design/metadata sync: T031's stale `BLOCKED_DESIGN_GAP (DG-04/DG-10) / TODO` header was corrected to `TODO` after confirming ADR 0027/addendum, ADR 0022 and completed T042 satisfy those blockers; T031 was not executed. ADR 0021's approved immutable received-time addendum resolves DG-13 with IMAP `INTERNALDATE`, a frozen first-durable-observation fallback, UTC `timestamptz(3)` facts, migration/backfill ownership and database-enforced retry/refetch stability. T027 is restored to `READY`; T031 remains `TODO`; Wave 12 remains `IN_PROGRESS`. No Task implementation, Integration, next Wave, DG-05 or DG-08 work was started.
 - T027 implementation: `REVIEW_PASSED`. Weekly aggregate/query/invalidation/reconciliation and ADR 0021 immutable received-time ingestion/migration are implemented. Two independent reviews passed; Ruff, mypy, lock, diff and isolated PostgreSQL 16 focused validation (`65 passed`) are green. Code checkpoint: `8beeb062069ddc5dd6104e0b80178fcb90da9e3b`. T031 remains `TODO`; Wave 12 remains `IN_PROGRESS`; Integration, next Wave, DG-05 and DG-08 were not started.
 - T031 implementation: `REVIEW_PASSED`. Auditable import-source, Agent-conversation and bounded orphan-temp cleanup is implemented with ADR 0027 lock-ordered protection rechecks, durable `RETENTION_CLEANUP` task/outbox creation, dry-run reporting, two-phase filesystem tombstone recovery and fail-closed partial-failure handling. Independent Review passed after storage/split-brain regressions were remediated. Ruff, mypy, lock, diff and isolated PostgreSQL 16 focused validation (`40 passed`, including Alembic `upgrade head`/`check`) are green. Code checkpoint: `6545fdaf6ad4029c044c2338cc2fb36b7e385b03`. Wave 12 remains `IN_PROGRESS`; Integration, next Wave, DG-05 and DG-08 were not started.
+- Wave 12 Integration: `PASS`; cross-module focused pytest `66 passed`, full pytest `234 passed, 1 skipped`, Ruff, mypy, lock, diff and PostgreSQL 16/Alembic validation all pass. No integration fix was required. T028, next Wave, DG-05 and DG-08 were not started. See `docs/implementation/reports/WAVE-12.md`.
