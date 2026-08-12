@@ -18,8 +18,8 @@ from email import policy
 from email.headerregistry import Address
 from email.parser import BytesParser
 from html.parser import HTMLParser
+from multiprocessing.connection import Connection
 from pathlib import Path
-from queue import Empty
 from typing import Final
 from xml.etree.ElementTree import Element
 
@@ -220,7 +220,7 @@ def _parse_pdf(path: Path) -> str:
     return "\n".join(page.extract_text() or "" for page in reader.pages)
 
 
-def _helper(path_name: str, extension: str, output: multiprocessing.Queue[tuple[str, str]]) -> None:
+def _helper(path_name: str, extension: str, output: Connection) -> None:
     resource.setrlimit(resource.RLIMIT_CPU, (HELPER_CPU_SECONDS, HELPER_CPU_SECONDS))
     resource.setrlimit(resource.RLIMIT_AS, (HELPER_ADDRESS_SPACE_BYTES, HELPER_ADDRESS_SPACE_BYTES))
     resource.setrlimit(resource.RLIMIT_FSIZE, (0, 0))
@@ -242,17 +242,17 @@ def _helper(path_name: str, extension: str, output: multiprocessing.Queue[tuple[
             text = _parse_xlsx(path)
         cleaned = clean_text(text)
         if len(cleaned) >= MAX_ATTACHMENT_CHARS:
-            output.put(("OUTPUT_TRUNCATED", ""))
+            output.send(("OUTPUT_TRUNCATED", ""))
         else:
-            output.put(("OK", cleaned))
+            output.send(("OK", cleaned))
     except MailParseError as exc:
-        output.put((exc.code, ""))
+        output.send((exc.code, ""))
     except (UnicodeError, ValueError, zipfile.BadZipFile, ElementTree.ParseError):
-        output.put(("MALFORMED", ""))
+        output.send(("MALFORMED", ""))
     except MemoryError:
-        output.put(("PARSER_RESOURCE_LIMIT", ""))
+        output.send(("PARSER_RESOURCE_LIMIT", ""))
     except Exception:
-        output.put(("MALFORMED", ""))
+        output.send(("MALFORMED", ""))
 
 
 def _content_matches(extension: str, content: bytes) -> bool:
@@ -298,9 +298,9 @@ def parse_attachment(
         return result(allowed_format, "TYPE_MISMATCH", "TYPE_MISMATCH")
     task_file = temp_dir / os.urandom(16).hex()
     task_file.write_bytes(content)
-    output: multiprocessing.Queue[tuple[str, str]] = multiprocessing.Queue(maxsize=1)
+    parent_conn, child_conn = multiprocessing.Pipe(duplex=False)
     process = multiprocessing.Process(
-        target=_helper, args=(str(task_file), extension, output), daemon=True
+        target=_helper, args=(str(task_file), extension, child_conn), daemon=True
     )
     process.start()
     process.join(timeout_seconds)
@@ -309,14 +309,16 @@ def parse_attachment(
             process.terminate()
             process.join()
             return result(allowed_format, "PARSER_TIMEOUT", "PARSER_TIMEOUT")
+        child_conn.close()
         try:
-            code, text = output.get_nowait()
-        except Empty:
+            code, text = parent_conn.recv() if parent_conn.poll() else ("MALFORMED", "")
+        except (EOFError, OSError):
             code, text = ("PARSER_RESOURCE_LIMIT" if process.exitcode else "MALFORMED"), ""
         status = "PARSED" if code == "OK" else code
         return result(allowed_format, status, None if code == "OK" else code, text)
     finally:
-        output.close()
+        child_conn.close()
+        parent_conn.close()
         task_file.unlink(missing_ok=True)
 
 
