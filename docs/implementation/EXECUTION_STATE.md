@@ -15,6 +15,7 @@ Completed waves:
 - Wave 10: PASS (T016/T019/T020/T025 integration validation complete)
 - Wave 11: PASS (T026/T042 integration validation and test baseline maintenance complete)
 - Wave 12: PASS (T027/T031 Integration validation complete; no integration fix)
+- Wave 13: PASS (T028 Integration validation complete; no integration fix; T029 not executed)
 
 Completed tasks:
 - T001 REVIEW_PASSED
@@ -161,3 +162,4 @@ Integration blockers:
 - Wave 12 Integration: `PASS`; cross-module focused pytest `66 passed`, full pytest `234 passed, 1 skipped`, Ruff, mypy, lock, diff and PostgreSQL 16/Alembic validation all pass. No integration fix was required. T028, next Wave, DG-05 and DG-08 were not started. See `docs/implementation/reports/WAVE-12.md`.
 - Wave 13 readiness: `READY`. T028 dependencies T004/T010/T014/T020/T022/T026/T027 are complete, and ADR 0012/0013/0019/0021 provide the required conversation, retention, authorization, and weekly-report read contracts. DG-05/DG-08 remain out of scope. Wave 13 is `IN_PROGRESS`; only T028 is authorized in this work unit.
 - T028 implementation: `REVIEW_PASSED`. Agent conversations/API, owner-scoped history, frozen retention metadata, closed read-only domain-tool registry and provenance metadata are implemented. Ruff, mypy, `uv lock --check`, `git diff --check` and isolated PostgreSQL 16 focused tests (`2 passed`) are green. Full-suite extra attempt reached `61 passed, 1 skipped` before an existing Redis connection wait was interrupted; no T028 failure was observed. See `docs/implementation/reports/T028.md` and `docs/implementation/reports/WAVE-13-PARTIAL.md`. Code checkpoint: `21cb6a9e541dfed311b33f2355c6e8358ba6dda3`.
+- Wave 13 Integration: `PASS`; T028 Agent conversation/tool registry 与 Dashboard、Risk、Todo、Weekly Report 的授权和 scope 路径联合验证 `27 passed`，完整 PostgreSQL 16 + Redis 7 pytest `236 passed, 1 skipped`。Ruff、mypy、`uv lock --check`、`git diff --check` 及 PostgreSQL 16 空库 Alembic `upgrade head`/`check` 均通过；无 integration fix。T029 未执行，未启动下一 Wave，DG-05/DG-08 未处理。详见 `docs/implementation/reports/WAVE-13.md`。
