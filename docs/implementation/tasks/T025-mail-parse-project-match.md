@@ -1,11 +1,11 @@
 # T025 — Parse mail safely and match projects
 - **Task ID:** T025
 - **Title:** Parse mail safely and match projects
-- **Status:** DESIGN_GAP
+- **Status:** READY
 - **Objective:** Convert fetched mail into minimal retained summaries/metadata and deterministic standard-name/alias matches.
 - **Design baseline:** Design §§6,7.
 - **Authoritative source references:** `project-risk-system/apps/api/src/mailbox/mail-content-parser.service.ts`, `mail-project-matcher.service.ts` and tests; T013 aliases; mail contracts; ADR 0022.
-- **Relevant ADR IDs:** 0007, 0014, 0015, 0022.
+- **Relevant ADR IDs:** 0007, 0014, 0015, 0022, 0024.
 - **Dependencies:** T007, T013, T024 and ADR 0022.
 - **Scope:** MIME/body sanitization, bounded supported attachments, temp lifecycle, key points/metadata/evidence extraction and project matching.
 - **Explicit out-of-scope:** AI risk extraction, fuzzy/manual matching not approved by current target behavior, full-content retention.
@@ -18,6 +18,6 @@
 - **Stop conditions:** ADR 0022 source identity/refetch contract cannot be satisfied or a required file type lacks an approved safe parser policy.
 - **Known integration risks:** Office/PDF parser resource limits and false matches.
 
-## DESIGN_GAP
+## Approved attachment safety policy
 
-批准设计未定义附件允许类型、安全解析器以及 timeout / resource limits。不得以 legacy `.txt`、`.docx`、`.pdf`、`.xlsx` 行为自行补充该安全策略；在新的批准设计前，T025 保持 `DESIGN_GAP`。
+ADR 0024 已批准固定的 `.txt`、`.pdf`、`.docx`、`.xlsx` allowlist、三重 MIME/extension/content 识别、受限 parser、输入/解压/CPU/memory/timeout 上限、无内容失败结果、临时文件清理和 ADR 0022 retry handoff。T025 可以实施；不得扩展格式或放宽固定上限。
