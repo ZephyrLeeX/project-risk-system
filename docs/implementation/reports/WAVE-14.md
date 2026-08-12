@@ -29,4 +29,4 @@
 
 ## Checkpoint
 
-Wave 14 final checkpoint：`3a7e154`（commit full SHA 在提交后以 repository 为准）。
+Wave 14 final checkpoint：`7e97df9e5ae1d85919d2804fc4e6859c4399e2f3`。
