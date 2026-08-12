@@ -84,6 +84,10 @@ class AgentToolResult(_Contract):
     traceId: str
 
 
+class EmptyToolArguments(StrictRequestModel):
+    pass
+
+
 class RiskToolArguments(StrictRequestModel):
     keyword: str | None = Field(default=None, max_length=100)
     page: int = Field(default=1, ge=1)
@@ -122,6 +126,7 @@ __all__ = [
     "AgentMessageResponse",
     "AgentToolHelp",
     "AgentToolResult",
+    "EmptyToolArguments",
     "RiskDetailToolArguments",
     "RiskToolArguments",
     "TodoDetailToolArguments",

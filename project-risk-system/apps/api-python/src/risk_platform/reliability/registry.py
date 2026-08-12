@@ -19,6 +19,9 @@ class TaskDefinition:
 TASK_REGISTRY: Final[dict[DurableTaskKind, TaskDefinition]] = {
     kind: TaskDefinition(kind) for kind in DurableTaskKind
 }
+TASK_REGISTRY[DurableTaskKind.AGENT_EXECUTION] = TaskDefinition(
+    DurableTaskKind.AGENT_EXECUTION, max_attempts=3, timeout_seconds=90, retry_backoff_seconds=30
+)
 
 
 def task_definition(kind: DurableTaskKind) -> TaskDefinition:

@@ -2,18 +2,23 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from datetime import UTC, datetime
+from collections.abc import AsyncIterator, Callable
+from datetime import UTC, date, datetime
 from uuid import UUID, uuid4
 
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from risk_platform.ai_providers.models import AiConnectionStatus, AiProviderConfig
 from risk_platform.auth.service import SessionIdentity
 from risk_platform.db import transaction
+from risk_platform.reliability.core import enqueue_task
+from risk_platform.reliability.models import DurableTask, DurableTaskKind, DurableTaskStatus
 from risk_platform.retention.service import RetentionConfigurationRepository
 from risk_platform.shared.errors import ApiError
 
-from .models import AgentConversation, AgentMessage, AgentMessageRole
+from .events import open_event_stream
+from .models import AgentConversation, AgentExecutionConfig, AgentMessage, AgentMessageRole
 from .repository import AgentConversationRepository
 from .schemas import (
     AgentConversationEnvelope,
@@ -79,6 +84,45 @@ class AgentConversationService:
                 )
                 session.add(conversation)
                 await session.flush()
+            else:
+                conversation = await session.scalar(
+                    select(AgentConversation)
+                    .where(AgentConversation.id == conversation.id)
+                    .with_for_update()
+                )
+                if conversation is None:
+                    raise ApiError(
+                        404, "AGENT_CONVERSATION_NOT_FOUND", "Agent 会话不存在或不属于当前用户"
+                    )
+            active = await session.scalar(
+                select(DurableTask).where(
+                    DurableTask.kind == DurableTaskKind.AGENT_EXECUTION,
+                    DurableTask.status.in_(
+                        (
+                            DurableTaskStatus.QUEUED,
+                            DurableTaskStatus.RUNNING,
+                            DurableTaskStatus.RETRY_WAIT,
+                        )
+                    ),
+                    DurableTask.payload["conversation_id"].as_string() == str(conversation.id),
+                )
+            )
+            if active is not None:
+                active_config = await session.scalar(
+                    select(AgentExecutionConfig).where(AgentExecutionConfig.taskId == active.id)
+                )
+                active_message = (
+                    None
+                    if active_config is None
+                    else await session.get(AgentMessage, active_config.userMessageId)
+                )
+                if active_message is None:
+                    raise RuntimeError("AGENT_EXECUTION_CONFIG_INVALID")
+                return AgentConversationEnvelope(
+                    conversation=self._conversation(conversation),
+                    userMessage=self._message(active_message),
+                    streamUrl=f"/api/agent/conversations/{conversation.id}/events",
+                )
             user_message = AgentMessage(
                 conversationId=conversation.id,
                 sequence=conversation.lastMessageSequence + 1,
@@ -89,12 +133,63 @@ class AgentConversationService:
             )
             session.add(user_message)
             await session.flush()
+            provider = await session.scalar(
+                select(AiProviderConfig)
+                .where(
+                    AiProviderConfig.enabled.is_(True),
+                    AiProviderConfig.isDefault.is_(True),
+                    AiProviderConfig.lastTestStatus == AiConnectionStatus.HEALTHY,
+                    or_(
+                        AiProviderConfig.expiresAt.is_(None),
+                        AiProviderConfig.expiresAt >= date.today(),
+                    ),
+                )
+                .order_by(AiProviderConfig.priority, AiProviderConfig.id)
+                .limit(1)
+            )
+            config_id = uuid4()
+            task = await enqueue_task(
+                session,
+                DurableTaskKind.AGENT_EXECUTION,
+                f"agent-execution:{conversation.id}:{user_message.id}",
+                {
+                    "conversation_id": str(conversation.id),
+                    "user_message_id": str(user_message.id),
+                    "requested_by_user_id": str(owner_id),
+                    "execution_configuration_id": str(config_id),
+                },
+            )
+            session.add(
+                AgentExecutionConfig(
+                    id=config_id,
+                    taskId=task.id,
+                    conversationId=conversation.id,
+                    userMessageId=user_message.id,
+                    requestedByUserId=owner_id,
+                    providerConfigId=provider.id if provider else None,
+                    providerNameSnapshot=provider.name if provider else None,
+                    endpointSnapshot=provider.endpoint if provider else None,
+                    modelSnapshot=provider.model if provider else None,
+                    encryptedApiKeySnapshot=provider.encryptedApiKey if provider else None,
+                    timeoutSeconds=90,
+                )
+            )
             await session.refresh(conversation)
             await session.refresh(user_message)
         return AgentConversationEnvelope(
             conversation=self._conversation(conversation),
             userMessage=self._message(user_message),
             streamUrl=f"/api/agent/conversations/{conversation.id}/events",
+        )
+
+    async def events(
+        self,
+        identity: SessionIdentity,
+        conversation_id: UUID,
+        after: UUID | None,
+    ) -> AsyncIterator[bytes]:
+        return await open_event_stream(
+            self._sessions, conversation_id, UUID(identity.user.id), after
         )
 
     async def history(

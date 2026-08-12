@@ -160,6 +160,7 @@ async def finish_task(
     failure_code: str | None = None,
     failure_summary: str | None = None,
     retry_at: datetime | None = None,
+    cancelled: bool = False,
 ) -> DurableTaskStatus:
     """Complete or schedule a fenced attempt; never trusts a stale worker."""
 
@@ -169,13 +170,31 @@ async def finish_task(
     if task.status != DurableTaskStatus.RUNNING or task.leaseToken != lease_token:
         raise TaskConflict("task lease is stale")
     now = utc_now()
-    if success:
+    if cancelled:
+        status = DurableTaskStatus.CANCELLED
+        values = dict(
+            status=status,
+            completedAt=now,
+            nextRetryAt=None,
+            failureCode="AGENT_EXECUTION_CANCELLED",
+            failureSummary="execution cancelled at a safe provider boundary",
+            updatedAt=now,
+        )
+    elif success:
         status = DurableTaskStatus.SUCCEEDED
-        values = dict(status=status, completedAt=now, updatedAt=now)
+        values = dict(
+            status=status,
+            completedAt=now,
+            nextRetryAt=None,
+            failureCode=None,
+            failureSummary=None,
+            updatedAt=now,
+        )
     elif retry_at is not None and task.attemptCount < task.maxAttempts:
         status = DurableTaskStatus.RETRY_WAIT
         values = dict(
             status=status,
+            completedAt=None,
             nextRetryAt=retry_at,
             failureCode=failure_code,
             failureSummary=failure_summary,
@@ -186,6 +205,7 @@ async def finish_task(
         values = dict(
             status=status,
             completedAt=now,
+            nextRetryAt=None,
             failureCode=failure_code,
             failureSummary=failure_summary,
             updatedAt=now,
@@ -202,7 +222,6 @@ async def finish_task(
     if cast(CursorResult[object], result).rowcount != 1:
         raise TaskConflict("task lease is stale")
     return status
-
 
 async def reconcile(session: AsyncSession, *, now: datetime | None = None, limit: int = 100) -> int:
     """Rebuild dispatch facts and recover expired attempts from PostgreSQL alone."""

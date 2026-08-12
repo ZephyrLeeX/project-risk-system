@@ -16,6 +16,26 @@ from risk_platform.reliability.models import DurableTask, TaskOutbox
 from risk_platform.reliability.registry import task_definition
 
 
+class DurableTaskFailure(RuntimeError):
+    """A handler-controlled, safe durable-task outcome.
+
+    Handlers must not merely persist a domain error and return: doing so would
+    make the dispatcher mark the durable fact as successful.  This exception
+    carries only approved metadata and lets the dispatcher perform the fenced
+    state transition.
+    """
+
+    def __init__(self, code: str, *, retryable: bool, summary: str) -> None:
+        super().__init__(code)
+        self.code = code
+        self.retryable = retryable
+        self.summary = summary
+
+
+class DurableTaskCancelled(RuntimeError):
+    """A handler observed its persisted cancellation request at a safe boundary."""
+
+
 async def publish_outbox(session: AsyncSession, celery: Celery, *, limit: int = 100) -> int:
     """Publish after commit; marking published happens only after broker acceptance."""
 
@@ -69,9 +89,36 @@ async def execute_message(
                 )
                 return
         try:
-            await handler(task.payload)
+            if getattr(handler, "with_context", False):
+                await handler(  # type: ignore[call-arg]
+                    task.payload, task_id=task_id, lease_token=token
+                )
+            else:
+                await handler(task.payload)
+        except DurableTaskCancelled:
+            async with session_factory() as session, session.begin():
+                await finish_task(session, task_id, token, success=False, cancelled=True)
+        except DurableTaskFailure as exc:
+            async with session_factory() as session, session.begin():
+                await finish_task(
+                    session,
+                    task_id,
+                    token,
+                    success=False,
+                    failure_code=exc.code,
+                    failure_summary=exc.summary,
+                    retry_at=(
+                        datetime.now(UTC)
+                        + timedelta(
+                            seconds=task_definition(task.kind).retry_backoff_seconds
+                            * (2 ** max(task.attemptCount - 1, 0))
+                        )
+                        if exc.retryable
+                        else None
+                    ),
+                )
         except Exception as exc:
-            async with session.begin():
+            async with session_factory() as session, session.begin():
                 await finish_task(
                     session,
                     task_id,
@@ -85,7 +132,7 @@ async def execute_message(
                     ),
                 )
         else:
-            async with session.begin():
+            async with session_factory() as session, session.begin():
                 await finish_task(session, task_id, token, success=True)
 
 
@@ -118,4 +165,10 @@ def register_executor(
     del execute
 
 
-__all__ = ["execute_message", "publish_outbox", "register_executor"]
+__all__ = [
+    "DurableTaskCancelled",
+    "DurableTaskFailure",
+    "execute_message",
+    "publish_outbox",
+    "register_executor",
+]

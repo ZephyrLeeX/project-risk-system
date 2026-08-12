@@ -125,7 +125,6 @@ class AgentEvent(Base):
         CheckConstraint('"sequence" > 0', name="sequence_positive"),
         CheckConstraint("jsonb_typeof(payload) = 'object'", name="payload_object"),
     )
-
     id: Mapped[UUID] = mapped_column(UUIDType(as_uuid=True), primary_key=True, default=new_uuid)
     conversationId: Mapped[UUID] = mapped_column(
         UUIDType(as_uuid=True),
@@ -144,9 +143,74 @@ class AgentEvent(Base):
     )
     sequence: Mapped[int] = mapped_column(Integer, nullable=False)
     type: Mapped[AgentEventType] = mapped_column(
-        Enum(AgentEventType, name="AgentEventType", native_enum=True), nullable=False
+        Enum(
+            AgentEventType,
+            name="AgentEventType",
+            native_enum=True,
+            values_callable=lambda enum: [member.value for member in enum],
+        ),
+        nullable=False,
     )
     payload: Mapped[dict[str, JSONValue]] = mapped_column(JSONB, nullable=False)
+    createdAt: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True, precision=3),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+
+class AgentExecutionConfig(Base):
+    """Immutable, PostgreSQL-owned Provider configuration for one execution."""
+
+    __tablename__ = "agent_execution_configs"
+    __table_args__ = (
+        Index("agent_execution_configs_taskId_key", "taskId", unique=True),
+        Index("agent_execution_configs_userMessageId_key", "userMessageId", unique=True),
+        CheckConstraint(
+            '("providerConfigId" IS NULL AND "providerNameSnapshot" IS NULL '
+            'AND "endpointSnapshot" IS NULL AND "modelSnapshot" IS NULL '
+            'AND "encryptedApiKeySnapshot" IS NULL) OR '
+            '("providerConfigId" IS NOT NULL AND "providerNameSnapshot" IS NOT NULL '
+            'AND "endpointSnapshot" IS NOT NULL AND "modelSnapshot" IS NOT NULL '
+            'AND "encryptedApiKeySnapshot" IS NOT NULL)',
+            name="provider_snapshot_pair",
+        ),
+        CheckConstraint('"timeoutSeconds" = 90', name="timeout_seconds_fixed"),
+    )
+
+    id: Mapped[UUID] = mapped_column(UUIDType(as_uuid=True), primary_key=True, default=new_uuid)
+    taskId: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True),
+        ForeignKey("durable_tasks.id", ondelete="RESTRICT", onupdate="CASCADE"),
+        nullable=False,
+    )
+    conversationId: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True),
+        ForeignKey("agent_conversations.id", ondelete="RESTRICT", onupdate="CASCADE"),
+        nullable=False,
+    )
+    userMessageId: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True),
+        ForeignKey("agent_messages.id", ondelete="RESTRICT", onupdate="CASCADE"),
+        nullable=False,
+    )
+    requestedByUserId: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True),
+        ForeignKey("users.id", ondelete="RESTRICT", onupdate="CASCADE"),
+        nullable=False,
+    )
+    providerConfigId: Mapped[UUID | None] = mapped_column(
+        UUIDType(as_uuid=True),
+        ForeignKey("ai_provider_configs.id", ondelete="RESTRICT", onupdate="CASCADE"),
+    )
+    providerNameSnapshot: Mapped[str | None] = mapped_column(String(128))
+    endpointSnapshot: Mapped[str | None] = mapped_column(String(500))
+    modelSnapshot: Mapped[str | None] = mapped_column(String(128))
+    encryptedApiKeySnapshot: Mapped[str | None] = mapped_column(Text)
+    timeoutSeconds: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("90"))
+    cancellationRequestedAt: Mapped[datetime | None] = mapped_column(
+        TIMESTAMP(timezone=True, precision=3)
+    )
     createdAt: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True, precision=3),
         nullable=False,
@@ -208,6 +272,7 @@ __all__ = [
     "AgentConversation",
     "AgentEvent",
     "AgentEventType",
+    "AgentExecutionConfig",
     "AgentMessage",
     "AgentMessageRole",
 ]

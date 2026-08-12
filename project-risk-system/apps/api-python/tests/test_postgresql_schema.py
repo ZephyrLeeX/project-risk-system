@@ -123,9 +123,15 @@ def test_enum_values_and_single_alembic_head(
     # SQLAlchemy's default Enum configuration uses Python member names, while
     # ADR 0019 requires these SSE event values to be stored verbatim.
     expected_enums["AgentEventType"] = [event_type.value for event_type in AgentEventType]
+    # PostgreSQL enum additions are append-only; ADR 0028 adds the new kind at the end.
+    expected_enums["DurableTaskKind"] = [
+        value
+        for value in expected_enums["DurableTaskKind"]
+        if value != "AGENT_EXECUTION"
+    ] + ["AGENT_EXECUTION"]
     assert actual_enums == expected_enums
     config = Config(ROOT / "alembic.ini")
-    assert ScriptDirectory.from_config(config).get_heads() == ["20260812_0007"]
+    assert ScriptDirectory.from_config(config).get_heads() == ["20260812_0008"]
 
 
 def test_downgrade_policy_never_restores_forbidden_audit_schema(
@@ -133,9 +139,7 @@ def test_downgrade_policy_never_restores_forbidden_audit_schema(
 ) -> None:
     config = Config(ROOT / "alembic.ini")
     config.attributes["connection"] = migrated_postgresql_schema
-    with pytest.raises(
-        NotImplementedError, match="T027 immutable received-time facts"
-    ):
+    with pytest.raises(NotImplementedError, match="not destructively downgradable"):
         command.downgrade(config, "base")
     migrated_postgresql_schema.rollback()
     assert "users" in inspect(migrated_postgresql_schema).get_table_names()
@@ -159,6 +163,8 @@ def test_audit_enforcement_is_installed_by_t006(
         "audit_logs_reject_update",
         "agent_messages_assign_sequence_trigger",
         "agent_events_assign_sequence_trigger",
+        "agent_execution_configs_immutable_guard",
+        "agent_execution_configs_conversation_retention",
         "retention_holds_lifecycle_guard",
         "mail_source_handoffs_envelope_times_guard",
         "mail_messages_envelope_times_guard",

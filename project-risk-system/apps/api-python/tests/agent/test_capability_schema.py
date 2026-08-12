@@ -48,12 +48,14 @@ def capability_schema() -> Iterator[Connection]:
 
 
 def test_metadata_has_approved_agent_and_weekly_capability_tables() -> None:
+    assert DurableTaskKind.AGENT_EXECUTION.value == "AGENT_EXECUTION"
     assert DurableTaskKind.WEEKLY_REPORT_REBUILD.value == "WEEKLY_REPORT_REBUILD"
     expected_tables = {
         "agent_conversations",
         "agent_messages",
         "agent_events",
         "agent_confirmation_tokens",
+        "agent_execution_configs",
         "weekly_report_aggregates",
         "weekly_report_items",
     }
@@ -128,13 +130,14 @@ def test_latest_upgrade_has_one_head_and_capability_constraints(
     capability_schema: Connection,
 ) -> None:
     config = Config(ROOT / "alembic.ini")
-    assert ScriptDirectory.from_config(config).get_heads() == ["20260812_0007"]
+    assert ScriptDirectory.from_config(config).get_heads() == ["20260812_0008"]
     inspector = inspect(capability_schema)
     assert {
         "agent_conversations",
         "agent_messages",
         "agent_events",
         "agent_confirmation_tokens",
+        "agent_execution_configs",
         "weekly_report_aggregates",
         "weekly_report_items",
     }.issubset(inspector.get_table_names())
@@ -146,6 +149,17 @@ def test_latest_upgrade_has_one_head_and_capability_constraints(
         "agent_confirmation_tokens_idempotency_key_nonempty",
         "agent_confirmation_tokens_result_resource_pair",
     }
+
+    trigger_names = {
+        row[0]
+        for row in capability_schema.execute(
+            text(
+                "SELECT tgname FROM pg_trigger "
+                "WHERE tgrelid = 'agent_execution_configs'::regclass AND NOT tgisinternal"
+            )
+        )
+    }
+    assert "agent_execution_configs_immutable_guard" in trigger_names
     assert {
         item["name"] for item in inspector.get_check_constraints("weekly_report_aggregates")
     } == {
@@ -156,6 +170,75 @@ def test_latest_upgrade_has_one_head_and_capability_constraints(
         "weekly_report_aggregates_summary_object",
         "weekly_report_aggregates_week_start_is_monday",
     }
+
+
+def test_agent_execution_config_is_immutable_and_retention_deletes_secret_snapshot(
+    capability_schema: Connection,
+) -> None:
+    user_id = uuid.uuid4()
+    conversation_id = uuid.uuid4()
+    message_id = uuid.uuid4()
+    task_id = uuid.uuid4()
+    config_id = uuid.uuid4()
+    capability_schema.execute(
+        text(
+            'INSERT INTO users (id, username, "passwordHash", "displayName", "updatedAt") '
+            "VALUES (:id, :username, 'not-used', 'T029', CURRENT_TIMESTAMP)"
+        ),
+        {"id": user_id, "username": f"t029-config-{user_id}"},
+    )
+    capability_schema.execute(
+        text(
+            'INSERT INTO agent_conversations (id, "ownerUserId", "expiresAt", '
+            '"retentionConfigVersion", "updatedAt") VALUES (:id, :owner, '
+            "CURRENT_TIMESTAMP + interval '90 days', 'ADR0027_DEFAULT', CURRENT_TIMESTAMP)"
+        ),
+        {"id": conversation_id, "owner": user_id},
+    )
+    capability_schema.execute(
+        text(
+            'INSERT INTO agent_messages (id, "conversationId", sequence, role, content, '
+            '"traceId") VALUES (:id, :conversation, 1, CAST(\'USER\' AS "AgentMessageRole"), '
+            "'hello', 'trace')"
+        ),
+        {"id": message_id, "conversation": conversation_id},
+    )
+    capability_schema.execute(
+        text(
+            'INSERT INTO durable_tasks (id, kind, "idempotencyKey", payload, "maxAttempts", '
+            '"updatedAt") VALUES (:id, CAST(\'AGENT_EXECUTION\' AS "DurableTaskKind"), '
+            ":key, '{}'::jsonb, 3, CURRENT_TIMESTAMP)"
+        ),
+        {"id": task_id, "key": f"agent-execution:{conversation_id}:{message_id}"},
+    )
+    capability_schema.execute(
+        text(
+            'INSERT INTO agent_execution_configs (id, "taskId", "conversationId", '
+            '"userMessageId", "requestedByUserId") '
+            "VALUES (:id, :task, :conversation, :message, :user)"
+        ),
+        {
+            "id": config_id,
+            "task": task_id,
+            "conversation": conversation_id,
+            "message": message_id,
+            "user": user_id,
+        },
+    )
+    capability_schema.commit()
+
+    with pytest.raises(DBAPIError), capability_schema.begin_nested():
+        capability_schema.execute(
+            text('UPDATE agent_execution_configs SET "timeoutSeconds" = 89 WHERE id = :id'),
+            {"id": config_id},
+        )
+
+    capability_schema.execute(
+        text('DELETE FROM agent_conversations WHERE id = :id'), {"id": conversation_id}
+    )
+    assert capability_schema.scalar(
+        text("SELECT count(*) FROM agent_execution_configs WHERE id = :id"), {"id": config_id}
+    ) == 0
 
 
 def test_database_enforces_sequences_confirmation_uniqueness_and_week_start(

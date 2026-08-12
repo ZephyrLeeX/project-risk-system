@@ -6,6 +6,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi.responses import StreamingResponse
 
 from risk_platform.auth.service import SessionIdentity
 from risk_platform.rbac.guards import require_permissions
@@ -110,6 +111,26 @@ async def messages(
         await service.message_page(
             identity, conversation_id, after_sequence=after_sequence, limit=limit
         ),
+    )
+
+
+@router.get(
+    "/conversations/{conversation_id}/events",
+    response_class=StreamingResponse,
+    responses={200: {"content": {"text/event-stream": {}}}},
+)
+async def events(
+    request: Request,
+    conversation_id: UUID,
+    identity: Annotated[SessionIdentity, Depends(require_permissions("agent.use"))],
+    service: Annotated[AgentConversationService, Depends(get_agent_service)],
+    after: Annotated[UUID | None, Query()] = None,
+) -> StreamingResponse:
+    event_stream = await service.events(identity, conversation_id, after)
+    return StreamingResponse(
+        event_stream,
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 

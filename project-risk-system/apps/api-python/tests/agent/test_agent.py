@@ -12,7 +12,7 @@ from uuid import UUID
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from risk_platform.admin.models import User
@@ -22,6 +22,7 @@ from risk_platform.auth.schemas import AuthenticatedUser
 from risk_platform.auth.service import SessionIdentity
 from risk_platform.dashboard.service import DashboardService
 from risk_platform.db import create_database_engine, create_session_factory, transaction
+from risk_platform.reliability.models import DurableTask, DurableTaskKind, DurableTaskStatus
 from risk_platform.risks.service import RisksService
 from risk_platform.shared.errors import ApiError
 from risk_platform.todos.service import TodosService
@@ -135,6 +136,19 @@ def test_conversation_persistence_owner_scope_and_frozen_retention(
         assert created.userMessage.sequence == 1
         assert created.conversation.lastMessageSequence == 1
         assert created.conversation.expiresAt == created.conversation.createdAt + timedelta(days=90)
+
+        # T029 permits the next user message only after the prior durable execution is terminal.
+        async with transaction(database) as session:
+            task = await session.scalar(
+                select(DurableTask).where(
+                    DurableTask.kind == DurableTaskKind.AGENT_EXECUTION,
+                    DurableTask.payload["conversation_id"].as_string()
+                    == str(created.conversation.id),
+                )
+            )
+            assert task is not None
+            task.status = DurableTaskStatus.SUCCEEDED
+            task.completedAt = datetime.now(UTC)
 
         continued = await app_service.continue_conversation(
             identity(), created.conversation.id, "请给出风险详情"

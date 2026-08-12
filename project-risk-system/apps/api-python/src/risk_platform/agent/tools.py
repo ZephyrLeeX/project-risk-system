@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from typing import cast
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from risk_platform.auth.service import SessionIdentity
 from risk_platform.dashboard.service import DashboardService
@@ -20,7 +20,17 @@ from risk_platform.todos.schemas import ListTodosQuery
 from risk_platform.todos.service import TodosService
 from risk_platform.weekly_reports.service import WeeklyReportService, shanghai_week_start
 
-from .schemas import AgentToolHelp, AgentToolResult
+from .schemas import (
+    AgentToolHelp,
+    AgentToolResult,
+    EmptyToolArguments,
+    RiskDetailToolArguments,
+    RiskToolArguments,
+    TodoDetailToolArguments,
+    TodoToolArguments,
+    WeeklyDetailToolArguments,
+    WeeklyReportToolArguments,
+)
 
 ToolCallable = Callable[[SessionIdentity, Mapping[str, object]], Awaitable[object]]
 
@@ -31,6 +41,7 @@ class AgentTool:
     description: str
     required_permissions: tuple[str, ...]
     supports_preview: bool
+    request_model: type[BaseModel]
     call: ToolCallable
 
 
@@ -50,6 +61,7 @@ class AgentToolRegistry:
                 "读取当前授权范围的风险看板汇总",
                 ("dashboard.view",),
                 False,
+                EmptyToolArguments,
                 lambda i, _: dashboard.summary(i),
             ),
             AgentTool(
@@ -57,6 +69,7 @@ class AgentToolRegistry:
                 "读取当前授权范围的重点风险",
                 ("dashboard.view",),
                 False,
+                EmptyToolArguments,
                 lambda i, _: dashboard.focus(i),
             ),
             AgentTool(
@@ -64,6 +77,7 @@ class AgentToolRegistry:
                 "查询当前授权范围的风险列表",
                 ("dashboard.view",),
                 False,
+                RiskToolArguments,
                 self._risk_list(risks),
             ),
             AgentTool(
@@ -71,6 +85,7 @@ class AgentToolRegistry:
                 "读取当前授权范围的风险详情",
                 ("dashboard.view",),
                 False,
+                RiskDetailToolArguments,
                 self._risk_detail(risks),
             ),
             AgentTool(
@@ -78,6 +93,7 @@ class AgentToolRegistry:
                 "查询当前授权范围的管理者待办",
                 ("dashboard.view",),
                 False,
+                TodoToolArguments,
                 self._todo_list(todos),
             ),
             AgentTool(
@@ -85,6 +101,7 @@ class AgentToolRegistry:
                 "读取当前授权范围的待办详情",
                 ("dashboard.view",),
                 False,
+                TodoDetailToolArguments,
                 self._todo_detail(todos),
             ),
             AgentTool(
@@ -92,6 +109,7 @@ class AgentToolRegistry:
                 "读取当前授权范围的周报汇总",
                 ("dashboard.view",),
                 False,
+                WeeklyReportToolArguments,
                 self._weekly_report(weekly_reports),
             ),
             AgentTool(
@@ -99,6 +117,7 @@ class AgentToolRegistry:
                 "读取当前授权项目的周报详情",
                 ("dashboard.view",),
                 False,
+                WeeklyDetailToolArguments,
                 self._weekly_detail(weekly_reports),
             ),
         )
@@ -129,7 +148,11 @@ class AgentToolRegistry:
             raise ApiError(400, "AGENT_TOOL_NOT_ALLOWED", "Agent 工具不在授权白名单内")
         if not set(tool.required_permissions).issubset(identity.user.permissions):
             raise ApiError(403, "FORBIDDEN", "当前账号无权使用此 Agent 工具")
-        data = await tool.call(identity, arguments)
+        try:
+            validated = tool.request_model.model_validate(arguments)
+        except ValidationError:
+            raise ApiError(422, "VALIDATION_ERROR", "Agent 工具参数不符合约束") from None
+        data = await tool.call(identity, validated.model_dump(mode="python", exclude_none=True))
         if not isinstance(data, BaseModel):
             raise RuntimeError("Agent tool returned an unsupported result type")
         return AgentToolResult(
@@ -138,6 +161,19 @@ class AgentToolRegistry:
             dataAsOf=datetime.now(UTC),
             traceId=trace_id,
         )
+
+    def catalogue(self, identity: SessionIdentity) -> list[dict[str, object]]:
+        """Return the closed Provider catalogue without callable internals."""
+
+        return [
+            {
+                "name": tool.name,
+                "description": tool.description,
+                "argumentsSchema": tool.request_model.model_json_schema(),
+            }
+            for tool in self._tools
+            if set(tool.required_permissions).issubset(identity.user.permissions)
+        ]
 
     @staticmethod
     def _risk_list(service: RisksService) -> ToolCallable:
