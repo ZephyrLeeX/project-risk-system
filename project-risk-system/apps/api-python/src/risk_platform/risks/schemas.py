@@ -36,6 +36,8 @@ class RiskItem(BaseModel):
     sourceLabel: str
     reporterName: str | None
     weekCode: str | None
+    actualCollectedAmountYuan: str | None
+    remainingAmountYuan: str | None
     detectedAt: str
     updatedAt: str
 
@@ -44,6 +46,15 @@ class RiskDetail(RiskItem):
     resolvedAt: str | None
     resolvedByName: str | None
     resolutionReason: str | None
+    sameProjectRisks: list[SameProjectRisk]
+
+
+class SameProjectRisk(BaseModel):
+    id: UUID
+    title: str
+    level: ProjectRiskLevel
+    status: RiskStatus
+    categoryName: str
 
 
 class RiskPage(BaseModel):
@@ -58,6 +69,11 @@ class ResolvedRiskPage(RiskPage):
     owners: list[str]
     updatedAt: str | None
     dataScope: DataScopeType
+
+
+class RiskFilterOptions(BaseModel):
+    categories: list[RiskCategoryOption]
+    owners: list[str]
 
 
 class RiskQuery(StrictRequestModel):
@@ -139,6 +155,7 @@ __all__ = [
     "LifecycleRequest",
     "ResolvedRiskPage",
     "RiskDetail",
+    "RiskFilterOptions",
     "RiskItem",
     "RiskPage",
     "RiskQuery",

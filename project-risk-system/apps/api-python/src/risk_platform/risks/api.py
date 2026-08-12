@@ -14,6 +14,7 @@ from risk_platform.risks.schemas import (
     LifecycleRequest,
     ResolvedRiskPage,
     RiskDetail,
+    RiskFilterOptions,
     RiskPage,
     RiskQuery,
     TimelineDetail,
@@ -44,6 +45,15 @@ async def list_risks(
     result = await service.list(identity, query)
     assert isinstance(result, RiskPage)
     return ok(request, result)
+
+
+@router.get("/risks/options", response_model=ApiResponse[RiskFilterOptions])
+async def risk_options(
+    request: Request,
+    identity: Annotated[SessionIdentity, Depends(require_permissions("dashboard.view"))],
+    service: Annotated[RisksService, Depends(get_risks_service)],
+) -> ApiResponse[RiskFilterOptions]:
+    return ok(request, await service.filter_options(identity))
 
 
 @router.get("/risks/resolved", response_model=ApiResponse[ResolvedRiskPage])

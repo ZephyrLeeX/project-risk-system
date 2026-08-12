@@ -33,9 +33,11 @@ from risk_platform.risks.schemas import (
     ResolvedRiskPage,
     RiskCategoryOption,
     RiskDetail,
+    RiskFilterOptions,
     RiskItem,
     RiskPage,
     RiskQuery,
+    SameProjectRisk,
     TimelineDetail,
     TimelineItem,
     TimelinePage,
@@ -325,9 +327,51 @@ class RisksService:
     async def detail(self, identity: SessionIdentity, risk_id: UUID) -> RiskDetail:
         async with self._session_factory() as session:
             row = await self._risk_row(session, identity, risk_id)
+            same_project: Sequence[Any] = ()
+            if row is not None:
+                risk = cast(Risk, row[0])
+                same_project = (
+                    await session.execute(
+                        select(Risk.id, Risk.title, Risk.level, Risk.status, RiskCategory.name)
+                        .join(RiskCategory, RiskCategory.id == Risk.categoryId)
+                        .where(Risk.projectId == risk.projectId, Risk.id != risk.id)
+                        .order_by(Risk.status, Risk.level, Risk.updatedAt.desc())
+                        .limit(10)
+                    )
+                ).all()
         if row is None:
             raise ApiError(404, "NOT_FOUND", "风险不存在或不在当前数据范围内")
-        return _detail(row)
+        return _detail(row, same_project)
+
+    async def filter_options(self, identity: SessionIdentity) -> RiskFilterOptions:
+        async with self._session_factory() as session:
+            categories = (
+                await session.scalars(
+                    select(RiskCategory)
+                    .where(RiskCategory.isActive.is_(True))
+                    .order_by(RiskCategory.sortOrder, RiskCategory.name)
+                )
+            ).all()
+            owners = (
+                await session.scalars(
+                    select(Project.deliveryOwnerName)
+                    .where(
+                        project_scope_predicate(
+                            UUID(identity.user.id), DataScopeType(identity.user.dataScope)
+                        ),
+                        Project.deliveryOwnerName.is_not(None),
+                    )
+                    .distinct()
+                    .order_by(Project.deliveryOwnerName)
+                )
+            ).all()
+        return RiskFilterOptions(
+            categories=[
+                RiskCategoryOption(id=item.id, code=item.code, name=item.name)
+                for item in categories
+            ],
+            owners=[item for item in owners if item is not None],
+        )
 
     async def list(
         self, identity: SessionIdentity, query: RiskQuery, *, resolved: bool = False
@@ -654,12 +698,20 @@ def _item(row: tuple[Any, ...]) -> RiskItem:
         sourceLabel=_source_label(risk.sourceType.value),
         reporterName=reporter.displayName if reporter else risk.reporterNameSource,
         weekCode=risk.weekCode,
+        actualCollectedAmountYuan=(
+            f"{project.actualCollectedAmount:.2f}"
+            if project.actualCollectedAmount is not None
+            else None
+        ),
+        remainingAmountYuan=(
+            f"{project.remainingAmount:.2f}" if project.remainingAmount is not None else None
+        ),
         detectedAt=_iso(risk.detectedAt) or "",
         updatedAt=_iso(risk.updatedAt) or "",
     )
 
 
-def _detail(row: tuple[Any, ...]) -> RiskDetail:
+def _detail(row: tuple[Any, ...], same_project: Sequence[Any] = ()) -> RiskDetail:
     risk, _project, _department, _category, _reporter, resolved = row
     item = _item(row)
     return RiskDetail(
@@ -667,6 +719,12 @@ def _detail(row: tuple[Any, ...]) -> RiskDetail:
         resolvedAt=_iso(risk.resolvedAt),
         resolvedByName=resolved.displayName if resolved else None,
         resolutionReason=risk.resolutionReason,
+        sameProjectRisks=[
+            SameProjectRisk(
+                id=item[0], title=item[1], level=item[2], status=item[3], categoryName=item[4]
+            )
+            for item in same_project
+        ],
     )
 
 
