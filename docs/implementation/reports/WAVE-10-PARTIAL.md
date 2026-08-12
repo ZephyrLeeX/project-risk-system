@@ -12,9 +12,13 @@
 
 T020 remediation 已完成并通过 Independent Review。补齐 collection / department read endpoints，保持 five-scope filtering、金额 `null` 语义及 legacy enum validation；PostgreSQL 16 focused pytest 为 `7 passed`，Ruff、mypy、lock/diff checks 均为 `PASS`。详见 `docs/implementation/reports/T020.md`。
 
+T025：`DESIGN_GAP`。批准设计未定义附件允许类型、安全解析器以及 timeout / resource limits；未使用 legacy 行为自行补设计，未开始 T025 实现。
+
+T016：`DESIGN_GAP`。ADR 0019 只定义 overview 顶层字段和分段权限，未定义 health / attention / recentAudit item contract；未自行设计公开 schema，未开始实现。详见 `docs/implementation/reports/T016.md`。
+
 本次没有执行 T016、T025，没有处理 DG-04/DG-05/DG-08，没有启动 Wave 10 Integration 或下一 Wave。
 
 ## Wave 10 remaining readiness
 
-- T016：`READY`
-- T025：`READY`
+- T016：`DESIGN_GAP`
+- T025：`DESIGN_GAP`

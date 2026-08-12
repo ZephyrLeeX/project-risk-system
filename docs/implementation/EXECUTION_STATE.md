@@ -47,10 +47,12 @@ Current:
 - T022: REVIEW_PASSED
 - T023: REVIEW_PASSED
 - Wave 8: PASS (T022 import-cycle fix reviewed; full pytest and PostgreSQL/Alembic integration validation passed)
-- Current Wave: Wave 10 IN_PROGRESS (T019/T020 REVIEW_PASSED; T016/T025 remain READY); Wave 9 complete (T018/T024 REVIEW_PASSED; Integration PASS).
+- Current Wave: Wave 10 IN_PROGRESS (T019/T020 REVIEW_PASSED; T016/T025 DESIGN_GAP); Wave 9 complete (T018/T024 REVIEW_PASSED; Integration PASS).
 - Wave 10 readiness sync: DG-01 is resolved by ADR 0019; the stale T016 blocker was removed and T016 is READY. DG-04/DG-05/DG-08 do not block the Wave 10 READY tasks.
 - T019: REVIEW_PASSED (selected as the single Wave 10 work unit; see `docs/implementation/reports/T019.md`).
 - T020: REVIEW_PASSED (collection/department remediation, Independent Review and PostgreSQL 16 focused validation complete; see `docs/implementation/reports/T020.md`).
+- T025: DESIGN_GAP (approved attachment type/parser/timeout/resource policy is missing; legacy behavior must not be used to self-design the boundary).
+- T016: DESIGN_GAP (approved admin overview item contract is missing; endpoint schema must not be self-designed).
 - T018: REVIEW_PASSED (checkpoint `b8a5a5f`; see `docs/implementation/reports/T018.md`).
 - T024: REVIEW_PASSED (DG-10 resolved; implementation and Independent Review complete; checkpoint `597a43b830e2e639d17b775c069a8fbfb896efd4`).
 - Wave 9 Integration: PASS; the six stale test-baseline assertions were updated only in tests, followed by full validation. No production redesign or next-Wave task started.

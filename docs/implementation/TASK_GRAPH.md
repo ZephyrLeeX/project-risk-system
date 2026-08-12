@@ -104,7 +104,7 @@ Tasks in a wave may run concurrently only when every dependency from an earlier 
 | T013 | READY | T003, T006, T010 | Migrate versioned system configuration and project aliases. |
 | T014 | READY | T003, T006, T007, T010 | Migrate AI Provider administration, connection tests, strategy and safe call logs. |
 | T015 | READY | T006, T010 | Migrate audit query, integrity and metadata-only export APIs. |
-| T016 | READY | T008, T011-T015, T018, T024 | Implement real management health, attention and audit overview data. |
+| T016 | DESIGN_GAP | T008, T011-T015, T018, T024 | Blocked: approved admin overview item contract is missing. |
 | T017 | READY | T003, T006, T008, T010 | Move safe Excel upload and three-sheet preview parsing into durable workers. |
 | T018 | READY | T017, T022 | Migrate atomic import commit, history, source download and supplemental matching through shared risk/todo services. |
 | T019 | REVIEW_PASSED | T018 | Migrate safe import rollback and later-write conflict handling. |
@@ -113,7 +113,7 @@ Tasks in a wave may run concurrently only when every dependency from an earlier 
 | T022 | READY | T003, T006, T010, T021 | Migrate reusable risk mutation, two-state lifecycle and append-only timeline behavior. |
 | T023 | READY | T002, T003, T006, T007, T010, T013 | Migrate encrypted per-user mailbox configuration and connection testing. |
 | T024 | READY | T008, T013, T023 | Implement durable scheduled/manual/retry UID synchronization. |
-| T025 | TODO | T007, T013, T024 | Parse mail and attachments safely and match standard projects/aliases. |
+| T025 | DESIGN_GAP | T007, T013, T024 | Blocked: approved attachment type/parser/timeout/resource policy is missing. |
 | T026 | TODO | T006, T007, T008, T014, T022, T025 | Extract, review and transactionally publish mail risk candidates. |
 | T027 | TODO | T004, T010, T020, T025, T026 | Build and expose authorized current-week report aggregates/details. |
 | T028 | TODO | T004, T010, T014, T020, T022, T026, T027 | Persist Agent conversations and expose authorized read-only business tools. |

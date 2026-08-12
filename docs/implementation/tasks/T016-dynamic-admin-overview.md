@@ -1,7 +1,7 @@
 # T016 — Implement dynamic management overview
 - **Task ID:** T016
 - **Title:** Implement dynamic management overview
-- **Status:** READY
+- **Status:** DESIGN_GAP
 - **Objective:** Replace fixed admin health, attention and audit activity with one approved dynamic backend contract.
 - **Design baseline:** Design §§3,9,10(4).
 - **Authoritative source references:** ADR 0019; `project-risk-system/apps/web/src/views/admin/AdminDashboardView.vue`; existing admin/import/provider/audit API modules.
@@ -17,3 +17,7 @@
 - **Required deliverables:** Endpoint/service/schemas/tests.
 - **Stop conditions:** An ADR 0019 section cannot be satisfied through the declared source modules.
 - **Known integration risks:** Slow external health checks and false aggregate “healthy”.
+
+## DESIGN_GAP
+
+ADR 0019 仅定义 `/api/admin/overview` 的顶层字段与分段权限，未定义 `health`、`attention`、`recentAudit` 的 item schema、状态枚举、排序、link target 和 unavailable/error 语义。现有前端仍使用固定数组，TypeScript contract 也没有该 API 的对应类型。新增这些公开 contract 字段将构成自行补设计，T016 保持 `DESIGN_GAP`，等待批准 addendum。
