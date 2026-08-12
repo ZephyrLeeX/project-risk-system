@@ -7,7 +7,8 @@
 ## Readiness
 
 - T026：`REVIEW_PASSED`。PostgreSQL 16、Redis broker 与真实 Celery `solo` worker 通过随机临时 schema
-  隔离完成 fake Provider acceptance/negative validation；已完成 Independent Review 和 checkpoint。
+  隔离完成 fake Provider acceptance/negative validation；已完成 Independent Review 和 checkpoint
+  `76c5ef6cb50705b63ad86e7a9b05d00bf9a45da4`。
 - T042：其直接依赖已完成，但继续为 `BLOCKED`，原因是 `DG-04`；本次未处理该 gap。
 
 ## 本工作单元
