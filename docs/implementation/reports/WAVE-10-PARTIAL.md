@@ -3,7 +3,7 @@
 - **Wave：** Wave 10
 - **状态：** `IN_PROGRESS`
 - **日期：** 2026-08-11
-- **已执行：** T016、T019、T020
+- **已执行：** T016、T019、T020、T025
 - **本次代码 checkpoint：** `cbd5569869cb36c5b7ae93645edeeecfbfb49842`
 
 ## 结果
@@ -12,7 +12,7 @@
 
 T020 remediation 已完成并通过 Independent Review。补齐 collection / department read endpoints，保持 five-scope filtering、金额 `null` 语义及 legacy enum validation；PostgreSQL 16 focused pytest 为 `7 passed`，Ruff、mypy、lock/diff checks 均为 `PASS`。详见 `docs/implementation/reports/T020.md`。
 
-T025：`DESIGN_GAP`。批准设计未定义附件允许类型、安全解析器以及 timeout / resource limits；未使用 legacy 行为自行补设计，未开始 T025 实现。
+T025：`REVIEW_PASSED`。ADR 0024 固定附件安全策略已实施；Independent Review、Ruff、mypy、focused pytest、lock/diff checks 均为 `PASS`。详见 `docs/implementation/reports/T025.md`。
 
 T016：`REVIEW_PASSED`。ADR 0023 已定义 item contract；dynamic overview production implementation、Independent Review、PostgreSQL 16 focused validation 与代码 checkpoint 已完成。详见 `docs/implementation/reports/T016.md`。
 
@@ -21,4 +21,4 @@ T016：`REVIEW_PASSED`。ADR 0023 已定义 item contract；dynamic overview pro
 ## Wave 10 remaining readiness
 
 - T016：`REVIEW_PASSED`
-- T025：`DESIGN_GAP`
+- T025：`REVIEW_PASSED`

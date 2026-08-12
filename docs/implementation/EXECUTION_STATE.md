@@ -47,11 +47,11 @@ Current:
 - T022: REVIEW_PASSED
 - T023: REVIEW_PASSED
 - Wave 8: PASS (T022 import-cycle fix reviewed; full pytest and PostgreSQL/Alembic integration validation passed)
-- Current Wave: Wave 10 IN_PROGRESS (T016/T019/T020 REVIEW_PASSED; T025 READY); Wave 9 complete (T018/T024 REVIEW_PASSED; Integration PASS).
+- Current Wave: Wave 10 IN_PROGRESS (T016/T019/T020/T025 REVIEW_PASSED); Wave 9 complete (T018/T024 REVIEW_PASSED; Integration PASS).
 - Wave 10 design resolution: ADR 0023 supplies the missing T016 admin overview item contract. No Wave 10 Integration or next-Wave work was started. DG-04/DG-05/DG-08 remain out of scope.
 - T019: REVIEW_PASSED (selected as the single Wave 10 work unit; see `docs/implementation/reports/T019.md`).
 - T020: REVIEW_PASSED (collection/department remediation, Independent Review and PostgreSQL 16 focused validation complete; see `docs/implementation/reports/T020.md`).
-- T025: READY (DG-11 resolved by ADR 0024's approved fixed attachment safety policy; implementation has not started).
+- T025: REVIEW_PASSED (ADR 0024 attachment safety implementation, Independent Review and validation complete; code checkpoint `ec403f99c606ba7c6ff429b0f375c9cc85d04439`).
 - T016: REVIEW_PASSED (ADR 0023 admin overview implementation, Independent Review and PostgreSQL 16 focused validation complete; code checkpoint `cbd5569869cb36c5b7ae93645edeeecfbfb49842`).
 - T018: REVIEW_PASSED (checkpoint `b8a5a5f`; see `docs/implementation/reports/T018.md`).
 - T024: REVIEW_PASSED (DG-10 resolved; implementation and Independent Review complete; checkpoint `597a43b830e2e639d17b775c069a8fbfb896efd4`).
@@ -68,6 +68,7 @@ Current:
 
 Checkpoint commits:
 - T025 design: ad37f90a6ae0cb643a19c09d9c91b02b8eacbad7
+- T025: ec403f99c606ba7c6ff429b0f375c9cc85d04439
 - T010: e30dd45
 - T004: 1b4cfa8
 - T011: baa3208
