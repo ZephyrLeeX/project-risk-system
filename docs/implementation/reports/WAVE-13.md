@@ -29,7 +29,7 @@ Full pytest 的 1 个 skip 是既有 `tests/audit/test_audit_query_export.py` �
 
 ## Checkpoint
 
-- **Final checkpoint：** 本报告和状态更新的 checkpoint commit 创建后回填。
+- **Final checkpoint：** `841a38ce37c8e34bff513b72f6236d64303d9b6b`
 
 ## Next-wave readiness
 
