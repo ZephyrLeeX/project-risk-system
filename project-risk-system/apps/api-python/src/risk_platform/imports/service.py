@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 
@@ -16,6 +17,7 @@ from risk_platform.imports.storage import WorkbookStorage
 from risk_platform.model_types import new_uuid
 from risk_platform.reliability.core import enqueue_task
 from risk_platform.reliability.models import DurableTaskKind
+from risk_platform.retention.service import RetentionConfigurationRepository
 
 
 class ImportPreviewService:
@@ -48,6 +50,8 @@ class ImportPreviewService:
                 if existing is not None:
                     return existing
                 batch_id = new_uuid()
+                retention = await RetentionConfigurationRepository(session).current()
+                created_at = datetime.now(UTC)
                 key, _ = await self._storage.save(batch_id, safe_name, content)
                 task = await enqueue_task(
                     session,
@@ -67,6 +71,9 @@ class ImportPreviewService:
                     warningRows=0,
                     errorRows=0,
                     uploadedById=uploaded_by,
+                    createdAt=created_at,
+                    sourceExpiresAt=retention.source_expires_at(created_at),
+                    retentionConfigVersion=retention.version,
                 )
                 session.add(batch)
                 return batch

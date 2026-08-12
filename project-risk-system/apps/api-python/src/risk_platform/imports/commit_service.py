@@ -42,6 +42,7 @@ from risk_platform.imports.storage import WorkbookStorage
 from risk_platform.model_types import JSONValue
 from risk_platform.projects.models import Project, ProjectStatus
 from risk_platform.projects.models import ProjectRiskLevel as ProjectDomainRiskLevel
+from risk_platform.retention.service import RetentionConfigurationRepository
 from risk_platform.risks.models import ProjectRiskLevel as RiskProjectRiskLevel
 from risk_platform.risks.models import Risk, RiskCategory, RiskSourceType, RiskStatus
 from risk_platform.risks.service import RiskCreate, RisksService
@@ -461,6 +462,12 @@ class ImportCommitService:
                 batch.status = ImportBatchStatus.IMPORTED
                 batch.createdRows, batch.updatedRows = created, updated
                 batch.confirmedById, batch.confirmedAt = UUID(identity.user.id), now
+                retention = await RetentionConfigurationRepository(session).for_version(
+                    batch.retentionConfigVersion
+                )
+                if retention is None:
+                    raise ApiError(409, "RETENTION_FACT_INVALID", "导入批次留存事实无效、不能确认")
+                batch.rollbackProtectedUntil = retention.rollback_protected_until(now)
                 await AuditService(session).record_success(
                     actor_id=UUID(identity.user.id),
                     actor_type=AuditActorType.USER,
@@ -603,6 +610,7 @@ class ImportCommitService:
                     await session.delete(department)
             batch.status = ImportBatchStatus.ROLLED_BACK
             batch.rolledBackById, batch.rolledBackAt = user_id, datetime.now(UTC)
+            batch.rollbackProtectedUntil = None
             await AuditService(session).record_success(
                 actor_id=user_id,
                 actor_type=AuditActorType.USER,

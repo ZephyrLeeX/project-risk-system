@@ -20,6 +20,7 @@ from risk_platform.auth.service import SessionIdentity
 from risk_platform.db import transaction
 from risk_platform.model_types import JSONValue
 from risk_platform.projects.models import Project, ProjectAlias, ProjectStatus
+from risk_platform.retention.configuration import RetentionSettings
 from risk_platform.risks.models import Risk, RiskCategory
 from risk_platform.shared.errors import ApiError
 from risk_platform.system_config.models import ProjectRiskLevel, RiskLevelRule, SystemConfigRelease
@@ -55,6 +56,7 @@ DEFAULT_NOTIFICATIONS = {
     "importFailure": True,
     "abnormalLogin": True,
 }
+DEFAULT_RETENTION = RetentionSettings().model_dump()
 IMPACT_SCOPE = ["邮箱同步", "AI风险提取", "Web风险看板", "Agent智能对话", "新建登录会话"]
 
 
@@ -154,6 +156,7 @@ class SystemConfigService:
                         "mail": payload.mail.model_dump(),
                         "security": payload.security.model_dump(),
                         "notifications": payload.notifications.model_dump(),
+                        "retention": payload.retention.model_dump(),
                     },
                 )
                 version = self._next_version(latest.version if latest else "V12.3")
@@ -397,6 +400,7 @@ class SystemConfigService:
             "mail": (settings or {}).get("mail", DEFAULT_MAIL),
             "security": (settings or {}).get("security", DEFAULT_SECURITY),
             "notifications": (settings or {}).get("notifications", DEFAULT_NOTIFICATIONS),
+            "retention": (settings or {}).get("retention", DEFAULT_RETENTION),
         }
         for row in categories:
             risk_count = await session.scalar(
@@ -455,6 +459,7 @@ class SystemConfigService:
             "mail": {**DEFAULT_MAIL, **value.get("mail", {})},
             "security": {**DEFAULT_SECURITY, **value.get("security", {})},
             "notifications": {**DEFAULT_NOTIFICATIONS, **value.get("notifications", {})},
+            "retention": {**DEFAULT_RETENTION, **value.get("retention", {})},
         }
 
     @staticmethod

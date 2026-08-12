@@ -125,7 +125,7 @@ def test_enum_values_and_single_alembic_head(
     expected_enums["AgentEventType"] = [event_type.value for event_type in AgentEventType]
     assert actual_enums == expected_enums
     config = Config(ROOT / "alembic.ini")
-    assert ScriptDirectory.from_config(config).get_heads() == ["20260811_0005"]
+    assert ScriptDirectory.from_config(config).get_heads() == ["20260812_0006"]
 
 
 def test_downgrade_policy_never_restores_forbidden_audit_schema(
@@ -134,7 +134,7 @@ def test_downgrade_policy_never_restores_forbidden_audit_schema(
     config = Config(ROOT / "alembic.ini")
     config.attributes["connection"] = migrated_postgresql_schema
     with pytest.raises(
-        NotImplementedError, match="T024 migration is not destructively downgradable"
+        NotImplementedError, match="T042 migration is not destructively downgradable"
     ):
         command.downgrade(config, "base")
     migrated_postgresql_schema.rollback()
@@ -172,11 +172,11 @@ def test_t006_migration_works_without_public_search_path(
 
     migrated_postgresql_schema.execute(
         text(
-            '''INSERT INTO "audit_logs"
+            """INSERT INTO "audit_logs"
             ("id", "actorType", "module", "action", "resourceType", "resourceId",
              "result", "traceId", "createdAt")
             VALUES (:id, 'SYSTEM', 'T006', 'SEARCH_PATH.PROBE', 'AUDIT_LOG', 'probe',
-                    'SUCCESS', :trace_id, CURRENT_TIMESTAMP)'''
+                    'SUCCESS', :trace_id, CURRENT_TIMESTAMP)"""
         ),
         {"id": uuid.uuid4(), "trace_id": str(uuid.uuid4())},
     )

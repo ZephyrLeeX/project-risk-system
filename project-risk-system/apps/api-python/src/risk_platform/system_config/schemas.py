@@ -7,9 +7,10 @@ from uuid import UUID
 
 from pydantic import Field, model_validator
 
+from risk_platform.retention.configuration import RetentionSettings
 from risk_platform.shared.http import StrictRequestModel
 
-ConfigModule = Literal["ALL", "RISK", "MAIL", "ALIAS", "SECURITY", "NOTIFICATION"]
+ConfigModule = Literal["ALL", "RISK", "MAIL", "ALIAS", "SECURITY", "NOTIFICATION", "RETENTION"]
 RiskLevel = Literal["HIGH", "MEDIUM", "LOW"]
 
 
@@ -80,6 +81,7 @@ class ConfigSnapshot(StrictRequestModel):
     mail: MailSettings
     security: SecuritySettings
     notifications: NotificationSettings
+    retention: RetentionSettings = Field(default_factory=RetentionSettings)
 
 
 class PublishRequest(ConfigSnapshot):

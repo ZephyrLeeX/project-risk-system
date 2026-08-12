@@ -75,6 +75,7 @@ class AgentConversation(Base):
     expiresAt: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True, precision=3), nullable=False
     )
+    retentionConfigVersion: Mapped[str] = mapped_column(String(32), nullable=False)
     lastMessageSequence: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("0")
     )

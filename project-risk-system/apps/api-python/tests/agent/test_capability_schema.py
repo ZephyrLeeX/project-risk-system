@@ -116,9 +116,7 @@ def test_t004_named_constraints_and_indexes_fit_postgresql_identifier_limit() ->
             )
             assert isinstance(name, str)
             names.append(
-                f"{table_name.value}_{name}"
-                if constraint.func.attr == "CheckConstraint"
-                else name
+                f"{table_name.value}_{name}" if constraint.func.attr == "CheckConstraint" else name
             )
 
     assert names
@@ -130,7 +128,7 @@ def test_latest_upgrade_has_one_head_and_capability_constraints(
     capability_schema: Connection,
 ) -> None:
     config = Config(ROOT / "alembic.ini")
-    assert ScriptDirectory.from_config(config).get_heads() == ["20260811_0005"]
+    assert ScriptDirectory.from_config(config).get_heads() == ["20260812_0006"]
     inspector = inspect(capability_schema)
     assert {
         "agent_conversations",
@@ -184,8 +182,10 @@ def test_database_enforces_sequences_confirmation_uniqueness_and_week_start(
     )
     capability_schema.execute(
         text(
-            'INSERT INTO agent_conversations (id, "ownerUserId", "expiresAt", "updatedAt") '
-            "VALUES (:id, :owner_id, CURRENT_TIMESTAMP + interval '90 days', CURRENT_TIMESTAMP)"
+            'INSERT INTO agent_conversations '
+            '(id, "ownerUserId", "expiresAt", "retentionConfigVersion", "updatedAt") '
+            "VALUES (:id, :owner_id, CURRENT_TIMESTAMP + interval '90 days', "
+            "'ADR0027_DEFAULT', CURRENT_TIMESTAMP)"
         ),
         {"id": conversation_id, "owner_id": user_id},
     )

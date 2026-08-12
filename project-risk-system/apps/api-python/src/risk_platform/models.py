@@ -33,6 +33,7 @@ _MODEL_MODULES = (
     "projects",
     "rbac",
     "reliability",
+    "retention",
     "risks",
     "system_config",
     "timeline",

@@ -52,6 +52,9 @@ def test_metadata_has_final_prisma_tables_with_approved_audit_override() -> None
         "createdAt",
     }
     expected["import_batches"].add("taskId")
+    expected["import_batches"].update(
+        {"sourceExpiresAt", "rollbackProtectedUntil", "retentionConfigVersion"}
+    )
     expected["mail_sync_batches"].add("taskId")
     expected["mailbox_configs"].add("uidValidity")
     expected["mail_sync_batches"].update(
@@ -99,6 +102,7 @@ def test_metadata_has_final_prisma_tables_with_approved_audit_override() -> None
         "createdAt",
         "updatedAt",
         "expiresAt",
+        "retentionConfigVersion",
         "lastMessageSequence",
         "lastEventSequence",
     }
@@ -184,7 +188,24 @@ def test_metadata_has_final_prisma_tables_with_approved_audit_override() -> None
         "createdAt",
         "updatedAt",
     }
-    assert len(expected) == 37
+    expected["retention_holds"] = {
+        "id",
+        "resourceType",
+        "resourceId",
+        "reason",
+        "status",
+        "createdAt",
+        "createdById",
+        "createdTraceId",
+        "expiresAt",
+        "releasedAt",
+        "releasedById",
+        "releasedTraceId",
+        "expiredAt",
+        "expiredById",
+        "expiredTraceId",
+    }
+    assert len(expected) == 38
     assert set(metadata.tables) == set(expected)
     for table_name, columns in expected.items():
         assert set(metadata.tables[table_name].columns.keys()) == columns
@@ -222,7 +243,7 @@ def test_prisma_python_side_defaults_are_complete_without_ddl_drift() -> None:
         for table in metadata.tables.values()
         if "id" in table.c and len(table.primary_key.columns) == 1
     ]
-    assert len(uuid_default_columns) == 34
+    assert len(uuid_default_columns) == 35
     assert all(column.default is not None for column in uuid_default_columns)
     assert all(column.server_default is None for column in uuid_default_columns)
 

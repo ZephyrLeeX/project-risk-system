@@ -21,6 +21,8 @@ from risk_platform.db import (
     database_url,
     dispose_database_engine,
 )
+from risk_platform.retention.api import router as retention_router
+from risk_platform.retention.service import RetentionHoldService
 from risk_platform.risks.api import router as risks_router
 from risk_platform.risks.service import RisksService
 from risk_platform.shared.crypto import KeyRing, SecretCipher, SecretCryptoError
@@ -48,6 +50,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.auth_service = AuthService.from_settings(sessions, app.state.settings)
     app.state.risks_service = RisksService(sessions)
     app.state.dashboard_service = DashboardService(sessions)
+    app.state.retention_hold_service = RetentionHoldService(sessions)
 
     async def api_check() -> None:
         if (
@@ -68,7 +71,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = create_app(
     composition=AppComposition(
-        routers=(dashboard_router, risks_router, overview_router),
+        routers=(dashboard_router, risks_router, overview_router, retention_router),
         lifespan=_lifespan,
     )
 )

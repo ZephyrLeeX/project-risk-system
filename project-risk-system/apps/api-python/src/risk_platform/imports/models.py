@@ -38,6 +38,8 @@ class ImportBatch(Base):
     __tablename__ = "import_batches"
     __table_args__ = (
         Index("import_batches_fileHash_idx", "fileHash"),
+        Index("import_batches_sourceExpiresAt_idx", "sourceExpiresAt"),
+        Index("import_batches_rollbackProtectedUntil_idx", "rollbackProtectedUntil"),
         Index("import_batches_status_createdAt_idx", "status", "createdAt"),
         Index("import_batches_uploadedById_idx", "uploadedById"),
     )
@@ -109,6 +111,13 @@ class ImportBatch(Base):
         ForeignKey("users.id", ondelete="SET NULL", onupdate="CASCADE"),
         nullable=True,
     )
+    sourceExpiresAt: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True, precision=3), nullable=False
+    )
+    rollbackProtectedUntil: Mapped[datetime | None] = mapped_column(
+        TIMESTAMP(timezone=True, precision=3), nullable=True
+    )
+    retentionConfigVersion: Mapped[str] = mapped_column(String(32), nullable=False)
     createdAt: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True, precision=3),
         nullable=False,
