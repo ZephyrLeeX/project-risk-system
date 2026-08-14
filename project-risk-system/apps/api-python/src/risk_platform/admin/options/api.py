@@ -6,7 +6,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
 
-from risk_platform.admin.options.schemas import DepartmentResponse
+from risk_platform.admin.options.schemas import DepartmentResponse, ProjectOptionResponse
 from risk_platform.admin.options.service import AdminOptionsService
 from risk_platform.auth.service import SessionIdentity
 from risk_platform.rbac.guards import require_permissions
@@ -30,6 +30,16 @@ async def list_departments(
 ) -> ApiResponse[list[DepartmentResponse]]:
     del identity
     return ok(request, await service.list_departments())
+
+
+@router.get("/projects/options", response_model=ApiResponse[list[ProjectOptionResponse]])
+async def list_projects(
+    request: Request,
+    identity: Annotated[SessionIdentity, Depends(require_permissions("admin.scope.manage"))],
+    service: Annotated[AdminOptionsService, Depends(get_admin_options_service)],
+) -> ApiResponse[list[ProjectOptionResponse]]:
+    del identity
+    return ok(request, await service.list_projects())
 
 
 __all__ = ["get_admin_options_service", "router"]

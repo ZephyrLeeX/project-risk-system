@@ -11,4 +11,15 @@ class DepartmentResponse(BaseModel):
     name: str
 
 
-__all__ = ["DepartmentResponse"]
+class ProjectOptionResponse(BaseModel):
+    """Compatible `ProjectOption` contract for the project selector."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    externalCode: str | None
+    name: str
+    departmentName: str | None
+
+
+__all__ = ["DepartmentResponse", "ProjectOptionResponse"]
