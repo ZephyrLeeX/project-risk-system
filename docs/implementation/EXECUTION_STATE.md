@@ -117,6 +117,7 @@ Checkpoint commits:
 - Wave 17 final checkpoint: `5aa4a35` (metadata recorded in this report commit)
 - T032: `b9a172c2aad3b68239c32dc4ac6a4c462bd85c46` (OpenAPI authority re-frozen at 93 paths / 243 schemas incl. T043/T044 surface; compat PASS; regeneration zero diff; metadata recorded in the following report commit)
 - Wave 18 final checkpoint: `4368f025b7f41ef14b0bd2e286d8a4bc8cb78d96` (metadata recorded in this report commit)
+- T033 DESIGN_GAP metadata checkpoint: `d1df28be5696c3218654dba45be39e796f7123ef` (readiness stop; no code; frozen OpenAPI authority defect blocks T033/T034 as generated-type consumers)
 - T010: e30dd45
 - T004: 1b4cfa8
 - T011: baa3208
