@@ -25,6 +25,7 @@ dependencies = [
 
 [project.scripts]
 risk-platform-seed = "risk_platform.seed:main"
+risk-platform-openapi = "risk_platform.openapi_export:main"
 
 [dependency-groups]
 dev = [

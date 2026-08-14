@@ -1214,3 +1214,14 @@ export interface MailRiskReviewOptions {
   categories: Array<{ id: string; name: string }>;
   levels: Array<{ value: ProjectRiskLevel; label: string }>;
 }
+
+/**
+ * Frozen FastAPI OpenAPI authority (T032).
+ *
+ * The generated module is the sole post-cutover contract authority and is
+ * rebuilt from `openapi/openapi.json` by `pnpm contracts:gen`; it must never
+ * be hand-edited. The hand-written types above remain the transitional
+ * compatibility baseline until the frontend cutovers (T033/T034) consume the
+ * generated surface directly.
+ */
+export type * as OpenApi from "./generated/openapi.js";
