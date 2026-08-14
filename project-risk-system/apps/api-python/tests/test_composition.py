@@ -25,6 +25,7 @@ from risk_platform.dashboard.service import DashboardService
 from risk_platform.db import create_database_engine, create_session_factory
 from risk_platform.mailbox.extraction import MailRiskCandidateService
 from risk_platform.mailbox.service import MailboxService
+from risk_platform.mailbox.sync_results import MailSyncResultsService
 from risk_platform.reliability.models import DurableTaskKind
 from risk_platform.retention.service import RetentionHoldService
 from risk_platform.risks.service import RisksService
@@ -48,6 +49,7 @@ EXPECTED_SERVICE_NAMES = frozenset(
         "system_config_service",
         "mailbox_service",
         "mail_risk_candidate_service",
+        "mail_sync_results_service",
         "import_preview_service",
         "import_commit_service",
         "admin_overview_service",
@@ -141,6 +143,7 @@ def test_build_services_provides_every_router_dependency(tmp_path: Path) -> None
     assert isinstance(services["dashboard_service"], DashboardService)
     assert isinstance(services["mailbox_service"], MailboxService)
     assert isinstance(services["mail_risk_candidate_service"], MailRiskCandidateService)
+    assert isinstance(services["mail_sync_results_service"], MailSyncResultsService)
     assert isinstance(services["ai_providers_service"], AiProvidersService)
     assert isinstance(services["agent_conversation_service"], AgentConversationService)
     assert isinstance(services["agent_tool_registry"], AgentToolRegistry)

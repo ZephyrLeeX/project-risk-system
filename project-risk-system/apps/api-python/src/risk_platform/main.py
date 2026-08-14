@@ -28,6 +28,7 @@ from risk_platform.db import (
 from risk_platform.imports.api import router as imports_router
 from risk_platform.mailbox.api import candidate_router
 from risk_platform.mailbox.api import router as mailbox_router
+from risk_platform.mailbox.sync_results import router as mailbox_sync_results_router
 from risk_platform.retention.api import router as retention_router
 from risk_platform.risks.api import router as risks_router
 from risk_platform.system_config.api import router as system_config_router
@@ -79,6 +80,7 @@ app = create_app(
             retention_router,
             mailbox_router,
             candidate_router,
+            mailbox_sync_results_router,
             imports_router,
             agent_router,
         ),

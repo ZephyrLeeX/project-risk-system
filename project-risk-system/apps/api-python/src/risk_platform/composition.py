@@ -49,6 +49,7 @@ from risk_platform.mailbox.extraction import MailRiskCandidateService, MailRiskE
 from risk_platform.mailbox.parse_worker import MailParseWorker
 from risk_platform.mailbox.service import MailboxService
 from risk_platform.mailbox.sync import MailboxSyncService
+from risk_platform.mailbox.sync_results import MailSyncResultsService
 from risk_platform.model_types import JSONValue
 from risk_platform.reliability.core import TaskHandler
 from risk_platform.retention import tasks as retention_tasks
@@ -218,6 +219,7 @@ def build_services(
         "system_config_service": SystemConfigService(sessions),
         "mailbox_service": MailboxService(sessions, cipher),
         "mail_risk_candidate_service": MailRiskCandidateService(sessions),
+        "mail_sync_results_service": MailSyncResultsService(sessions),
         "import_preview_service": ImportPreviewService(sessions, import_root),
         "import_commit_service": ImportCommitService(sessions, import_root),
         "admin_overview_service": AdminOverviewService(
