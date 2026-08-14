@@ -49,6 +49,8 @@ flowchart TD
  T043 --> T032 & T034
  T044 --> T032
  T032 --> T033 & T034
+ T016 & T027 & T029 & T032 --> T045
+ T045 --> T033 & T034
  T031 --> T035 & T036
  T032 --> T035
  T033 --> T035 & T037
@@ -81,14 +83,15 @@ flowchart TD
 | 16 | T040 | Single-owner FastAPI/Celery composition and dependency-injection checkpoint. |
 | 17 | T043, T044 | Migration-coverage remediation: mailbox sync-results browse/retry surface (T043) and admin project-options selector (T044) are disjoint write-sets and expose `/api` endpoints the frontend already consumes; both must PASS before T032 can freeze a compatibility-clean OpenAPI. |
 | 18 | T032 | Freeze OpenAPI authority and generate reproducible frontend types. Blocked on T043/T044. |
-| 19 | T033, T034 | Admin and business frontend cutovers use disjoint page/API modules and consume, but never edit, generated types. |
-| 20 | T035 | Build production Compose/proxy/images only after both frontend cutovers, avoiding image-build reads racing frontend/type writes. |
-| 21 | T036 | Implement and drill backup/restore against the final production volume topology. |
-| 22 | T037 | Full compatibility and security suite. |
-| 23 | T038 | Blocked by DG-05 until numeric performance criteria exist; capacity/reliability validation. |
-| 24 | T039 | External mailbox/provider, restore, frontend E2E and Python-only production cutover evidence. |
+| 19 | T045 | Contract-fidelity remediation: restore `_Contract` serialization-mode OpenAPI schema and re-freeze authority. Cross frozen write-set (T016/T027/T029 schema files + T032 OpenAPI artifacts); explicitly authorized. Must `REVIEW_PASSED` before T033/T034 can consume generated types. |
+| 20 | T033, T034 | Admin and business frontend cutovers use disjoint page/API modules and consume, but never edit, generated types. Blocked on T045 (contract-fidelity remediation). |
+| 21 | T035 | Build production Compose/proxy/images only after both frontend cutovers, avoiding image-build reads racing frontend/type writes. |
+| 22 | T036 | Implement and drill backup/restore against the final production volume topology. |
+| 23 | T037 | Full compatibility and security suite. |
+| 24 | T038 | Blocked by DG-05 until numeric performance criteria exist; capacity/reliability validation. |
+| 25 | T039 | External mailbox/provider, restore, frontend E2E and Python-only production cutover evidence. |
 
-Tasks in a wave may run concurrently only when every dependency from an earlier wave is `PASS`; a blocked task is skipped, never treated as passed. Alembic revisions are strictly serialized in the order T003 → T006 → T041 → T004 → T042. No parallel task may create an opportunistic revision. Shared app/Celery bootstrap is owned by T002 then T040; production Compose/proxy/env examples by T035; generated OpenAPI/types by T032. Feature tasks expose module-local entry points and test them with T002/T003/T008 fixtures without editing those shared files. Specifically, T029 owns the dependency-injected module-local `AGENT_EXECUTION` handler mapping and may validate it with an isolated Celery app; T040 exclusively constructs production dependencies, merges module handlers and registers them once on the shared `celery_app`. T037/T038 record findings only and route fixes back to the owning task.
+Tasks in a wave may run concurrently only when every dependency from an earlier wave is `PASS`; a blocked task is skipped, never treated as passed. Alembic revisions are strictly serialized in the order T003 → T006 → T041 → T004 → T042. No parallel task may create an opportunistic revision. Shared app/Celery bootstrap is owned by T002 then T040; production Compose/proxy/env examples by T035; generated OpenAPI/types by T032; the `_Contract` serialization-mode schema-fidelity fix and re-freeze of the same OpenAPI/generated artifacts by T045 (cross frozen write-set, explicitly authorized). Feature tasks expose module-local entry points and test them with T002/T003/T008 fixtures without editing those shared files. Specifically, T029 owns the dependency-injected module-local `AGENT_EXECUTION` handler mapping and may validate it with an isolated Celery app; T040 exclusively constructs production dependencies, merges module handlers and registers them once on the shared `celery_app`. T037/T038 record findings only and route fixes back to the owning task.
 
 ## Task catalog
 
@@ -126,8 +129,8 @@ Tasks in a wave may run concurrently only when every dependency from an earlier 
 | T030 | READY | T004, T006, T010, T021, T022, T029 | Execute category-bound previewed Agent writes through bound one-use REST confirmations under ADR 0029. |
 | T031 | REVIEW_PASSED | T004, T006, T008, T013, T019, T024, T025, T042 | Run auditable import/conversation/temp retention cleanup with protections. |
 | T032 | REVIEW_PASSED | T040, T043, T044 | Freeze OpenAPI authority and generate reproducible frontend types. Wave 18 re-freeze complete: 93 paths / 243 schemas (incl. T043/T044 surface), 7 breaking diffs gone, compat PASS, regeneration zero diff, Independent Review REVIEW_PASSED; code checkpoint `b9a172c`. |
-| T033 | BLOCKED_DESIGN_GAP | T016, T032 | Cut admin pages to Python APIs and remove fixed business states. DESIGN_GAP (Wave 19 readiness stop): frozen OpenAPI authority (T032) does not express `AdminOverview`/`HealthItem`/`AttentionItem`/`RecentAuditItem`/`UnavailableSection` item fields — all resolve to `unknown` in generated `openapi.ts`. Root cause: `admin/overview/schemas.py` `_Contract` wildcard `field_serializer("*", when_used="json", check_fields=False)` corrupts serialization-mode JSON schema generation (FastAPI response-model OpenAPI uses serialization mode). Systemic — `_Contract` shared by `weekly_reports`/`agent` (T034 surface); fix is in T016 frozen backend write-set + T032 re-freeze, out of T033 frontend-only scope. See `reports/T033.md`. |
-| T034 | TODO | T027, T030, T032, T043 | Cut dashboard, weekly reports, mailbox and Agent UI to real Python APIs. Note: shares the T033 DESIGN_GAP blocker — `_Contract` (weekly_reports/agent schemas) produces `unknown` fields in frozen OpenAPI authority; not executed this run. |
+| T033 | BLOCKED | T016, T032, T045 | Cut admin pages to Python APIs and remove fixed business states. Blocked on T045 (contract-fidelity remediation): frozen OpenAPI authority (T032) does not express `AdminOverview`/`HealthItem`/`AttentionItem`/`RecentAuditItem`/`UnavailableSection` item fields — all resolve to `unknown` in generated `openapi.ts` due to the `_Contract` wildcard `field_serializer` corrupting serialization-mode schema generation. See `reports/T033.md`. |
+| T034 | BLOCKED | T027, T030, T032, T043, T045 | Cut dashboard, weekly reports, mailbox and Agent UI to real Python APIs. Blocked on T045 (contract-fidelity remediation): shares the T033 blocker — `_Contract` (weekly_reports/agent schemas) produces `unknown` fields in frozen OpenAPI authority. Not executed this run. |
 | T035 | Inherits gaps | T031-T034, T040 | Define production Compose, Python processes, proxy, secrets and persistence after final backend/frontend composition. |
 | T036 | DESIGN_GAP DG-08 | T031, T035 | Implement encrypted backup rotation, isolated restore and drill verification. |
 | T037 | Inherits DG-05/DG-08 | T033, T034, T036 | Prove full compatibility and security across the release candidate. |
@@ -136,6 +139,7 @@ Tasks in a wave may run concurrently only when every dependency from an earlier 
 | T040 | REVIEW_PASSED | T008-T031 | Compose all routers, dependencies and lifecycles, then merge module-local handlers and register production worker tasks once. |
 | T043 | READY | T006, T010, T023, T024, T025, T026 | Migrate the mailbox sync-results browse and retry surface (`/mailbox/sync-summary`, `/review-options`, `/messages`, `/messages/{id}`, `POST /messages/{id}/retry`, `/sync-batches`, `/sync-batches/{id}`) to FastAPI under `mailbox.sync_self`, `RISK_ADMIN`-gated summary, own-config scope and ADR 0022 retry/handoff. |
 | T044 | READY | T005, T010 | Migrate the admin project-options selector (`GET /admin/projects/options` → `ProjectOption[]`) to FastAPI under `admin.scope.manage`. |
+| T045 | READY | T016, T027, T029, T032 | Contract-fidelity remediation: restore `_Contract` serialization-mode OpenAPI schema (fix the duplicated wildcard `field_serializer` in `admin/overview`/`weekly_reports`/`agent` schemas without changing runtime JSON or API surface) and re-freeze `openapi.json`/`openapi.ts`. Unblocks T033/T034. See `tasks/T045-contract-schema-fidelity.md`. |
 | T041 | READY | T006 | Add the ADR 0018 durable task/outbox persistence schema. |
 | T042 | READY | T004, T013, T019 | Implement ADR 0027's approved retention configuration, hold-management API and deletion-protection policy. |
 
