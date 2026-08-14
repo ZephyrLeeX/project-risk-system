@@ -105,7 +105,7 @@ Checkpoint commits:
 - Wave 13 final checkpoint: `841a38ce37c8e34bff513b72f6236d64303d9b6b` (metadata recorded in the following report commit)
 - Wave 15 final checkpoint: `533f74011362c0a44ad662a660b061b9a9833cef` (metadata recorded in the following report commit)
 - T040: `2a99da0`
-- Wave 16 final checkpoint: pending report/state commit
+- Wave 16 final checkpoint: `f794daa6847eb0bcae67ba834a3ef7ffb6f5a83e` (metadata recorded in this report commit)
 - T010: e30dd45
 - T004: 1b4cfa8
 - T011: baa3208
