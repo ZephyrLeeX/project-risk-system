@@ -112,7 +112,7 @@ Checkpoint commits:
 - T032 migration-coverage DESIGN_GAP resolution checkpoint: `6f90623f59ac1132f33edb52d432c5816770632a` (T043/T044 ownership mapped; T032 `DESIGN_GAP`→`BLOCKED`; no production code; candidate work remains uncommitted in working tree)
 - T043: `eb7c9243b170feda08776912c9dcde932ca90114` (mailbox sync-results browse/retry surface; metadata recorded in the following report commit)
 - T044: `1dc067a44a3e5bcf5e4ecc5305e2060f713ecbd5` (admin project-options selector; metadata recorded in the following report commit)
-- Wave 17 final checkpoint: (metadata recorded in this report commit)
+- Wave 17 final checkpoint: `5aa4a35` (metadata recorded in this report commit)
 - T010: e30dd45
 - T004: 1b4cfa8
 - T011: baa3208
