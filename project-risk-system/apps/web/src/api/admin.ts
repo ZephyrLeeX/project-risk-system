@@ -12,7 +12,24 @@ import type {
   UserMutationResponse,
 } from "@risk-platform/contracts";
 
+import type { OpenApi } from "@risk-platform/contracts";
+
 import { apiRequest } from "./http";
+
+/**
+ * Generated OpenAPI overview contract types (ADR 0023 / T045 fidelity).
+ *
+ * These aliases only re-reference the frozen generated authority in
+ * `packages/contracts/src/generated/openapi.ts`; they are never hand-written
+ * substitutes and must not diverge from the generated surface.
+ */
+export type AdminOverview = OpenApi.components["schemas"]["AdminOverview"];
+export type HealthItem = OpenApi.components["schemas"]["HealthItem"];
+export type AttentionItem = OpenApi.components["schemas"]["AttentionItem"];
+export type RecentAuditItem = OpenApi.components["schemas"]["RecentAuditItem"];
+export type UnavailableSection =
+  OpenApi.components["schemas"]["UnavailableSection"];
+export type OverviewLink = OpenApi.components["schemas"]["OverviewLink"];
 
 export interface UserFilters {
   page?: number;
@@ -35,6 +52,10 @@ function toQuery(filters: UserFilters): string {
 }
 
 export const adminApi = {
+  async overview(): Promise<AdminOverview> {
+    return (await apiRequest<AdminOverview>("/admin/overview")).data;
+  },
+
   async userSummary(): Promise<AdminUserSummary> {
     return (await apiRequest<AdminUserSummary>("/admin/users/summary")).data;
   },
