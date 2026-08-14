@@ -41,7 +41,7 @@ cross-module focused pytest 与 full pytest 的 1 个 skip 均为既有
 
 ## Checkpoint
 
-Wave 15 final checkpoint：<checkpoint-sha>。
+Wave 15 final checkpoint：`533f74011362c0a44ad662a660b061b9a9833cef`。
 
 ## Next-wave readiness
 
