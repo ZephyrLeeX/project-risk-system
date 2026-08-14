@@ -17,6 +17,7 @@ Completed waves:
 - Wave 12: PASS (T027/T031 Integration validation complete; no integration fix)
 - Wave 13: PASS (T028 Integration validation complete; no integration fix; T029 not executed)
 - Wave 14: PASS (T029 Integration validation complete; T030 not executed)
+- Wave 15: PASS (T030 Integration validation complete; no integration fix)
 
 Completed tasks:
 - T001 REVIEW_PASSED
@@ -39,6 +40,7 @@ Completed tasks:
 - T031 REVIEW_PASSED
 - T028 REVIEW_PASSED
 - T029 REVIEW_PASSED
+- T030 REVIEW_PASSED
 
 Current:
 - Wave 6: PASS (T004/T008/T010 remain REVIEW_PASSED; PostgreSQL integration validation passed)
@@ -99,6 +101,7 @@ Checkpoint commits:
 - Wave 11 final checkpoint: `4487c09a2281c462e3b4c93e0553080a56af4531` (metadata recorded in the following report commit)
 - Wave 12 final checkpoint: `286dbab0dca17870434a2bc7e5ddac79b2f9109f` (metadata recorded in this report commit)
 - Wave 13 final checkpoint: `841a38ce37c8e34bff513b72f6236d64303d9b6b` (metadata recorded in the following report commit)
+- Wave 15 final checkpoint: `<checkpoint-sha>` (metadata recorded in the following report commit)
 - T010: e30dd45
 - T004: 1b4cfa8
 - T011: baa3208
@@ -186,3 +189,4 @@ Integration blockers:
 - Wave 14 Integration: `PASS`. Full PostgreSQL 16 + Redis 7 validation completed with `243 passed, 1 skipped`; Ruff, mypy, `uv lock --check`, `git diff --check` and Alembic head `20260812_0008` all pass. Integration-only fixes updated T029 schema metadata expectations and made the weekly-report reconciliation fixture wall-clock independent. T030 remains unstarted, the next Wave remains unstarted, and DG-05/DG-08 remain untouched. See `docs/implementation/reports/WAVE-14.md`. Final checkpoint is recorded after this entry.
 - Wave 15 / T030 readiness: `DESIGN_GAP`. The approved Agent `REPORT` canonical/command contract has no `categoryId` or approved category mapping, while the formal `Risk` schema and T022 `RiskCreate` require a valid category. The operation therefore cannot be expressed through the existing domain services without inventing a default, inference rule or contract extension. Per T030's stop condition, Wave 15 was not marked `IN_PROGRESS`; implementation, Independent Review, validation and code checkpoint were not started. T040, Integration, next Wave, DG-05 and DG-08 remain untouched. See `docs/implementation/reports/T030.md` and `docs/implementation/reports/WAVE-15-PARTIAL.md`.
 - T030 DESIGN_GAP resolution: ADR 0029 approves PostgreSQL active `RiskCategory` as the sole `REPORT.categoryId` authority, reuse of `RISK_CATEGORY_OPTIONS_V1` with one opaque Provider choice, server-side mapping plus canonical category revision binding, and fail-closed locked confirmation revalidation. T030 is restored to `READY`; Wave 15 remains `NOT_STARTED`. No T030 implementation/review/validation, T040, Integration, DG-05 or DG-08 work was started. Design checkpoint: `e57646e3f05c87b21bab632601ba64f1dbff860a`.
+- Wave 15 Integration: `PASS`. T030 category-bound one-use REST confirmation 与 Risk / Todo / Audit / Dashboard / Weekly Report / Timeline / Agent execution / SSE 跨模块联合验证通过。cross-module focused pytest `57 passed, 1 skipped`；full pytest（PostgreSQL 16 + Redis 7）`247 passed, 1 skipped`；Ruff、mypy（183 source files）、`uv lock --check`、`git diff --check` 全部通过；空库 Alembic `upgrade head` 至 `20260812_0008` 且 `alembic check` 无新 migration；Redis 7 + Celery + Agent confirmation acceptance `10 passed`。无 integration fix。T040、下一 Wave、DG-05 和 DG-08 均未处理。详见 `docs/implementation/reports/WAVE-15.md`。Final checkpoint 记录于本条目之后。
