@@ -1,7 +1,7 @@
 # T046 — Implement production scheduler entrypoint
 - **Task ID:** T046
 - **Title:** Implement production scheduler entrypoint
-- **Status:** READY / TODO
+- **Status:** REVIEW_PASSED
 - **Objective:** Implement the single production scheduler process that periodically drives the durable-task outbox drain, lease reconciliation and scheduled mailbox sync under a single-active PostgreSQL advisory lock, without crossing T040 composition ownership.
 - **Design baseline:** Design §§4,8 (as amended by ADR 0030).
 - **Authoritative source references:** ADR 0030, ADR 0018, ADR 0022 (T024); existing entry points `risk_platform.reliability.dispatcher.publish_outbox`, `risk_platform.reliability.core.reconcile`, `risk_platform.mailbox.sync.schedule_enabled_syncs`; `risk_platform.db` session factory; `risk_platform.reliability.celery_app.celery_app`.

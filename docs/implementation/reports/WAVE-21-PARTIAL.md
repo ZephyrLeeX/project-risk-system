@@ -1,48 +1,60 @@
-# Wave 21 — Partial（T035 execution stop）
+# Wave 21 — Partial（T046 production scheduler entrypoint）
 
 - **Wave:** 21
-- **Tasks:** T035
-- **状态:** `IN_PROGRESS`（partial — T035 `DESIGN_GAP` execution stop，无 code checkpoint）
+- **Tasks:** T046（单一 work unit；ADR 0030 / DG-16 resolution 引入）
+- **状态:** `IN_PROGRESS`（partial — T046 `REVIEW_PASSED` + code checkpoint；Wave 21 Integration 未启动）
 - **Wave 21 Integration:** 未启动
 - **下一 Wave / DG-05 / DG-08:** 未启动 / 未处理
 
+## 背景
+
+Wave 21 原为 T035（production Compose/proxy/images）。T035 执行 stop 于 `DESIGN_GAP`（DG-16）：批准的架构无 scheduler 组件，三个需周期驱动的入口（`publish_outbox`/`reconcile`/`schedule_enabled_syncs`）均无 production caller，materialize scheduler 超出 T035 Compose/proxy/Dockerfile/env/docs write-set 且需未经批准决策。
+
+ADR 0030 解决 DG-16：批准 production 调度器拓扑为**独立 scheduler 进程**（不采用 Celery Beat），以 PostgreSQL session-level advisory lock 保证 single-active，周期驱动三入口。**scheduler application entrypoint 归属新增 remediation Task T046**（write-set 限 `scheduler.py` + tests，只读复用五个 public 入口）；T035 仅拥有 Compose `scheduler` service wiring，**T035 deps 增 +T046**。DAG 新增 `T008 & T024 --> T046 --> T035`；Wave 表插入 Wave 21 = T046，T035 后移至 Wave 22。
+
+DG-16 resolution 设计 checkpoint：`67f1ddd01ec60e96dc7442549d6647e1fd9d6d89`（未实施 production code、未修改 `infra/docker-compose.yml`、未执行 T035/T046、未启动 Wave 21 Integration）。
+
 ## Readiness
 
-- T035 direct dependencies T031/T032/T033/T034/T040 均 `REVIEW_PASSED`；Wave 20 Integration `PASS`（final checkpoint `1ba4f5e2d05f9131e91b4666165205dc631f8222`）。
-- 依赖层面 readiness = `READY` → Wave 21 标记 `IN_PROGRESS`，仅授权 T035。
-- Lean Execution Mode 上下文加载阶段（T035 Task + 引用 ADR 0001/0003/0006/0009/0010/0014/0016 + 设计 §§4/7/9 + Python process contracts + 既有 `infra/docker-compose.yml` + T031/T032/T033/T034/T040 production deployment contract）发现 `DESIGN_GAP`。
+- T046 blocking 前置 T008（`REVIEW_PASSED`）、T024（`REVIEW_PASSED`）已满足；ADR 0030 提供批准的 cadence/single-active/failure/outbox-wiring 契约。无新 blocker → Wave 21 标记 `IN_PROGRESS`，仅授权 T046。
+- Lean Execution Mode 加载：T046 Task、ADR 0030、ADR 0018、T024 contract、`publish_outbox`/`reconcile`/`schedule_enabled_syncs`、`risk_platform.db`、shared `celery_app`、必要 tests。
 
-## T035 结果：`DESIGN_GAP`（execution stop）
+## T046 结果：`REVIEW_PASSED`
 
-T035 Objective 要求定义包含 **scheduler** 的单机 Compose。Lean Execution Mode 核验确认：
+新增 `apps/api-python/src/risk_platform/scheduler.py`（进程入口、advisory-lock tick 循环、per-function cadence gating、per-tick/per-function failure isolation、liveness 探针、startup retry、SIGTERM graceful shutdown）+ `tests/reliability/test_scheduler.py`（21 tests：15 unit + 6 PostgreSQL 16/Redis 7）。
 
-1. **批准的架构无 scheduler 组件**：设计 §4 架构图无 scheduler/beat 框；ADR 0006 只定义 Worker + Redis broker。
-2. **需周期性驱动的入口均无 production caller**：
-   - `publish_outbox`（ADR 0018 outbox publisher，"提交后向 Celery 发布"）——无 production 调用方；
-   - `reconcile`（ADR 0018 Reconciler）——无 production 调用方（注释自述 "periodic reconciliation"）；
-   - `schedule_enabled_syncs`（T024 scheduled mailbox sync，`_INTERVAL_MINUTES=30`）——无 production 调用方。
-   - 无 `*scheduler*`/`*beat*` entrypoint 模块；`celery_app.py`（frozen T040）无 `beat_schedule`。
-   - `enqueue_task` 创建 `TaskOutbox` 行后 production 路径从不 `publish_outbox`/`send_task` —— 生产环境任务持久化但不投递。
-3. **materialize scheduler 超出 write-set 且需未经批准决策**：T035 write-set 为 Compose/proxy/Dockerfile/env/docs，不含 application entrypoint 与 `celery_app.py`。deploy scheduler 需新增 app entrypoint（跨 T040 composition 边界 + cadence/single-active/错误处理未批准决策）或在 frozen `celery_app.py` 加 `beat_schedule`（`DESIGN_DEVIATION`）。
+- **single-active**：`pg_try_advisory_lock` 固定单 bigint key `0x7269736B5F736368`；`False` → exit 1 fail-fast；session-level lock 随连接存活、崩溃即释放。
+- **cadence**（operational defaults，非 SLO）：outbox drain 5s、reconcile 30s、mailbox sync 300s，env 可调，非正 → exit 2。
+- **failure isolation**：每 action 独立 try/except，失败不 advance `_last_run` → 重试，不阻塞其他动作/循环。
+- **outbox at-least-once**：`publish_outbox` 先 `send_task` 后置 `publishedAt`，事务回滚保持未发布。
+- **no dual-write / 唯一 publisher**：请求路径不 `send_task`，scheduler 是唯一 publisher；只读复用五入口，未编辑 frozen `composition.py`/`celery_app.py`/`worker.py`/`main.py`/driven 函数。
+- **liveness**：`/healthz` 仅当 lock 持有 + 最近 tick 在 ≤ 2× outbox drain 窗口内时 200，否则 503；stdlib `ThreadingHTTPServer` 无额外依赖。
+- **shutdown**：SIGTERM 完成当前 tick 后释放 lock + 关连接，exit 0；config error exit 2；DB 有界重试超限 exit 1。
 
-按 ORCHESTRATOR 协议与 T027/T029/T030/T033 stop 先例：记录 `DESIGN_GAP`（新 DG-16），停止；不实施、不审查、不创建 code checkpoint。
+Independent Review `REVIEW_PASSED`，无 blocking finding（3 个 minor non-blocking note）。详见 `docs/implementation/reports/T046.md`。
 
-详见 `docs/implementation/reports/T035.md`。
+## Validation（全部 PASS）
 
-## Validation
+- Ruff：`All checks passed!`
+- mypy：`Success: no issues found in 187 source files`
+- focused pytest（PostgreSQL 16 + Redis 7）：`21 passed`
+- full backend regression（PostgreSQL 16 + Redis 7）：`304 passed, 1 skipped`（较 Wave 19 `283` 增 21）
+- `uv lock --check`：`Resolved 58 packages`
+- `git diff --check`：clean
+- write-set 合规：仅 `scheduler.py` + `test_scheduler.py`；`infra/docker-compose.yml` 与全部 frozen write-set 未修改
 
-- 本轮为 `DESIGN_GAP` execution stop，无 implementation，故无 Compose config / image build / stack health / Ruff / mypy / pytest / `uv lock --check` / `git diff --check` 可执行验证。
-- `infra/docker-compose.yml`（T035 独占 write-set）**未修改**（保持既有 dev postgres-only compose）。
-- `git diff --check`（metadata/report 变更前）clean；本轮仅新增/修改 docs。
+## code checkpoint
+
+T046 code checkpoint SHA 记录于 `EXECUTION_STATE.md` / `T046.md`（metadata 由后续提交补录）。
+
+## T035 readiness 同步（仅 metadata，未执行 T035）
+
+T046 `REVIEW_PASSED` + code checkpoint 解除 T035 的 blocked-on-T046。T035（deps T031-T034/T040/**T046**）状态保持 `READY`，可在 Wave 22 重新评估/执行；T035 拥有 Compose `scheduler` service wiring（image/command/env/healthcheck/restart/depends_on）+ env examples + deployment docs，不实现 entrypoint。本次不执行 T035、不修改 `infra/docker-compose.yml`。
 
 ## 未执行项（按本次授权与协议边界）
 
-- T035 implementation / Independent Review / code checkpoint：**未执行**（DESIGN_GAP）。
 - Wave 21 Integration：**未启动**。
-- Wave 22 / T036：**未启动**。
+- Wave 22 / T035：**未启动**（仅同步 readiness）。
 - DG-05（performance/reliability numeric thresholds）、DG-08（backup encryption/key/consistency）：**未处理**。
-- frozen write-sets（T040 `celery_app.py`/`composition.py`、T008 reliability、T024 mailbox sync、各 feature service）与 frozen OpenAPI authority：**未修改**。
-
-## 解除条件（建议，需人工 ADR）
-
-新 ADR 需批准：(1) production 周期触发机制与进程拓扑（是否更新设计 §4）；(2) scheduler entrypoint write-set 所有权；(3) cadence（sync/reconciliation/outbox-drain interval）与 single-active 语义；(4) ADR 0018 outbox publisher 的 production post-commit 接线 owner。满足后 T035 恢复 `READY`，Wave 21 续作。
+- frozen write-sets（T040 `celery_app.py`/`composition.py`/`worker.py`/`main.py`、T008 reliability、T024 mailbox sync、三个 driven 函数）与 frozen OpenAPI authority：**未修改**。
+- `infra/docker-compose.yml`（T035 独占 write-set）：**未修改**。
