@@ -1,0 +1,19 @@
+# T046 — Implement production scheduler entrypoint
+- **Task ID:** T046
+- **Title:** Implement production scheduler entrypoint
+- **Status:** READY / TODO
+- **Objective:** Implement the single production scheduler process that periodically drives the durable-task outbox drain, lease reconciliation and scheduled mailbox sync under a single-active PostgreSQL advisory lock, without crossing T040 composition ownership.
+- **Design baseline:** Design §§4,8 (as amended by ADR 0030).
+- **Authoritative source references:** ADR 0030, ADR 0018, ADR 0022 (T024); existing entry points `risk_platform.reliability.dispatcher.publish_outbox`, `risk_platform.reliability.core.reconcile`, `risk_platform.mailbox.sync.schedule_enabled_syncs`; `risk_platform.db` session factory; `risk_platform.reliability.celery_app.celery_app`.
+- **Relevant ADR IDs:** 0006, 0014, 0017, 0018, 0022, 0030.
+- **Dependencies:** T008, T024.
+- **Scope:** A new `risk_platform/scheduler.py` process entrypoint (advisory-lock acquisition, tick loop, per-function cadence gating, per-tick/per-function failure isolation, liveness probe) and its tests.
+- **Explicit out-of-scope:** Compose/proxy/Dockerfile/env/deployment docs (owned by T035); editing `composition.py`, `celery_app.py`, `worker.py`, `main.py` or the three driven functions; backup logic; performance SLOs (DG-05).
+- **Expected read set:** ADR 0030; `dispatcher.py`, `reliability/core.py`, `mailbox/sync.py`, `db.py`, `celery_app.py`, `worker.py` (precedent for minimal direct construction).
+- **Expected write set:** `apps/api-python/src/risk_platform/scheduler.py` (new) + tests. Read-only reuse of the five public entry points above; no edits to frozen write-sets.
+- **Contracts/invariants:** PostgreSQL `task_outbox` remains the sole authority; Redis/Celery is delivery/execution transport only; request path keeps single-write-to-PostgreSQL (no DB/Celery dual-write); scheduler writes no audit (ADR 0017) and no secrets/mail content/payload to logs (ADR 0014/0007); single-active via PostgreSQL session-level advisory lock; per-tick/per-function isolation; driven functions are not modified.
+- **Acceptance criteria:** Scheduler acquires the advisory lock and runs the three driven functions at the ADR 0030 cadence defaults; a second instance fails to acquire the lock and exits; per-tick failure of one function does not skip the others; outbox drain publishes committed rows to Celery and marks `publishedAt` only after `send_task` returns; liveness probe reports unhealthy when the lock is lost or no recent tick; shutdown (SIGTERM) releases the lock; focused tests (isolated PostgreSQL + fake broker) pass; no audit writes; no edits to frozen write-sets.
+- **Validation:** Ruff, mypy, focused pytest (isolated PostgreSQL 16 + fake Celery broker), `uv lock --check`, `git diff --check`.
+- **Required deliverables:** `scheduler.py` entrypoint + tests; ADR 0030 cadence/single-active/failure contract realized.
+- **Stop conditions:** A driven function signature requires composition-owned dependencies (cipher/provider/tool-registry) the scheduler cannot construct without editing `composition.py`/`celery_app.py` (DESIGN_DEVIATION); or advisory-lock/single-active cannot be expressed on PostgreSQL 16; or ADR 0030 cannot be satisfied.
+- **Known integration risks:** Long-lived advisory-lock connection management; tick-loop liveness vs. process-liveness; restart overlap fencing.

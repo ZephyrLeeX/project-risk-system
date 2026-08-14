@@ -57,6 +57,8 @@ flowchart LR
     Worker --> PG
     Worker --> IMAP[IMAP 邮箱]
     Worker --> AI[OpenAI-compatible Provider]
+    Scheduler[Scheduler 进程] --> PG
+    Scheduler --> Redis
     API --> Files[持久化文件卷]
     Worker --> Files
     Backup[备份任务] --> PG
@@ -64,6 +66,8 @@ flowchart LR
 ```
 
 正式环境使用 Python 3.12、FastAPI、Pydantic v2、SQLAlchemy 2、Alembic、psycopg 3、Celery、Redis 和 PostgreSQL。依赖由 uv 锁定；pytest、Ruff 和 mypy 作为质量门槛。
+
+独立 `Scheduler` 进程（ADR 0030）以 PostgreSQL session-level advisory lock 保证 single-active，周期驱动 durable-task outbox 投递（`publish_outbox`）、lease reconciliation（`reconcile`）与 scheduled mailbox sync（`schedule_enabled_syncs`）；它是 ADR 0018 outbox publisher 与 reconciler 的唯一 production 触发 owner，不写业务 audit，不触碰 broker 之外的 Celery 配置。
 
 代码采用模块化单体，建议在 `project-risk-system/apps/api-python/` 中并行建设，至少包含：
 
@@ -167,6 +171,7 @@ AI 不可用时明确失败并允许重试；非 AI 看板、导入和风险维�
 - PostgreSQL transactional outbox 提供 at-least-once 投递；Redis/Celery message 只携带 `task_id` 和 `dispatch_generation`。
 - Worker 使用 lease token、heartbeat、expiry 和 fencing；reconciliation 负责 lost dispatch、到期 retry 和 expired lease。完整契约以 ADR 0018 为准。
 - Agent AI invocation 使用 ADR 0018 durable task/outbox 由 Celery Worker 执行；Worker 先向 PostgreSQL 写入有序 event facts，SSE API 只读取这些事实。取消、heartbeat、背压和恢复以 ADR 0019/0020 为准。
+- production 周期触发由独立 `Scheduler` 进程承担（ADR 0030）：single-active PostgreSQL advisory lock 下周期执行 outbox 投递（`publish_outbox`，5s）、reconciliation（`reconcile`，30s）与 scheduled mailbox sync（`schedule_enabled_syncs`，5min）。请求路径仅写 PostgreSQL（`enqueue_task` 写 `DurableTask`+`TaskOutbox`），不直接调用 Celery，无 DB/Celery dual-write；committed `task_outbox` 由 scheduler drain 在 cadence 内投递，broker 全丢后由 reconcile 重建。cadence 为 operational 默认值，非 SLO（DG-05 管 SLO）。
 
 ## 9. 容量、备份与运行目标
 
