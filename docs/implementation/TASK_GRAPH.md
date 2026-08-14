@@ -125,7 +125,7 @@ Tasks in a wave may run concurrently only when every dependency from an earlier 
 | T029 | REVIEW_PASSED | T004, T007, T008, T010, T014, T028 | Stream Agent text, progress, errors and mutation previews over SSE under ADR 0028 and expose its module-local Worker entrypoint without production composition wiring. |
 | T030 | READY | T004, T006, T010, T021, T022, T029 | Execute category-bound previewed Agent writes through bound one-use REST confirmations under ADR 0029. |
 | T031 | REVIEW_PASSED | T004, T006, T008, T013, T019, T024, T025, T042 | Run auditable import/conversation/temp retention cleanup with protections. |
-| T032 | READY | T040, T043, T044 | Freeze OpenAPI authority and generate reproducible frontend types. Wave 17 Integration PASS unblocked T032 (T043/T044 REVIEW_PASSED); candidate infrastructure remains uncommitted, awaiting Wave 18 re-evaluation. |
+| T032 | REVIEW_PASSED | T040, T043, T044 | Freeze OpenAPI authority and generate reproducible frontend types. Wave 18 re-freeze complete: 93 paths / 243 schemas (incl. T043/T044 surface), 7 breaking diffs gone, compat PASS, regeneration zero diff, Independent Review REVIEW_PASSED; code checkpoint `b9a172c`. |
 | T033 | TODO | T016, T032 | Cut admin pages to Python APIs and remove fixed business states. |
 | T034 | TODO | T027, T030, T032, T043 | Cut dashboard, weekly reports, mailbox and Agent UI to real Python APIs. |
 | T035 | Inherits gaps | T031-T034, T040 | Define production Compose, Python processes, proxy, secrets and persistence after final backend/frontend composition. |
