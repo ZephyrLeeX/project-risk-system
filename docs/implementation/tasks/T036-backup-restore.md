@@ -1,12 +1,12 @@
 # T036 — Implement encrypted backup and restore runbook
 - **Task ID:** T036
 - **Title:** Implement encrypted backup and restore runbook
-- **Status:** BLOCKED_DESIGN_GAP (DG-04, DG-08) / TODO
+- **Status:** READY / TODO (DG-04 resolved by ADR 0027; DG-08 resolved by ADR 0031)
 - **Objective:** Back up/rotate/restore PostgreSQL, file storage and configuration associations within approved RPO/RTO policy.
 - **Design baseline:** Design §9.
-- **Authoritative source references:** ADRs 0009/0014; approved DG-04/DG-08 addenda; T035 volumes and T031 lifecycle.
-- **Relevant ADR IDs:** 0003, 0007, 0008, 0009, 0012, 0014.
-- **Dependencies:** T031, T035 and approved DG-04/DG-08 addenda.
+- **Authoritative source references:** ADRs 0009/0014; ADR 0031 (DG-08 resolution: quiesce-coordinated consistent backup set, AES-256-GCM envelope encryption reusing T007 `rpenc`/`KeyRing`, manifest, versioned backup KEK + retained historical decrypt, fail-closed isolated restore); T035 volumes and T031 lifecycle.
+- **Relevant ADR IDs:** 0003, 0007, 0008, 0009, 0012, 0014, 0027, 0031.
+- **Dependencies:** T031, T035 (DG-04/DG-08 addenda satisfied: ADR 0027 + ADR 0031).
 - **Scope:** Parameterized encrypted backup/verification/rotation scripts, restore into isolated target, audit-chain/file association checks and drill runbook.
 - **Explicit out-of-scope:** Choosing production destination/key/window; WAL HA.
 - **Expected read set:** Infra/storage schema and approved external-material inputs.
@@ -15,5 +15,5 @@
 - **Acceptance criteria:** Local isolated drill restores DB/files/config and valid audit chain; measured RTO recorded.
 - **Validation:** Script tests and full isolated restore drill.
 - **Required deliverables:** Scripts, manifests, verification/report template/runbook.
-- **Stop conditions:** DG-04/DG-08 unresolved, required external key/destination unavailable for the drill, or target resolves to a live/broad path.
+- **Stop conditions:** ADR 0031 backup/restore contract violated during implementation, required external key/destination unavailable for the drill, or target resolves to a live/broad path. (DG-04/DG-08 resolved: ADR 0027 + ADR 0031.)
 - **Known integration risks:** Consistency between DB snapshot and files.
