@@ -20,17 +20,38 @@ import type {
   RiskTimelineEventType,
   RiskTimelineListResponse,
 } from "@risk-platform/contracts";
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onMounted, onUnmounted, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 
+import { agentApi, type AgentHelpResponse } from "@/api/agent";
 import { dashboardApi } from "@/api/dashboard";
+import {
+  weeklyReportsApi,
+  type WeeklyProjectDetail,
+  type WeeklyProjectSummary,
+  type WeeklyReportResponse,
+} from "@/api/weekly-reports";
 import ModalDialog from "@/components/ModalDialog.vue";
+import { useAgentConversation } from "@/composables/useAgentConversation";
 import { useAuthStore } from "@/stores/auth";
+import {
+  agentErrorLabel,
+  operationLabel,
+  previewSummary,
+} from "@/utils/agent-sse";
 import {
   formatDateTime,
   formatWan,
   levelLabel,
 } from "@/utils/dashboard";
+import {
+  levelCountsLabel,
+  projectHasRisks,
+  riskStatusLabel,
+  staleLabel,
+  summaryCount,
+  weekRangeLabel,
+} from "@/utils/weekly-reports";
 
 type MetricKey = "projects" | "risks" | "high" | "remaining" | "collected";
 
@@ -78,11 +99,15 @@ const lifecycleReason = ref("");
 const selectedMetricKey = ref<MetricKey | null>(null);
 const profileMenuOpen = ref(false);
 const agentOpen = ref(false);
+const agent = useAgentConversation();
 const agentInput = ref("");
-const agentMessages = ref<Array<{ role: "user" | "assistant"; text: string }>>([
-  { role: "assistant", text: "您好，我可以基于当前权限范围内的项目清单、回款数据和风险线索回答问题。" },
-]);
-const selectedWeeklyReport = ref<null | (typeof weeklyReports)[number]>(null);
+const agentHelp = ref<AgentHelpResponse | null>(null);
+const weeklyReport = ref<WeeklyReportResponse | null>(null);
+const weeklyLoading = ref(false);
+const weeklyError = ref("");
+const selectedWeeklyProject = ref<WeeklyProjectSummary | null>(null);
+const weeklyDetail = ref<WeeklyProjectDetail | null>(null);
+const weeklyDetailLoading = ref(false);
 const activeTab = ref("risks");
 const filters = reactive({
   keyword: "",
@@ -127,14 +152,6 @@ const tabs = [
   { id: "resolved", label: "已解除风险", icon: "✓" },
 ] as const;
 
-const weeklyReports = [
-  { sender:"刘峰", date:"2026-07-23", projects:"锡山智慧城市一期、新吴城运数字底座等4项", summary:"供应商核减谈判陷入僵局；新吴质保款延期；市数据局要求配合审计。", status:"分析完成", risks:["锡山智慧城市一期 — 供应商风险：供应商核减谈判陷入僵局。","锡山智慧城市一期 — 回款风险：终验款592.64万在途。","锡山智慧城市一期 — 客户层面风险：客户要求统一汇总报价。","新吴城运数字底座 — 回款风险：第一年质保款551.67万已延期。","新吴城运数字底座 — 客户层面风险：区域财政状况不理想。","市数据局综合事务系统 — 超出合同需求：已完结项目被要求继续配合审计。"] },
-  { sender:"肖杰", date:"2026-07-23", projects:"昆山鹿路通APP", summary:"新增功能项目招标进行中；APP 5.1.0版本开发中。", status:"分析完成", risks:["昆山鹿路通APP — 项目进度风险：新增功能招标与版本开发并行推进。"] },
-  { sender:"赵振兴", date:"2026-07-23", projects:"无锡市应急项目群等5项", summary:"多个项目正常推进，部分项目进入回款阶段。", status:"分析完成", risks:["无锡市应急项目群 — 回款风险：需按计划跟进验收与回款。"] },
-  { sender:"田雷", date:"2026-07-22", projects:"荆州公司项目群", summary:"年度计划回款2161.58万，实际回款126.05万。", status:"分析完成", risks:["荆州公司项目群 — 回款风险：年度回款完成率偏低。"] },
-  { sender:"张哲", date:"2026-07-21", projects:"锡东先导区CIM平台、惠山数字底座", summary:"硬件总金额45.68万，回款按阶段正常推进。", status:"分析完成", risks:["锡东先导区CIM平台 — 回款风险：硬件回款需保持现有跟踪节奏。"] },
-] as const;
-
 const adminEntry = computed(() => {
   if (auth.user?.permissions.includes("admin.user.manage")) {
     return "/admin/users";
@@ -152,6 +169,11 @@ const canManageTodos = computed(() =>
   Boolean(auth.user?.permissions.includes("risk.resolve")),
 );
 const canManageRisks = canManageTodos;
+
+/** Agent drawer is only offered to roles granted `agent.use` (ADR 0019). */
+const canUseAgent = computed(() =>
+  Boolean(auth.user?.permissions.includes("agent.use")),
+);
 
 const totalPages = computed(() =>
   Math.max(1, Math.ceil(riskPage.value.total / riskPage.value.pageSize)),
@@ -347,18 +369,70 @@ function openMetricDetail(key: string): void {
   }
 }
 
-function openAgent(): void { agentOpen.value = true; profileMenuOpen.value = false; }
+function openAgent(): void {
+  agentOpen.value = true;
+  profileMenuOpen.value = false;
+  void loadAgentHelp();
+}
+
+function closeAgent(): void {
+  agentOpen.value = false;
+}
+
+async function loadAgentHelp(): Promise<void> {
+  if (agentHelp.value) return;
+  try {
+    agentHelp.value = await agentApi.help();
+  } catch {
+    // The tool directory is optional context; the drawer still works without it.
+  }
+}
+
 function sendAgent(prompt?: string): void {
-  const question = (prompt ?? agentInput.value).trim();
-  if (!question) return;
-  agentMessages.value.push({ role:"user", text:question });
-  const answer = question.includes("高风险")
-    ? `当前共有 ${summary.value?.highRiskTotal ?? 0} 项高风险，建议优先核实责任人、回款计划和本周待办。`
-    : question.includes("回款")
-      ? `当前风险项目待回款为 ${formatWan(summary.value?.riskRemainingAmountYuan)}，可在“应收与回款”页签查看项目明细。`
-      : `已结合当前 ${riskPage.value.total} 条风险线索分析。建议从本周重点关注和管理者待办开始处理。`;
-  agentMessages.value.push({ role:"assistant", text:answer });
+  const message = (prompt ?? agentInput.value).trim();
+  if (!message) return;
   agentInput.value = "";
+  void agent.send(message);
+}
+
+async function loadWeeklyReport(): Promise<void> {
+  weeklyLoading.value = true;
+  weeklyError.value = "";
+  try {
+    weeklyReport.value = await weeklyReportsApi.current();
+  } catch (requestError) {
+    weeklyError.value =
+      requestError instanceof Error
+        ? requestError.message
+        : "周报汇总加载失败";
+    weeklyReport.value = null;
+  } finally {
+    weeklyLoading.value = false;
+  }
+}
+
+async function openWeeklyProject(
+  project: WeeklyProjectSummary,
+): Promise<void> {
+  if (!weeklyReport.value || !projectHasRisks(project)) return;
+  selectedWeeklyProject.value = project;
+  weeklyDetail.value = null;
+  weeklyDetailLoading.value = true;
+  try {
+    weeklyDetail.value = await weeklyReportsApi.detail(
+      weeklyReport.value.weekStart,
+      project.project.id,
+    );
+  } catch {
+    weeklyDetail.value = null;
+  } finally {
+    weeklyDetailLoading.value = false;
+  }
+}
+
+function closeWeeklyProject(): void {
+  selectedWeeklyProject.value = null;
+  weeklyDetail.value = null;
 }
 
 async function loadDashboard(): Promise<void> {
@@ -775,6 +849,11 @@ async function logout(): Promise<void> {
 
 onMounted(() => {
   void loadDashboard();
+  void loadWeeklyReport();
+});
+
+onUnmounted(() => {
+  agent.reset();
 });
 </script>
 
@@ -795,7 +874,7 @@ onMounted(() => {
           <span aria-hidden="true">⊞</span>
           Web 风险看板
         </RouterLink>
-        <button type="button" @click="openAgent">
+        <button v-if="canUseAgent" type="button" @click="openAgent">
           <span aria-hidden="true">◌</span>
           Agent 智能对话
         </button>
@@ -1872,12 +1951,210 @@ onMounted(() => {
       </section>
 
       <section class="weekly-report-panel">
-        <header><div><p>WEEKLY REPORTS</p><h2>本周周报邮件汇总 <small>已同步5封 · 已完成AI分析5封</small></h2></div><RouterLink v-if="auth.user?.permissions.includes('mailbox.sync_self')" to="/mail-sync-results">同步周报</RouterLink></header>
-        <div class="weekly-report-table-wrap"><table><thead><tr><th>同步状态</th><th>发件人</th><th>日期</th><th>涉及项目</th><th>关键要点</th></tr></thead><tbody><tr v-for="report in weeklyReports" :key="`${report.sender}-${report.date}`" tabindex="0" @click="selectedWeeklyReport=report" @keydown.enter="selectedWeeklyReport=report"><td><span>{{ report.status }}</span></td><td><strong>{{ report.sender }}</strong><small>邮箱同步</small></td><td>{{ report.date }}</td><td><strong>{{ report.projects }}</strong></td><td><strong>{{ report.summary }}</strong><small>点击查看邮件摘要与关联风险</small></td></tr></tbody></table></div>
+        <header>
+          <div>
+            <p>WEEKLY REPORTS</p>
+            <h2>
+              本周周报风险汇总
+              <small v-if="weeklyReport">
+                {{ weekRangeLabel(weeklyReport) }} · 已分析
+                {{ summaryCount(weeklyReport.summary, "reportCount") ?? "—" }} 封
+                · 风险 {{ summaryCount(weeklyReport.summary, "riskCount") ?? "—" }} 项
+              </small>
+            </h2>
+          </div>
+          <RouterLink
+            v-if="auth.user?.permissions.includes('mailbox.sync_self')"
+            to="/mail-sync-results"
+          >
+            同步周报
+          </RouterLink>
+        </header>
+
+        <div v-if="weeklyLoading" class="weekly-report-table-wrap" role="status">
+          正在加载周报汇总…
+        </div>
+
+        <div
+          v-else-if="weeklyError"
+          class="weekly-report-table-wrap"
+          role="alert"
+        >
+          <p>{{ weeklyError }}</p>
+          <button type="button" @click="loadWeeklyReport">重试</button>
+        </div>
+
+        <div
+          v-else-if="weeklyReport && weeklyReport.projects.length"
+          class="weekly-report-table-wrap"
+        >
+          <p v-if="weeklyReport.stale" class="weekly-stale-note">
+            {{ staleLabel(weeklyReport.stale) }}
+          </p>
+          <table>
+            <thead>
+              <tr>
+                <th>项目</th>
+                <th>风险数</th>
+                <th>等级分布</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="project in weeklyReport.projects"
+                :key="project.project.id"
+                :tabindex="projectHasRisks(project) ? 0 : -1"
+                @click="openWeeklyProject(project)"
+                @keydown.enter="openWeeklyProject(project)"
+              >
+                <td><strong>{{ project.project.name }}</strong></td>
+                <td>{{ project.riskCount }}</td>
+                <td>{{ levelCountsLabel(project.riskLevelCounts as Record<string, unknown>) }}</td>
+                <td>
+                  <small v-if="projectHasRisks(project)">点击查看风险明细</small>
+                  <small v-else>本周无风险</small>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div v-else class="weekly-report-table-wrap">
+          本周暂无周报风险汇总。
+        </div>
       </section>
     </main>
 
-    <aside v-if="agentOpen" class="agent-drawer" aria-label="Agent智能对话"><header><div><p>AGENT ASSISTANT</p><h2>Agent 智能对话</h2><span>仅使用您有权访问的数据</span></div><button type="button" aria-label="关闭" @click="agentOpen=false">×</button></header><div class="agent-suggestions"><button v-for="prompt in ['当前有哪些高风险？','风险项目待回款是多少？','给出本周处理建议']" :key="prompt" @click="sendAgent(prompt)">{{ prompt }}</button></div><div class="agent-messages"><article v-for="(message,index) in agentMessages" :key="index" :class="message.role"><b>{{ message.role==='assistant'?'AI':'我' }}</b><p>{{ message.text }}</p></article></div><form @submit.prevent="sendAgent()"><textarea v-model="agentInput" placeholder="输入关于项目、风险、回款或待办的问题"></textarea><button type="submit">发送</button></form></aside><button v-if="agentOpen" class="agent-backdrop" type="button" aria-label="关闭Agent" @click="agentOpen=false"></button>
+    <aside v-if="agentOpen" class="agent-drawer" aria-label="Agent智能对话">
+      <header>
+        <div>
+          <p>AGENT ASSISTANT</p>
+          <h2>Agent 智能对话</h2>
+          <span>仅使用您有权访问的数据</span>
+        </div>
+        <button type="button" aria-label="关闭" @click="closeAgent">×</button>
+      </header>
+
+      <div v-if="agentHelp && agentHelp.tools.length" class="agent-tools">
+        <small>可用能力：</small>
+        <span v-for="tool in agentHelp.tools" :key="tool.name">{{ tool.name }}</span>
+      </div>
+
+      <div v-if="!agent.state.messages.length && agent.state.status === 'idle'" class="agent-suggestions">
+        <button
+          v-for="prompt in ['当前有哪些高风险？','风险项目待回款是多少？','给出本周处理建议']"
+          :key="prompt"
+          type="button"
+          @click="sendAgent(prompt)"
+        >
+          {{ prompt }}
+        </button>
+      </div>
+
+      <div class="agent-messages">
+        <article
+          v-for="message in agent.state.messages"
+          :key="message.id"
+          :class="message.role.toLowerCase()"
+        >
+          <b>{{ message.role === 'ASSISTANT' ? 'AI' : '我' }}</b>
+          <p>{{ message.content }}</p>
+          <small v-if="message.dataAsOf">数据截至 {{ formatDateTime(message.dataAsOf) }}</small>
+        </article>
+
+        <article v-if="agent.state.streamingText" class="assistant">
+          <b>AI</b>
+          <p>{{ agent.state.streamingText }}</p>
+        </article>
+
+        <p v-if="agent.state.status === 'loading'" class="agent-progress" role="status">
+          正在发起对话…
+        </p>
+        <p
+          v-else-if="agent.state.status === 'streaming' && agent.state.progress"
+          class="agent-progress"
+          role="status"
+        >
+          {{ agent.state.progress.message || agent.state.progress.stage }}
+        </p>
+      </div>
+
+      <section
+        v-if="agent.state.preview"
+        class="agent-preview"
+        :class="`preview-${agent.state.preview.status}`"
+        aria-label="Agent 预览确认"
+      >
+        <header>
+          <span class="agent-preview-operation">
+            {{ operationLabel(agent.state.preview.operation) }}
+          </span>
+          <small>需确认后生效</small>
+        </header>
+        <p class="agent-preview-summary">
+          {{ previewSummary(agent.state.preview.content) }}
+        </p>
+        <p v-if="agent.state.preview.content.description" class="agent-preview-desc">
+          {{ agent.state.preview.content.description }}
+        </p>
+
+        <p v-if="agent.state.preview.status === 'confirmed' && agent.state.preview.result" class="agent-preview-feedback">
+          已确认：{{ agent.state.preview.result.resourceType }}
+          {{ formatDateTime(agent.state.preview.result.completedAt) }}
+        </p>
+        <p v-if="agent.state.preview.status === 'failed'" class="agent-preview-feedback" role="alert">
+          {{ agent.state.preview.failureMessage }}
+        </p>
+
+        <div class="agent-preview-actions">
+          <button
+            v-if="agent.state.preview.status === 'pending' || agent.state.preview.status === 'failed'"
+            type="button"
+            @click="agent.confirmPreview()"
+          >
+            确认执行
+          </button>
+          <button
+            v-if="agent.state.preview.status === 'confirmed'"
+            type="button"
+            @click="agent.dismissPreview()"
+          >
+            完成
+          </button>
+        </div>
+      </section>
+
+      <p v-if="agent.state.error" class="agent-error" role="alert">
+        {{ agentErrorLabel(agent.state.error.code, agent.state.error.message) }}
+        <button v-if="agent.state.error.retryable" type="button" @click="agent.retry()">
+          重试
+        </button>
+      </p>
+
+      <p v-if="agent.state.status === 'disconnected'" class="agent-error" role="status">
+        连接已断开，事件流可能未完成。
+        <button type="button" @click="agent.reconnect()">重新连接</button>
+      </p>
+
+      <form @submit.prevent="sendAgent()">
+        <textarea
+          v-model="agentInput"
+          :disabled="agent.sending.value"
+          placeholder="输入关于项目、风险、回款或待办的问题"
+        ></textarea>
+        <button type="submit" :disabled="agent.sending.value">
+          {{ agent.sending.value ? "处理中" : "发送" }}
+        </button>
+      </form>
+    </aside>
+    <button
+      v-if="agentOpen"
+      class="agent-backdrop"
+      type="button"
+      aria-label="关闭Agent"
+      @click="closeAgent"
+    ></button>
 
     <div v-if="detailLoading" class="dashboard-detail-loading" role="status">
       正在加载风险详情…
@@ -2078,7 +2355,47 @@ onMounted(() => {
       </dl>
     </ModalDialog>
 
-    <ModalDialog v-if="selectedWeeklyReport" eyebrow="WEEKLY REPORT DETAIL" :title="`${selectedWeeklyReport.sender} 的周报`" @close="selectedWeeklyReport=null"><section class="weekly-report-summary"><p>关键要点</p><strong>{{ selectedWeeklyReport.summary }}</strong></section><section class="weekly-project-list"><h3>涉及项目列表</h3><p>{{ selectedWeeklyReport.projects }}</p></section><section class="weekly-risk-list"><h3>提取的风险（{{ selectedWeeklyReport.risks.length }}项）</h3><article v-for="risk in selectedWeeklyReport.risks" :key="risk"><span>高风险</span><p>{{ risk }}</p></article></section></ModalDialog>
+    <ModalDialog
+      v-if="selectedWeeklyProject"
+      eyebrow="WEEKLY REPORT DETAIL"
+      :title="`${selectedWeeklyProject.project.name} · 周报风险明细`"
+      @close="closeWeeklyProject"
+    >
+      <section class="weekly-report-summary">
+        <p>本周风险等级分布</p>
+        <strong>{{
+          levelCountsLabel(
+            selectedWeeklyProject.riskLevelCounts as Record<string, unknown>,
+          )
+        }}</strong>
+        <small v-if="weeklyReport?.stale">{{ staleLabel(weeklyReport.stale) }}</small>
+      </section>
+
+      <div v-if="weeklyDetailLoading" class="dashboard-detail-loading" role="status">
+        正在加载周报风险明细…
+      </div>
+
+      <section v-else-if="weeklyDetail" class="weekly-risk-list">
+        <h3>提取的风险（{{ weeklyDetail.items.length }}项）</h3>
+        <article v-for="item in weeklyDetail.items" :key="item.riskId">
+          <span
+            class="risk-level-chip"
+            :class="`level-${item.riskLevel.toLowerCase()}`"
+          >
+            {{ levelLabel(item.riskLevel) }}
+          </span>
+          <p>{{ item.summary }}</p>
+          <small>
+            {{ riskStatusLabel(item.riskStatus) }} · 待办{{ todoStatusLabel(item.todoStatus) }}
+            · {{ formatDateTime(item.occurredAt) }}
+          </small>
+        </article>
+      </section>
+
+      <section v-else class="weekly-risk-list">
+        <p>周报风险明细加载失败，请关闭后重试。</p>
+      </section>
+    </ModalDialog>
 
     <ModalDialog
       v-if="selectedRisk"

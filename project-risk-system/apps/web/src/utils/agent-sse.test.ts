@@ -1,0 +1,262 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  agentErrorLabel,
+  applyFrame,
+  confirmationErrorLabel,
+  initialAgentState,
+  operationLabel,
+  parseSseFrames,
+  previewSummary,
+  type SseFrame,
+} from "@/utils/agent-sse";
+
+/** Build a wired SSE frame the way the backend `wire_event` serializes it. */
+function frame(
+  event: string,
+  id: string,
+  payload: Record<string, unknown>,
+): SseFrame {
+  return {
+    id,
+    event,
+    data: JSON.stringify({
+      conversationId: "c-1",
+      messageId: "m-1",
+      sequence: 1,
+      traceId: "t-1",
+      occurredAt: "2026-08-14T00:00:00.000Z",
+      ...payload,
+    }),
+  };
+}
+
+describe("SSE frame parser", () => {
+  it("splits complete frames and keeps a partial trailing frame as carry", () => {
+    const buffer =
+      "id: e1\nevent: progress\ndata: {\"stage\":\"s\",\"message\":\"m\"}\n\n" +
+      "id: e2\nevent: message.delta\ndata: {\"text\":\"hel";
+    const { frames, carry } = parseSseFrames(buffer);
+    expect(frames).toHaveLength(1);
+    const first = frames[0]!;
+    expect(first.id).toBe("e1");
+    expect(first.event).toBe("progress");
+    expect(carry).toBe("id: e2\nevent: message.delta\ndata: {\"text\":\"hel");
+  });
+
+  it("parses multi-line data and normalizes CRLF terminators", () => {
+    const buffer =
+      "id: e1\r\nevent: completed\r\ndata: line1\r\ndata: line2\r\n\r\n";
+    const { frames } = parseSseFrames(buffer);
+    expect(frames).toHaveLength(1);
+    const first = frames[0]!;
+    expect(first.event).toBe("completed");
+    expect(first.data).toBe("line1\nline2");
+  });
+
+  it("defaults the event field to message and ignores comments", () => {
+    const buffer = ": keepalive\ndata: {}\n\n";
+    const { frames } = parseSseFrames(buffer);
+    expect(frames).toHaveLength(1);
+    const first = frames[0]!;
+    expect(first.event).toBe("message");
+    expect(first.id).toBeNull();
+  });
+
+  it("continues accumulation across chunks via carry", () => {
+    const part1 = "id: e1\nevent: progress\ndata: {\"stage\":\"a\"";
+    const part2 = ",\"message\":\"b\"}\n\n";
+    const first = parseSseFrames(part1);
+    expect(first.frames).toHaveLength(0);
+    const second = parseSseFrames(first.carry + part2);
+    expect(second.frames).toHaveLength(1);
+    expect(second.carry).toBe("");
+    expect(JSON.parse(second.frames[0]!.data).message).toBe("b");
+  });
+});
+
+describe("agent event reducer", () => {
+  it("accumulates message.delta into streaming text", () => {
+    let state = initialAgentState();
+    state = applyFrame(state, frame("message.delta", "e1", { text: "Hello" }));
+    state = applyFrame(state, frame("message.delta", "e2", { text: " world" }));
+    expect(state.streamingText).toBe("Hello world");
+    expect(state.status).toBe("streaming");
+    expect(state.lastEventId).toBe("e2");
+  });
+
+  it("records progress events", () => {
+    let state = initialAgentState();
+    state = applyFrame(
+      state,
+      frame("progress", "e1", { stage: "thinking", message: "分析中" }),
+    );
+    expect(state.progress).toEqual({ stage: "thinking", message: "分析中" });
+    expect(state.status).toBe("streaming");
+  });
+
+  it("finalizes the assistant message on completed and clears streaming state", () => {
+    let state = initialAgentState();
+    state.messages = [
+      {
+        id: "u1",
+        role: "USER",
+        content: "有哪些高风险？",
+        createdAt: "2026-08-14T00:00:00.000Z",
+        dataAsOf: null,
+        sequence: 1,
+      },
+    ];
+    state = applyFrame(state, frame("message.delta", "e1", { text: "共 " }));
+    state = applyFrame(state, frame("message.delta", "e2", { text: "2 项" }));
+    state = applyFrame(
+      state,
+      frame("completed", "e3", { dataAsOf: "2026-08-14T00:00:01.000Z" }),
+    );
+    expect(state.streamingText).toBe("");
+    expect(state.progress).toBeNull();
+    expect(state.status).toBe("completed");
+    expect(state.messages).toHaveLength(2);
+    const assistant = state.messages[1]!;
+    expect(assistant.role).toBe("ASSISTANT");
+    expect(assistant.content).toBe("共 2 项");
+    expect(assistant.dataAsOf).toBe("2026-08-14T00:00:01.000Z");
+    expect(assistant.sequence).toBe(2);
+  });
+
+  it("captures a preview proposal with parsed canonical content", () => {
+    let state = initialAgentState();
+    state = applyFrame(
+      state,
+      frame("preview", "e1", {
+        operation: "REPORT",
+        content: {
+          operation: "REPORT",
+          projectId: "p-1",
+          riskId: null,
+          todoId: null,
+          title: "回款风险",
+          description: "质保款延期",
+          riskLevel: "HIGH",
+          dueDate: null,
+          assigneeUserId: null,
+          categoryId: "c-1",
+          categoryBindingDigest: "d-1",
+        },
+        contentDigest: "digest-1",
+        confirmationToken: "token-1",
+        expiresAt: "2026-08-14T00:10:00.000Z",
+      }),
+    );
+    expect(state.preview).not.toBeNull();
+    expect(state.preview?.operation).toBe("REPORT");
+    expect(state.preview?.token).toBe("token-1");
+    expect(state.preview?.status).toBe("pending");
+    expect(state.preview?.content.title).toBe("回款风险");
+    expect(state.preview?.content.categoryId).toBe("c-1");
+    expect(state.preview?.failureMessage).toBeNull();
+  });
+
+  it("records a terminal error and clears streaming state", () => {
+    let state = initialAgentState();
+    state = applyFrame(state, frame("message.delta", "e1", { text: "部分" }));
+    state = applyFrame(
+      state,
+      frame("error", "e2", {
+        code: "AGENT_PROVIDER_UNAVAILABLE",
+        message: "AI服务暂时不可用",
+        retryable: true,
+      }),
+    );
+    expect(state.status).toBe("error");
+    expect(state.streamingText).toBe("");
+    expect(state.error).toEqual({
+      code: "AGENT_PROVIDER_UNAVAILABLE",
+      message: "AI服务暂时不可用",
+      retryable: true,
+    });
+  });
+
+  it("treats heartbeat as a no-op that still advances the cursor", () => {
+    let state = initialAgentState();
+    state = applyFrame(state, frame("heartbeat", "e1", {}));
+    expect(state.status).toBe("idle");
+    expect(state.lastEventId).toBe("e1");
+  });
+
+  it("advances the resume cursor even for an unparseable frame with an id", () => {
+    const state = applyFrame(initialAgentState(), {
+      id: "bad",
+      event: "message",
+      data: "{not json",
+    });
+    expect(state.lastEventId).toBe("bad");
+    expect(state.status).toBe("idle");
+  });
+
+  it("is resume-safe: lastEventId tracks the last applied event", () => {
+    let state = initialAgentState();
+    state = applyFrame(state, frame("progress", "e1", { stage: "s", message: "m" }));
+    state = applyFrame(state, frame("message.delta", "e2", { text: "x" }));
+    expect(state.lastEventId).toBe("e2");
+  });
+});
+
+describe("agent display labels", () => {
+  it("maps known execution error codes to user-facing text", () => {
+    expect(
+      agentErrorLabel("AGENT_PROVIDER_UNAVAILABLE", "fallback"),
+    ).toBe("AI服务暂时不可用，请稍后重试");
+    expect(
+      agentErrorLabel("AGENT_REPORT_CATEGORY_STALE", "fallback"),
+    ).toBe("风险分类已变更，请重新发起");
+    expect(agentErrorLabel("UNKNOWN_CODE", "fallback")).toBe("fallback");
+  });
+
+  it("maps one-use confirmation error codes", () => {
+    expect(
+      confirmationErrorLabel("AGENT_CONFIRMATION_ALREADY_USED", "fallback"),
+    ).toBe("确认凭证已被使用，请勿重复确认");
+    expect(
+      confirmationErrorLabel("AGENT_CONFIRMATION_EXPIRED", "fallback"),
+    ).toBe("确认凭证已过期，请重新发起");
+    expect(
+      confirmationErrorLabel("AGENT_RISK_ALREADY_RESOLVED", "fallback"),
+    ).toBe("风险已经解除");
+    expect(confirmationErrorLabel("UNKNOWN", "fallback")).toBe("fallback");
+  });
+
+  it("labels operations and summarizes previews", () => {
+    expect(operationLabel("REPORT")).toBe("上报风险");
+    expect(operationLabel("PROCESS")).toBe("处理待办");
+    expect(operationLabel("RESOLVE")).toBe("解除风险");
+    expect(
+      previewSummary({
+        operation: "REPORT",
+        projectId: "p",
+        riskId: null,
+        todoId: null,
+        title: "回款风险",
+        description: "延期",
+        riskLevel: "HIGH",
+        dueDate: null,
+        assigneeUserId: null,
+        categoryId: "c",
+      }),
+    ).toBe("回款风险");
+    expect(
+      previewSummary({
+        operation: "RESOLVE",
+        projectId: "p",
+        riskId: "r",
+        todoId: null,
+        title: "",
+        description: "已解决",
+        riskLevel: null,
+        dueDate: null,
+        assigneeUserId: null,
+        categoryId: null,
+      }),
+    ).toBe("已解决");
+  });
+});
