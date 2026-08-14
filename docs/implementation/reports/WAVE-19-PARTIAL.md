@@ -3,7 +3,7 @@
 ## 结果
 
 - Wave 19：`IN_PROGRESS`（仅 T045 完成；Integration 未启动）
-- T045：`REVIEW_PASSED`（code checkpoint SHA 由后续 metadata commit 补录；参见 `EXECUTION_STATE.md`）
+- T045：`REVIEW_PASSED`（code checkpoint `ac351cb8aed4ccfd35a13fdf4becbdc2e80f22df`）
 - schema-fidelity：`PASS`（三个 `_Contract` serialization-mode schema 恢复真实字段类型，受影响 contract 字段不再降级为 `unknown`）
 - Independent Review：`REVIEW_PASSED`（无 blocking finding）
 - Wave 19 Integration：未启动
