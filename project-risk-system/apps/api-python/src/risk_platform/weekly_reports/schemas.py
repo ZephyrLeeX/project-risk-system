@@ -13,10 +13,22 @@ from risk_platform.todos.models import ActionItemStatus
 
 
 class _Contract(BaseModel):
+    """ADR 0019/0021 public-contract base.
+
+    The wildcard ``field_serializer`` must NOT declare a return type: with a
+    return annotation (e.g. ``-> object``) Pydantic replaces every field's
+    serialization-mode JSON schema with that annotation, collapsing each
+    ``_Contract`` field to ``unknown`` in the frozen OpenAPI authority. Omitting
+    the return annotation lets Pydantic keep each field's declared type while
+    the body still reformats ``datetime`` values to UTC RFC 3339 milliseconds
+    with ``Z`` (``when_used="json"`` keeps Python ``model_dump`` returning
+    datetime objects; ``date`` fields use Pydantic's default serialization).
+    """
+
     model_config = ConfigDict(extra="forbid")
 
     @field_serializer("*", when_used="json", check_fields=False)
-    def serialize_values(self, value: object) -> object:
+    def serialize_values(self, value: object):  # type: ignore[no-untyped-def]
         if isinstance(value, datetime):
             return value.astimezone(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
         return value

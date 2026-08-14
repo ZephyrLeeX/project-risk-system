@@ -1638,15 +1638,18 @@ export interface components {
         /** AdminOverview */
         AdminOverview: {
             /** Attention */
-            attention: unknown;
-            /** Generatedat */
-            generatedAt: unknown;
+            attention: components["schemas"]["AttentionItem"][] | null;
+            /**
+             * Generatedat
+             * Format: date-time
+             */
+            generatedAt: string;
             /** Health */
-            health: unknown;
+            health: components["schemas"]["HealthItem"][] | null;
             /** Recentaudit */
-            recentAudit: unknown;
+            recentAudit: components["schemas"]["RecentAuditItem"][] | null;
             /** Unavailablesections */
-            unavailableSections: unknown;
+            unavailableSections: components["schemas"]["UnavailableSection"][];
         };
         /** AdminUserResponse */
         AdminUserResponse: {
@@ -1681,62 +1684,80 @@ export interface components {
         AgentConfirmationRequest: Record<string, never>;
         /** AgentConfirmationResponse */
         AgentConfirmationResponse: {
-            /** Completedat */
-            completedAt: unknown;
+            /**
+             * Completedat
+             * Format: date-time
+             */
+            completedAt: string;
             /** Operation */
-            operation: unknown;
-            /** Resourceid */
-            resourceId: unknown;
+            operation: string;
+            /**
+             * Resourceid
+             * Format: uuid
+             */
+            resourceId: string;
             /** Resourcetype */
-            resourceType: unknown;
+            resourceType: string;
         };
         /** AgentConversationEnvelope */
         AgentConversationEnvelope: {
-            conversation: unknown;
+            conversation: components["schemas"]["AgentConversationResponse"];
             /** Streamurl */
-            streamUrl: unknown;
-            userMessage: unknown;
+            streamUrl: string;
+            userMessage: components["schemas"]["AgentMessageResponse"];
         };
         /** AgentConversationHistory */
         AgentConversationHistory: {
-            conversation: unknown;
+            conversation: components["schemas"]["AgentConversationResponse"];
             /** Messages */
-            messages: unknown;
+            messages: components["schemas"]["AgentMessageResponse"][];
             /** Nextmessagesequence */
-            nextMessageSequence: unknown;
+            nextMessageSequence: number;
         };
         /** AgentConversationResponse */
         AgentConversationResponse: {
-            /** Createdat */
-            createdAt: unknown;
-            /** Expiresat */
-            expiresAt: unknown;
-            /** Id */
-            id: unknown;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /**
+             * Expiresat
+             * Format: date-time
+             */
+            expiresAt: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
             /** Lasteventsequence */
-            lastEventSequence: unknown;
+            lastEventSequence: number;
             /** Lastmessagesequence */
-            lastMessageSequence: unknown;
-            /** Updatedat */
-            updatedAt: unknown;
+            lastMessageSequence: number;
+            /**
+             * Updatedat
+             * Format: date-time
+             */
+            updatedAt: string;
         };
         /** AgentHelpResponse */
         AgentHelpResponse: {
             /** Tools */
-            tools: unknown;
+            tools: components["schemas"]["AgentToolHelp"][];
         };
         /** AgentMessageEnvelope */
         AgentMessageEnvelope: {
             /** Streamurl */
-            streamUrl: unknown;
-            userMessage: unknown;
+            streamUrl: string;
+            userMessage: components["schemas"]["AgentMessageResponse"];
         };
         /** AgentMessagePage */
         AgentMessagePage: {
             /** Items */
-            items: unknown;
+            items: components["schemas"]["AgentMessageResponse"][];
             /** Nextaftersequence */
-            nextAfterSequence: unknown;
+            nextAfterSequence: number;
         };
         /** AgentMessageRequest */
         AgentMessageRequest: {
@@ -1746,30 +1767,36 @@ export interface components {
         /** AgentMessageResponse */
         AgentMessageResponse: {
             /** Content */
-            content: unknown;
-            /** Createdat */
-            createdAt: unknown;
+            content: string;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
             /** Dataasof */
-            dataAsOf: unknown;
-            /** Id */
-            id: unknown;
+            dataAsOf: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
             /** Role */
-            role: unknown;
+            role: string;
             /** Sequence */
-            sequence: unknown;
+            sequence: number;
             /** Traceid */
-            traceId: unknown;
+            traceId: string;
         };
         /** AgentToolHelp */
         AgentToolHelp: {
             /** Description */
-            description: unknown;
+            description: string;
             /** Name */
-            name: unknown;
+            name: string;
             /** Requiredpermissions */
-            requiredPermissions: unknown;
+            requiredPermissions: string[];
             /** Supportspreview */
-            supportsPreview: unknown;
+            supportsPreview: boolean;
         };
         /** ApiResponse[AdminOverview] */
         ApiResponse_AdminOverview_: {
@@ -2508,18 +2535,27 @@ export interface components {
         /** AttentionItem */
         AttentionItem: {
             /** Id */
-            id: unknown;
-            /** Kind */
-            kind: unknown;
-            link: unknown;
-            /** Occurredat */
-            occurredAt: unknown;
-            /** Status */
-            status: unknown;
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "IMPORT_REVIEW" | "AI_PROVIDER_CONNECTION" | "AI_PROVIDER_EXPIRY";
+            link: components["schemas"]["OverviewLink"];
+            /**
+             * Occurredat
+             * Format: date-time
+             */
+            occurredAt: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "CRITICAL" | "WARNING";
             /** Summary */
-            summary: unknown;
+            summary: string;
             /** Title */
-            title: unknown;
+            title: string;
         };
         /**
          * AuditActionGroup
@@ -3167,19 +3203,28 @@ export interface components {
         };
         /** HealthItem */
         HealthItem: {
-            /** Checkedat */
-            checkedAt: unknown;
+            /**
+             * Checkedat
+             * Format: date-time
+             */
+            checkedAt: string;
             /** Code */
-            code: unknown;
-            /** Key */
-            key: unknown;
+            code: ("TIMEOUT" | "UNREACHABLE" | "NO_ACTIVE_WORKER" | "NO_ENABLED_PROVIDER" | "CHECK_FAILED") | null;
+            /**
+             * Key
+             * @enum {string}
+             */
+            key: "API" | "DATABASE" | "REDIS" | "WORKER" | "AI_PROVIDER";
             /** Label */
-            label: unknown;
-            link: unknown;
-            /** Status */
-            status: unknown;
+            label: string;
+            link: components["schemas"]["OverviewLink"] | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "HEALTHY" | "DEGRADED" | "UNAVAILABLE";
             /** Summary */
-            summary: unknown;
+            summary: string;
         };
         /**
          * HealthResponse
@@ -4190,9 +4235,11 @@ export interface components {
         /** OverviewLink */
         OverviewLink: {
             /** Path */
-            path: unknown;
+            path: string;
             /** Query */
-            query: unknown;
+            query: {
+                [key: string]: string;
+            };
         };
         /** PageResponse */
         PageResponse: {
@@ -4429,25 +4476,34 @@ export interface components {
         /** RecentAuditItem */
         RecentAuditItem: {
             /** Action */
-            action: unknown;
+            action: string;
             /** Actorname */
-            actorName: unknown;
-            /** Id */
-            id: unknown;
-            link: unknown;
-            module: unknown;
-            /** Occurredat */
-            occurredAt: unknown;
+            actorName: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            link: components["schemas"]["OverviewLink"];
+            module: components["schemas"]["AuditModuleKey"];
+            /**
+             * Occurredat
+             * Format: date-time
+             */
+            occurredAt: string;
             /** Resourceid */
-            resourceId: unknown;
+            resourceId: string | null;
             /** Resourcetype */
-            resourceType: unknown;
-            /** Result */
-            result: unknown;
+            resourceType: string;
+            /**
+             * Result
+             * @enum {string}
+             */
+            result: "SUCCESS" | "FAILURE";
             /** Summary */
-            summary: unknown;
+            summary: string;
             /** Traceid */
-            traceId: unknown;
+            traceId: string;
         };
         /** ReleaseDetail */
         ReleaseDetail: {
@@ -5276,12 +5332,21 @@ export interface components {
         };
         /** UnavailableSection */
         UnavailableSection: {
-            /** Code */
-            code: unknown;
-            /** Reason */
-            reason: unknown;
-            /** Section */
-            section: unknown;
+            /**
+             * Code
+             * @enum {string}
+             */
+            code: "FORBIDDEN" | "TIMEOUT" | "DEPENDENCY_FAILURE";
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "FORBIDDEN" | "TIMEOUT" | "DEPENDENCY_FAILURE";
+            /**
+             * Section
+             * @enum {string}
+             */
+            section: "health" | "attention" | "recentAudit";
         };
         /** UpdateProviderRequest */
         UpdateProviderRequest: {
@@ -5425,71 +5490,113 @@ export interface components {
         };
         /** WeeklyProject */
         WeeklyProject: {
-            /** Id */
-            id: unknown;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
             /** Name */
-            name: unknown;
+            name: string;
         };
         /** WeeklyProjectDetail */
         WeeklyProjectDetail: {
-            /** Generatedat */
-            generatedAt: unknown;
+            /**
+             * Generatedat
+             * Format: date-time
+             */
+            generatedAt: string;
             /** Items */
-            items: unknown;
-            project: unknown;
+            items: components["schemas"]["WeeklyReportItemResponse"][];
+            project: components["schemas"]["WeeklyProject"];
             /** Stale */
-            stale: unknown;
-            /** Weekstart */
-            weekStart: unknown;
+            stale: boolean;
+            /**
+             * Weekstart
+             * Format: date
+             */
+            weekStart: string;
         };
         /** WeeklyProjectSummary */
         WeeklyProjectSummary: {
-            project: unknown;
+            project: components["schemas"]["WeeklyProject"];
             /** Riskcount */
-            riskCount: unknown;
+            riskCount: number;
             /** Risklevelcounts */
-            riskLevelCounts: unknown;
+            riskLevelCounts: {
+                [key: string]: components["schemas"]["JSONValue"];
+            };
             /** Sourcerevision */
-            sourceRevision: unknown;
+            sourceRevision: number;
             /** Summary */
-            summary: unknown;
+            summary: {
+                [key: string]: components["schemas"]["JSONValue"];
+            };
         };
         /** WeeklyReportItemResponse */
         WeeklyReportItemResponse: {
-            /** Occurredat */
-            occurredAt: unknown;
-            /** Riskid */
-            riskId: unknown;
-            riskLevel: unknown;
-            riskStatus: unknown;
-            /** Sourcecandidateid */
-            sourceCandidateId: unknown;
-            /** Sourcemailid */
-            sourceMailId: unknown;
+            /**
+             * Occurredat
+             * Format: date-time
+             */
+            occurredAt: string;
+            /**
+             * Riskid
+             * Format: uuid
+             */
+            riskId: string;
+            riskLevel: components["schemas"]["ProjectRiskLevel"];
+            riskStatus: components["schemas"]["RiskStatus"];
+            /**
+             * Sourcecandidateid
+             * Format: uuid
+             */
+            sourceCandidateId: string;
+            /**
+             * Sourcemailid
+             * Format: uuid
+             */
+            sourceMailId: string;
             /** Sourcerevision */
-            sourceRevision: unknown;
+            sourceRevision: number;
             /** Summary */
-            summary: unknown;
-            /** Todoid */
-            todoId: unknown;
-            todoStatus: unknown;
+            summary: string;
+            /**
+             * Todoid
+             * Format: uuid
+             */
+            todoId: string;
+            todoStatus: components["schemas"]["ActionItemStatus"];
         };
         /** WeeklyReportResponse */
         WeeklyReportResponse: {
-            /** Freshnessdeadline */
-            freshnessDeadline: unknown;
-            /** Generatedat */
-            generatedAt: unknown;
+            /**
+             * Freshnessdeadline
+             * Format: date-time
+             */
+            freshnessDeadline: string;
+            /**
+             * Generatedat
+             * Format: date-time
+             */
+            generatedAt: string;
             /** Projects */
-            projects: unknown;
+            projects: components["schemas"]["WeeklyProjectSummary"][];
             /** Stale */
-            stale: unknown;
+            stale: boolean;
             /** Summary */
-            summary: unknown;
-            /** Weekend */
-            weekEnd: unknown;
-            /** Weekstart */
-            weekStart: unknown;
+            summary: {
+                [key: string]: components["schemas"]["JSONValue"];
+            };
+            /**
+             * Weekend
+             * Format: date
+             */
+            weekEnd: string;
+            /**
+             * Weekstart
+             * Format: date
+             */
+            weekStart: string;
         };
     };
     responses: never;

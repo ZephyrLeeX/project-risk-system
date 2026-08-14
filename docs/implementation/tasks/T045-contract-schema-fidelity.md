@@ -2,7 +2,7 @@
 
 - **Task ID:** T045
 - **Title:** Restore `_Contract` serialization-mode OpenAPI schema fidelity
-- **Status:** READY（contract-fidelity remediation；本轮仅创建 Task contract，未实施）
+- **Status:** `REVIEW_PASSED`（contract-fidelity remediation 完成；code checkpoint SHA 见 `reports/T045.md`/`EXECUTION_STATE.md`）
 - **design/metadata checkpoint:** `c95efd6c043d380edd993703e712fb4de59eeb0d`
 - **Objective:** Fix the duplicated `_Contract` wildcard field-serializer so FastAPI serialization-mode OpenAPI schema generation expresses the real ADR-approved field types, then re-freeze the OpenAPI authority and generated frontend types — without changing any runtime JSON behavior or API surface.
 - **Type:** Contract-fidelity remediation (cross frozen write-set, explicitly authorized).

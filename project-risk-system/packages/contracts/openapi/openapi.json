@@ -75,19 +75,58 @@
         "additionalProperties": false,
         "properties": {
           "attention": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/AttentionItem"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Attention"
           },
           "generatedAt": {
-            "title": "Generatedat"
+            "format": "date-time",
+            "title": "Generatedat",
+            "type": "string"
           },
           "health": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/HealthItem"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Health"
           },
           "recentAudit": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/RecentAuditItem"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Recentaudit"
           },
           "unavailableSections": {
-            "title": "Unavailablesections"
+            "items": {
+              "$ref": "#/components/schemas/UnavailableSection"
+            },
+            "title": "Unavailablesections",
+            "type": "array"
           }
         },
         "required": [
@@ -227,16 +266,22 @@
         "additionalProperties": false,
         "properties": {
           "completedAt": {
-            "title": "Completedat"
+            "format": "date-time",
+            "title": "Completedat",
+            "type": "string"
           },
           "operation": {
-            "title": "Operation"
+            "title": "Operation",
+            "type": "string"
           },
           "resourceId": {
-            "title": "Resourceid"
+            "format": "uuid",
+            "title": "Resourceid",
+            "type": "string"
           },
           "resourceType": {
-            "title": "Resourcetype"
+            "title": "Resourcetype",
+            "type": "string"
           }
         },
         "required": [
@@ -251,11 +296,16 @@
       "AgentConversationEnvelope": {
         "additionalProperties": false,
         "properties": {
-          "conversation": {},
-          "streamUrl": {
-            "title": "Streamurl"
+          "conversation": {
+            "$ref": "#/components/schemas/AgentConversationResponse"
           },
-          "userMessage": {}
+          "streamUrl": {
+            "title": "Streamurl",
+            "type": "string"
+          },
+          "userMessage": {
+            "$ref": "#/components/schemas/AgentMessageResponse"
+          }
         },
         "required": [
           "conversation",
@@ -268,12 +318,19 @@
       "AgentConversationHistory": {
         "additionalProperties": false,
         "properties": {
-          "conversation": {},
+          "conversation": {
+            "$ref": "#/components/schemas/AgentConversationResponse"
+          },
           "messages": {
-            "title": "Messages"
+            "items": {
+              "$ref": "#/components/schemas/AgentMessageResponse"
+            },
+            "title": "Messages",
+            "type": "array"
           },
           "nextMessageSequence": {
-            "title": "Nextmessagesequence"
+            "title": "Nextmessagesequence",
+            "type": "integer"
           }
         },
         "required": [
@@ -288,22 +345,32 @@
         "additionalProperties": false,
         "properties": {
           "createdAt": {
-            "title": "Createdat"
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
           },
           "expiresAt": {
-            "title": "Expiresat"
+            "format": "date-time",
+            "title": "Expiresat",
+            "type": "string"
           },
           "id": {
-            "title": "Id"
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
           },
           "lastEventSequence": {
-            "title": "Lasteventsequence"
+            "title": "Lasteventsequence",
+            "type": "integer"
           },
           "lastMessageSequence": {
-            "title": "Lastmessagesequence"
+            "title": "Lastmessagesequence",
+            "type": "integer"
           },
           "updatedAt": {
-            "title": "Updatedat"
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
           }
         },
         "required": [
@@ -321,7 +388,11 @@
         "additionalProperties": false,
         "properties": {
           "tools": {
-            "title": "Tools"
+            "items": {
+              "$ref": "#/components/schemas/AgentToolHelp"
+            },
+            "title": "Tools",
+            "type": "array"
           }
         },
         "required": [
@@ -334,9 +405,12 @@
         "additionalProperties": false,
         "properties": {
           "streamUrl": {
-            "title": "Streamurl"
+            "title": "Streamurl",
+            "type": "string"
           },
-          "userMessage": {}
+          "userMessage": {
+            "$ref": "#/components/schemas/AgentMessageResponse"
+          }
         },
         "required": [
           "userMessage",
@@ -349,10 +423,15 @@
         "additionalProperties": false,
         "properties": {
           "items": {
-            "title": "Items"
+            "items": {
+              "$ref": "#/components/schemas/AgentMessageResponse"
+            },
+            "title": "Items",
+            "type": "array"
           },
           "nextAfterSequence": {
-            "title": "Nextaftersequence"
+            "title": "Nextaftersequence",
+            "type": "integer"
           }
         },
         "required": [
@@ -382,25 +461,42 @@
         "additionalProperties": false,
         "properties": {
           "content": {
-            "title": "Content"
+            "title": "Content",
+            "type": "string"
           },
           "createdAt": {
-            "title": "Createdat"
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
           },
           "dataAsOf": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Dataasof"
           },
           "id": {
-            "title": "Id"
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
           },
           "role": {
-            "title": "Role"
+            "title": "Role",
+            "type": "string"
           },
           "sequence": {
-            "title": "Sequence"
+            "title": "Sequence",
+            "type": "integer"
           },
           "traceId": {
-            "title": "Traceid"
+            "title": "Traceid",
+            "type": "string"
           }
         },
         "required": [
@@ -419,16 +515,23 @@
         "additionalProperties": false,
         "properties": {
           "description": {
-            "title": "Description"
+            "title": "Description",
+            "type": "string"
           },
           "name": {
-            "title": "Name"
+            "title": "Name",
+            "type": "string"
           },
           "requiredPermissions": {
-            "title": "Requiredpermissions"
+            "items": {
+              "type": "string"
+            },
+            "title": "Requiredpermissions",
+            "type": "array"
           },
           "supportsPreview": {
-            "title": "Supportspreview"
+            "title": "Supportspreview",
+            "type": "boolean"
           }
         },
         "required": [
@@ -2505,23 +2608,41 @@
         "additionalProperties": false,
         "properties": {
           "id": {
-            "title": "Id"
+            "title": "Id",
+            "type": "string"
           },
           "kind": {
-            "title": "Kind"
+            "enum": [
+              "IMPORT_REVIEW",
+              "AI_PROVIDER_CONNECTION",
+              "AI_PROVIDER_EXPIRY"
+            ],
+            "title": "Kind",
+            "type": "string"
           },
-          "link": {},
+          "link": {
+            "$ref": "#/components/schemas/OverviewLink"
+          },
           "occurredAt": {
-            "title": "Occurredat"
+            "format": "date-time",
+            "title": "Occurredat",
+            "type": "string"
           },
           "status": {
-            "title": "Status"
+            "enum": [
+              "CRITICAL",
+              "WARNING"
+            ],
+            "title": "Status",
+            "type": "string"
           },
           "summary": {
-            "title": "Summary"
+            "title": "Summary",
+            "type": "string"
           },
           "title": {
-            "title": "Title"
+            "title": "Title",
+            "type": "string"
           }
         },
         "required": [
@@ -4561,23 +4682,65 @@
         "additionalProperties": false,
         "properties": {
           "checkedAt": {
-            "title": "Checkedat"
+            "format": "date-time",
+            "title": "Checkedat",
+            "type": "string"
           },
           "code": {
+            "anyOf": [
+              {
+                "enum": [
+                  "TIMEOUT",
+                  "UNREACHABLE",
+                  "NO_ACTIVE_WORKER",
+                  "NO_ENABLED_PROVIDER",
+                  "CHECK_FAILED"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Code"
           },
           "key": {
-            "title": "Key"
+            "enum": [
+              "API",
+              "DATABASE",
+              "REDIS",
+              "WORKER",
+              "AI_PROVIDER"
+            ],
+            "title": "Key",
+            "type": "string"
           },
           "label": {
-            "title": "Label"
+            "title": "Label",
+            "type": "string"
           },
-          "link": {},
+          "link": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OverviewLink"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "status": {
-            "title": "Status"
+            "enum": [
+              "HEALTHY",
+              "DEGRADED",
+              "UNAVAILABLE"
+            ],
+            "title": "Status",
+            "type": "string"
           },
           "summary": {
-            "title": "Summary"
+            "title": "Summary",
+            "type": "string"
           }
         },
         "required": [
@@ -7717,10 +7880,16 @@
         "additionalProperties": false,
         "properties": {
           "path": {
-            "title": "Path"
+            "title": "Path",
+            "type": "string"
           },
           "query": {
-            "title": "Query"
+            "additionalProperties": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Query",
+            "type": "object"
           }
         },
         "required": [
@@ -8412,33 +8581,59 @@
         "additionalProperties": false,
         "properties": {
           "action": {
-            "title": "Action"
+            "title": "Action",
+            "type": "string"
           },
           "actorName": {
-            "title": "Actorname"
+            "title": "Actorname",
+            "type": "string"
           },
           "id": {
-            "title": "Id"
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
           },
-          "link": {},
-          "module": {},
+          "link": {
+            "$ref": "#/components/schemas/OverviewLink"
+          },
+          "module": {
+            "$ref": "#/components/schemas/AuditModuleKey"
+          },
           "occurredAt": {
-            "title": "Occurredat"
+            "format": "date-time",
+            "title": "Occurredat",
+            "type": "string"
           },
           "resourceId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Resourceid"
           },
           "resourceType": {
-            "title": "Resourcetype"
+            "title": "Resourcetype",
+            "type": "string"
           },
           "result": {
-            "title": "Result"
+            "enum": [
+              "SUCCESS",
+              "FAILURE"
+            ],
+            "title": "Result",
+            "type": "string"
           },
           "summary": {
-            "title": "Summary"
+            "title": "Summary",
+            "type": "string"
           },
           "traceId": {
-            "title": "Traceid"
+            "title": "Traceid",
+            "type": "string"
           }
         },
         "required": [
@@ -10836,13 +11031,31 @@
         "additionalProperties": false,
         "properties": {
           "code": {
-            "title": "Code"
+            "enum": [
+              "FORBIDDEN",
+              "TIMEOUT",
+              "DEPENDENCY_FAILURE"
+            ],
+            "title": "Code",
+            "type": "string"
           },
           "reason": {
-            "title": "Reason"
+            "enum": [
+              "FORBIDDEN",
+              "TIMEOUT",
+              "DEPENDENCY_FAILURE"
+            ],
+            "title": "Reason",
+            "type": "string"
           },
           "section": {
-            "title": "Section"
+            "enum": [
+              "health",
+              "attention",
+              "recentAudit"
+            ],
+            "title": "Section",
+            "type": "string"
           }
         },
         "required": [
@@ -11311,10 +11524,13 @@
         "additionalProperties": false,
         "properties": {
           "id": {
-            "title": "Id"
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
           },
           "name": {
-            "title": "Name"
+            "title": "Name",
+            "type": "string"
           }
         },
         "required": [
@@ -11328,17 +11544,28 @@
         "additionalProperties": false,
         "properties": {
           "generatedAt": {
-            "title": "Generatedat"
+            "format": "date-time",
+            "title": "Generatedat",
+            "type": "string"
           },
           "items": {
-            "title": "Items"
+            "items": {
+              "$ref": "#/components/schemas/WeeklyReportItemResponse"
+            },
+            "title": "Items",
+            "type": "array"
           },
-          "project": {},
+          "project": {
+            "$ref": "#/components/schemas/WeeklyProject"
+          },
           "stale": {
-            "title": "Stale"
+            "title": "Stale",
+            "type": "boolean"
           },
           "weekStart": {
-            "title": "Weekstart"
+            "format": "date",
+            "title": "Weekstart",
+            "type": "string"
           }
         },
         "required": [
@@ -11354,18 +11581,30 @@
       "WeeklyProjectSummary": {
         "additionalProperties": false,
         "properties": {
-          "project": {},
+          "project": {
+            "$ref": "#/components/schemas/WeeklyProject"
+          },
           "riskCount": {
-            "title": "Riskcount"
+            "title": "Riskcount",
+            "type": "integer"
           },
           "riskLevelCounts": {
-            "title": "Risklevelcounts"
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JSONValue"
+            },
+            "title": "Risklevelcounts",
+            "type": "object"
           },
           "sourceRevision": {
-            "title": "Sourcerevision"
+            "title": "Sourcerevision",
+            "type": "integer"
           },
           "summary": {
-            "title": "Summary"
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JSONValue"
+            },
+            "title": "Summary",
+            "type": "object"
           }
         },
         "required": [
@@ -11382,29 +11621,47 @@
         "additionalProperties": false,
         "properties": {
           "occurredAt": {
-            "title": "Occurredat"
+            "format": "date-time",
+            "title": "Occurredat",
+            "type": "string"
           },
           "riskId": {
-            "title": "Riskid"
+            "format": "uuid",
+            "title": "Riskid",
+            "type": "string"
           },
-          "riskLevel": {},
-          "riskStatus": {},
+          "riskLevel": {
+            "$ref": "#/components/schemas/ProjectRiskLevel"
+          },
+          "riskStatus": {
+            "$ref": "#/components/schemas/RiskStatus"
+          },
           "sourceCandidateId": {
-            "title": "Sourcecandidateid"
+            "format": "uuid",
+            "title": "Sourcecandidateid",
+            "type": "string"
           },
           "sourceMailId": {
-            "title": "Sourcemailid"
+            "format": "uuid",
+            "title": "Sourcemailid",
+            "type": "string"
           },
           "sourceRevision": {
-            "title": "Sourcerevision"
+            "title": "Sourcerevision",
+            "type": "integer"
           },
           "summary": {
-            "title": "Summary"
+            "title": "Summary",
+            "type": "string"
           },
           "todoId": {
-            "title": "Todoid"
+            "format": "uuid",
+            "title": "Todoid",
+            "type": "string"
           },
-          "todoStatus": {}
+          "todoStatus": {
+            "$ref": "#/components/schemas/ActionItemStatus"
+          }
         },
         "required": [
           "sourceMailId",
@@ -11425,25 +11682,42 @@
         "additionalProperties": false,
         "properties": {
           "freshnessDeadline": {
-            "title": "Freshnessdeadline"
+            "format": "date-time",
+            "title": "Freshnessdeadline",
+            "type": "string"
           },
           "generatedAt": {
-            "title": "Generatedat"
+            "format": "date-time",
+            "title": "Generatedat",
+            "type": "string"
           },
           "projects": {
-            "title": "Projects"
+            "items": {
+              "$ref": "#/components/schemas/WeeklyProjectSummary"
+            },
+            "title": "Projects",
+            "type": "array"
           },
           "stale": {
-            "title": "Stale"
+            "title": "Stale",
+            "type": "boolean"
           },
           "summary": {
-            "title": "Summary"
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JSONValue"
+            },
+            "title": "Summary",
+            "type": "object"
           },
           "weekEnd": {
-            "title": "Weekend"
+            "format": "date",
+            "title": "Weekend",
+            "type": "string"
           },
           "weekStart": {
-            "title": "Weekstart"
+            "format": "date",
+            "title": "Weekstart",
+            "type": "string"
           }
         },
         "required": [
