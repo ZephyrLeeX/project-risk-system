@@ -119,7 +119,7 @@ Checkpoint commits:
 - Wave 17 final checkpoint: `5aa4a35` (metadata recorded in this report commit)
 - T032: `b9a172c2aad3b68239c32dc4ac6a4c462bd85c46` (OpenAPI authority re-frozen at 93 paths / 243 schemas incl. T043/T044 surface; compat PASS; regeneration zero diff; metadata recorded in the following report commit)
 - Wave 18 final checkpoint: `4368f025b7f41ef14b0bd2e286d8a4bc8cb78d96` (metadata recorded in this report commit)
-- Wave 19 final checkpoint: (recorded after this report + state update commit)
+- Wave 19 final checkpoint: `6609302c0e5e530186bb6cfd3208324f85b01c23` (metadata recorded in the following report commit)
 - T033 DESIGN_GAP metadata checkpoint: `d1df28be5696c3218654dba45be39e796f7123ef` (readiness stop; no code; frozen OpenAPI authority defect blocks T033/T034 as generated-type consumers)
 - T045 design/metadata checkpoint: `c95efd6c043d380edd993703e712fb4de59eeb0d` (T033 DESIGN_GAP resolution; new remediation Task T045 contract + DAG/wave/catalog/state updates; no production code, no OpenAPI re-freeze; metadata recorded in this commit)
 - T045: `ac351cb8aed4ccfd35a13fdf4becbdc2e80f22df` (restore `_Contract` serialization-mode schema fidelity by omitting the wildcard `field_serializer` return annotation; re-freeze `openapi.json`/`openapi.ts`; +5 schema-fidelity tests; runtime JSON unchanged; 93 paths/243 schemas preserved; metadata recorded in the following report commit)
