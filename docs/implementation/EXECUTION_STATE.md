@@ -41,6 +41,7 @@ Completed tasks:
 - T028 REVIEW_PASSED
 - T029 REVIEW_PASSED
 - T030 REVIEW_PASSED
+- T040 REVIEW_PASSED
 
 Current:
 - Wave 6: PASS (T004/T008/T010 remain REVIEW_PASSED; PostgreSQL integration validation passed)
@@ -102,6 +103,7 @@ Checkpoint commits:
 - Wave 12 final checkpoint: `286dbab0dca17870434a2bc7e5ddac79b2f9109f` (metadata recorded in this report commit)
 - Wave 13 final checkpoint: `841a38ce37c8e34bff513b72f6236d64303d9b6b` (metadata recorded in the following report commit)
 - Wave 15 final checkpoint: `533f74011362c0a44ad662a660b061b9a9833cef` (metadata recorded in the following report commit)
+- T040: `2a99da0`
 - T010: e30dd45
 - T004: 1b4cfa8
 - T011: baa3208
@@ -190,3 +192,5 @@ Integration blockers:
 - Wave 15 / T030 readiness: `DESIGN_GAP`. The approved Agent `REPORT` canonical/command contract has no `categoryId` or approved category mapping, while the formal `Risk` schema and T022 `RiskCreate` require a valid category. The operation therefore cannot be expressed through the existing domain services without inventing a default, inference rule or contract extension. Per T030's stop condition, Wave 15 was not marked `IN_PROGRESS`; implementation, Independent Review, validation and code checkpoint were not started. T040, Integration, next Wave, DG-05 and DG-08 remain untouched. See `docs/implementation/reports/T030.md` and `docs/implementation/reports/WAVE-15-PARTIAL.md`.
 - T030 DESIGN_GAP resolution: ADR 0029 approves PostgreSQL active `RiskCategory` as the sole `REPORT.categoryId` authority, reuse of `RISK_CATEGORY_OPTIONS_V1` with one opaque Provider choice, server-side mapping plus canonical category revision binding, and fail-closed locked confirmation revalidation. T030 is restored to `READY`; Wave 15 remains `NOT_STARTED`. No T030 implementation/review/validation, T040, Integration, DG-05 or DG-08 work was started. Design checkpoint: `e57646e3f05c87b21bab632601ba64f1dbff860a`.
 - Wave 15 Integration: `PASS`. T030 category-bound one-use REST confirmation 与 Risk / Todo / Audit / Dashboard / Weekly Report / Timeline / Agent execution / SSE 跨模块联合验证通过。cross-module focused pytest `57 passed, 1 skipped`；full pytest（PostgreSQL 16 + Redis 7）`247 passed, 1 skipped`；Ruff、mypy（183 source files）、`uv lock --check`、`git diff --check` 全部通过；空库 Alembic `upgrade head` 至 `20260812_0008` 且 `alembic check` 无新 migration；Redis 7 + Celery + Agent confirmation acceptance `10 passed`。无 integration fix。T040、下一 Wave、DG-05 和 DG-08 均未处理。详见 `docs/implementation/reports/WAVE-15.md`。Final checkpoint 记录于本条目之后。
+- Wave 16 / T040 readiness: `READY`。T040 dependencies T008–T031 已全部 `REVIEW_PASSED`；所有 module-local router 与 handler entrypoint 均存在，无 blocking `DESIGN_GAP`。Wave 16 标记为 `IN_PROGRESS`，仅授权 T040。
+- T040 implementation: `REVIEW_PASSED`。单一 owner 的 FastAPI/Celery composition root（`composition.py`）完成全部 17 个 router 与 19 个 domain service 的依赖组装；`main.py` 组装完整 production app（lifespan 内构造全部 service，startup 不建表，shutdown 释放 engine）；`worker.py` 构造 production session factory、受限 `AgentProviderAdapter`、T028 tool registry，合并 8 个 module-local handler mapping，并对 shared `celery_app` 恰好一次调用 T008 `register_executor`（模块级 `_registered` 守卫）。`AgentProviderAdapter` 从 immutable `AgentExecutionConfig` snapshot 解密 API key 并经 `OutboundEndpointGuard` 校验后调用 OpenAI-compatible endpoint，仅返回 raw `ProviderTransportResponse`；超时/连接失败映射为 retryable，SSRF/DNS 违规与解密失败作为永久配置错误。新增 `python-multipart` 依赖以 compose imports upload router。Independent Review 通过。Ruff、mypy（186 source files）、focused pytest（`5 passed`）、full pytest（`167 passed, 86 skipped`）、`uv lock --check`、`git diff --check` 均通过。PostgreSQL 16 + Redis 7 + real Celery worker integration validation 因本环境缺少 `TEST_DATABASE_URL`/PostgreSQL/Redis 而 unavailable/skipped，已记录。Code checkpoint：`2a99da0`。Wave 16 保持 `IN_PROGRESS`；Integration、下一 Wave、DG-05 和 DG-08 均未启动或处理。详见 `docs/implementation/reports/T040.md` 与 `docs/implementation/reports/WAVE-16-PARTIAL.md`。
