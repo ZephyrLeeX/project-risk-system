@@ -177,4 +177,4 @@ T046 `REVIEW_PASSED` + code checkpoint + Wave 21 Integration `PASS` 后，T035�
 
 ## Final checkpoint
 
-Wave 21 final checkpoint 记录于本报告之后的提交（metadata 记录于 `EXECUTION_STATE.md`）。
+Wave 21 final checkpoint：`3722a6b94fa4692d1452c6c34eb072be0fa4382f`（metadata 记录于 `EXECUTION_STATE.md`）。
