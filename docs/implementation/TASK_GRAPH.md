@@ -128,7 +128,7 @@ Tasks in a wave may run concurrently only when every dependency from an earlier 
 | T037 | Inherits DG-05/DG-08 | T033, T034, T036 | Prove full compatibility and security across the release candidate. |
 | T038 | DESIGN_GAP DG-05 | T037 | Validate performance and resilience at the approved capacity baseline. |
 | T039 | External inputs + inherits DG-05/DG-08 | T038 | Complete real mailbox/Provider E2E, restore evidence and Python-only cutover. |
-| T040 | TODO | T008-T031 | Compose all routers, dependencies and lifecycles, then merge module-local handlers and register production worker tasks once. |
+| T040 | REVIEW_PASSED | T008-T031 | Compose all routers, dependencies and lifecycles, then merge module-local handlers and register production worker tasks once. |
 | T041 | READY | T006 | Add the ADR 0018 durable task/outbox persistence schema. |
 | T042 | READY | T004, T013, T019 | Implement ADR 0027's approved retention configuration, hold-management API and deletion-protection policy. |
 
