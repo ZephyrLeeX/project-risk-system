@@ -43,7 +43,11 @@ flowchart TD
  T041 --> T004 & T008
  T042 --> T031
  T008 & T009 & T010 & T011 & T012 & T013 & T014 & T015 & T016 & T017 & T018 & T019 & T020 & T021 & T022 & T023 & T024 & T025 & T026 & T027 & T028 & T029 & T030 & T031 --> T040
- T040 --> T032 & T035
+ T005 & T010 --> T044
+ T006 & T010 & T023 & T024 & T025 & T026 --> T043
+ T040 --> T035
+ T043 --> T032 & T034
+ T044 --> T032
  T032 --> T033 & T034
  T031 --> T035 & T036
  T032 --> T035
@@ -75,13 +79,14 @@ flowchart TD
 | 14 | T029 | SSE answer/preview contract checkpoint. |
 | 15 | T030 | One-use REST confirmation transaction checkpoint. |
 | 16 | T040 | Single-owner FastAPI/Celery composition and dependency-injection checkpoint. |
-| 17 | T032 | Freeze OpenAPI authority and generate reproducible frontend types. |
-| 18 | T033, T034 | Admin and business frontend cutovers use disjoint page/API modules and consume, but never edit, generated types. |
-| 19 | T035 | Build production Compose/proxy/images only after both frontend cutovers, avoiding image-build reads racing frontend/type writes. |
-| 20 | T036 | Implement and drill backup/restore against the final production volume topology. |
-| 21 | T037 | Full compatibility and security suite. |
-| 22 | T038 | Blocked by DG-05 until numeric performance criteria exist; capacity/reliability validation. |
-| 23 | T039 | External mailbox/provider, restore, frontend E2E and Python-only production cutover evidence. |
+| 17 | T043, T044 | Migration-coverage remediation: mailbox sync-results browse/retry surface (T043) and admin project-options selector (T044) are disjoint write-sets and expose `/api` endpoints the frontend already consumes; both must PASS before T032 can freeze a compatibility-clean OpenAPI. |
+| 18 | T032 | Freeze OpenAPI authority and generate reproducible frontend types. Blocked on T043/T044. |
+| 19 | T033, T034 | Admin and business frontend cutovers use disjoint page/API modules and consume, but never edit, generated types. |
+| 20 | T035 | Build production Compose/proxy/images only after both frontend cutovers, avoiding image-build reads racing frontend/type writes. |
+| 21 | T036 | Implement and drill backup/restore against the final production volume topology. |
+| 22 | T037 | Full compatibility and security suite. |
+| 23 | T038 | Blocked by DG-05 until numeric performance criteria exist; capacity/reliability validation. |
+| 24 | T039 | External mailbox/provider, restore, frontend E2E and Python-only production cutover evidence. |
 
 Tasks in a wave may run concurrently only when every dependency from an earlier wave is `PASS`; a blocked task is skipped, never treated as passed. Alembic revisions are strictly serialized in the order T003 → T006 → T041 → T004 → T042. No parallel task may create an opportunistic revision. Shared app/Celery bootstrap is owned by T002 then T040; production Compose/proxy/env examples by T035; generated OpenAPI/types by T032. Feature tasks expose module-local entry points and test them with T002/T003/T008 fixtures without editing those shared files. Specifically, T029 owns the dependency-injected module-local `AGENT_EXECUTION` handler mapping and may validate it with an isolated Celery app; T040 exclusively constructs production dependencies, merges module handlers and registers them once on the shared `celery_app`. T037/T038 record findings only and route fixes back to the owning task.
 
@@ -120,15 +125,17 @@ Tasks in a wave may run concurrently only when every dependency from an earlier 
 | T029 | REVIEW_PASSED | T004, T007, T008, T010, T014, T028 | Stream Agent text, progress, errors and mutation previews over SSE under ADR 0028 and expose its module-local Worker entrypoint without production composition wiring. |
 | T030 | READY | T004, T006, T010, T021, T022, T029 | Execute category-bound previewed Agent writes through bound one-use REST confirmations under ADR 0029. |
 | T031 | REVIEW_PASSED | T004, T006, T008, T013, T019, T024, T025, T042 | Run auditable import/conversation/temp retention cleanup with protections. |
-| T032 | TODO | T040 | Freeze OpenAPI authority and generate reproducible frontend types. |
+| T032 | BLOCKED | T040, T043, T044 | Freeze OpenAPI authority and generate reproducible frontend types. Blocked until T043/T044 PASS so the frozen OpenAPI covers all frontend-live-consumed `/api` operations. |
 | T033 | TODO | T016, T032 | Cut admin pages to Python APIs and remove fixed business states. |
-| T034 | TODO | T027, T030, T032 | Cut dashboard, weekly reports, mailbox and Agent UI to real Python APIs. |
+| T034 | TODO | T027, T030, T032, T043 | Cut dashboard, weekly reports, mailbox and Agent UI to real Python APIs. |
 | T035 | Inherits gaps | T031-T034, T040 | Define production Compose, Python processes, proxy, secrets and persistence after final backend/frontend composition. |
 | T036 | DESIGN_GAP DG-08 | T031, T035 | Implement encrypted backup rotation, isolated restore and drill verification. |
 | T037 | Inherits DG-05/DG-08 | T033, T034, T036 | Prove full compatibility and security across the release candidate. |
 | T038 | DESIGN_GAP DG-05 | T037 | Validate performance and resilience at the approved capacity baseline. |
 | T039 | External inputs + inherits DG-05/DG-08 | T038 | Complete real mailbox/Provider E2E, restore evidence and Python-only cutover. |
 | T040 | REVIEW_PASSED | T008-T031 | Compose all routers, dependencies and lifecycles, then merge module-local handlers and register production worker tasks once. |
+| T043 | READY | T006, T010, T023, T024, T025, T026 | Migrate the mailbox sync-results browse and retry surface (`/mailbox/sync-summary`, `/review-options`, `/messages`, `/messages/{id}`, `POST /messages/{id}/retry`, `/sync-batches`, `/sync-batches/{id}`) to FastAPI under `mailbox.sync_self`, `RISK_ADMIN`-gated summary, own-config scope and ADR 0022 retry/handoff. |
+| T044 | READY | T005, T010 | Migrate the admin project-options selector (`GET /admin/projects/options` → `ProjectOption[]`) to FastAPI under `admin.scope.manage`. |
 | T041 | READY | T006 | Add the ADR 0018 durable task/outbox persistence schema. |
 | T042 | READY | T004, T013, T019 | Implement ADR 0027's approved retention configuration, hold-management API and deletion-protection policy. |
 
