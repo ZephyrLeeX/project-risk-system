@@ -45,7 +45,7 @@ Independent Review `REVIEW_PASSED`，无 blocking finding（3 个 minor non-bloc
 
 ## code checkpoint
 
-T046 code checkpoint SHA 记录于 `EXECUTION_STATE.md` / `T046.md`（metadata 由后续提交补录）。
+T046 code checkpoint `21c6d3d0b1be32034fb55bf17e02501506d62ccc`（metadata 由后续提交补录于 `EXECUTION_STATE.md` / `T046.md`）。
 
 ## T035 readiness 同步（仅 metadata，未执行 T035）
 
