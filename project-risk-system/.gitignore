@@ -7,6 +7,9 @@ coverage/
 .env.*
 !.env.example
 *.log
+# Production secrets and TLS material (generated, never committed).
+infra/secrets/
+infra/proxy/certs/
 apps/api/prisma/*.db
 apps/api/prisma/*.db-journal
 storage/excel/*
