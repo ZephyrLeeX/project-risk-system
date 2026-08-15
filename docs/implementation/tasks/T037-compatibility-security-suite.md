@@ -1,7 +1,7 @@
 # T037 — Run full compatibility and security acceptance suite
 - **Task ID:** T037
 - **Title:** Run full compatibility and security acceptance suite
-- **Status:** BLOCKED_DESIGN_GAP (inherits DG-04/DG-05/DG-08/DG-10) / TODO
+- **Status:** `READY`（readiness sync — deps T033/T034/T036 均 `REVIEW_PASSED` + Wave 19/20/23 Integration `PASS`；inherited DG-04/DG-08/DG-10 均已解决，DG-05 为 T037 explicit out-of-scope 属 T038；stale `BLOCKED_DESIGN_GAP` header 纠正。未执行 T037、未启动 Wave 24。）
 - **Objective:** Prove complete Python API compatibility, authorization, transaction, audit, secret and async reliability across modules.
 - **Design baseline:** Design §11 and all global constraints.
 - **Authoritative source references:** OpenAPI T032; ADRs 0018-0021; legacy contracts/tests; every completed task acceptance suite.

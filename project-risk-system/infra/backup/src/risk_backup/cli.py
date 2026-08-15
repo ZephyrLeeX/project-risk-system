@@ -51,8 +51,8 @@ def _split_dsn(dsn: str) -> dict[str, str | None]:
     }
 
 
-def _build_pg_dumper(args: argparse.Namespace) -> PgDumper:
-    parsed = _split_dsn(args.dsn)
+def _build_pg_dumper(args: argparse.Namespace, dsn: str) -> PgDumper:
+    parsed = _split_dsn(dsn)
     user = args.pg_user or parsed["user"] or "project_risk"
     database = args.pg_db or parsed["database"] or "project_risk"
     runner = args.pg_runner.split() if args.pg_runner else []
@@ -93,7 +93,7 @@ def _load_key_ring(args: argparse.Namespace) -> BackupKeyRing:
 
 def cmd_backup(args: argparse.Namespace) -> int:
     key_ring = _load_key_ring(args)
-    pg_dumper = _build_pg_dumper(args)
+    pg_dumper = _build_pg_dumper(args, args.dsn)
     quiescer = _build_quiescer(args)
     request = BackupRequest(
         backup_type=BackupType(args.type),
@@ -155,7 +155,7 @@ def _log_backup_outcome(outcome: BackupOutcome, rto_seconds: float) -> None:
 
 def cmd_restore(args: argparse.Namespace) -> int:
     key_ring = _load_key_ring(args)
-    pg_dumper = _build_pg_dumper(args)
+    pg_dumper = _build_pg_dumper(args, args.target_dsn)
     request = RestoreRequest(
         artifact_path=Path(args.artifact),
         target_dsn=args.target_dsn,
