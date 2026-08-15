@@ -2,7 +2,7 @@
 
 - **Wave:** 25
 - **Tasks:** T038（单一 work unit）
-- **状态:** `IN_PROGRESS`（partial — T038 `REVIEW_FAILED`；harness + raw evidence 已交付；Wave 25 Integration 未启动；capacity/resilience production 缺陷返回 owning Task）
+- **状态:** `IN_PROGRESS`（partial — T038 `REVIEW_FAILED`；harness + raw evidence 已交付；Wave 25 Integration 未启动；capacity/resilience production 缺陷返回 owning Task；T038 主因 `/api/todos` 分页已由 T047 remediate，`REVIEW_PASSED`，首版低并发可用；其余 T038 findings DEFERRED 至 post-MVP hardening）
 - **Wave 25 Integration:** 未启动
 - **下一 Wave（Wave 26 / T039）：** 未启动
 
@@ -63,4 +63,12 @@ production code 未修改（`src/`、schema、index、migration、frozen write-s
 - Wave 25 Integration：**未启动**。
 - Wave 26 / T039（real external AI/IMAP E2E throughput）：**未启动**。
 - capacity/resilience production 修复（`/api/todos` 分页、connection pool 调优、SSE 初始事件/keepalive 架构、§9 fake-provider 接线 gap）：返回 owning Task，不在 T038 内实施。
+
+## T047 remediation（T038 主因 `/api/todos` 分页）
+
+T038 REVIEW_FAILED 主因已由独立 remediation Task **T047** remediate（`REVIEW_PASSED`）：`GET /api/todos` 现在在 **SQL 查询层** 分页（`.offset/.limit` + 独立 `func.count`），消除原 `list()` 双 `_rows()` 全量物化（11667 todos × 6 表 JOIN，~7.4MB）。复用 canonical 分页契约（`items`/`page`/`pageSize`/`total`，与 `RiskQuery` 一致），保留 permissions/DataScope/filter/archived/stable ordering/full-scoped summary+owners/schedule。OpenAPI re-freeze + `openapi.ts` 生成 + 前端 consumer 更新；`contracts:check` clean-tree zero diff。真实 PostgreSQL 16 分页验证 10 tests PASS（含 LIMIT/OFFSET SQL 捕获 + 大数据 fixture + scoped performance smoke <2.0s，**明确标注非 ADR 0032 gate**）。Independent Review `APPROVE-WITH-NITS`（3 项 non-blocking nit，无 blocking finding）。Validation：Ruff/mypy（204 files）/`uv lock --check`/`git diff --check`/contracts+web typecheck/web build/`contracts:check` 全 PASS。
+
+**T038 状态不变 = `REVIEW_FAILED`**。首版 release 目标 = 低并发内部使用；full 50-VU ADR 0032 capacity 认证 DEFERRED 至 post-MVP hardening。DEFERRED findings（首版 MVP 不要求）：50-VU capacity 认证、SSE initial-event p95 ≤2s、SSE heartbeat/transport keepalive、deterministic Provider test seam（§9）、connection-pool 调优（先观察分页修复后是否仍独立）、剩余 API/DB load gates。原 T038 load evidence 未删除；ADR 0032 threshold 未修改；未声称首版 capacity-certified。T038 须在正式 capacity-ready milestone 重跑。
+
+本轮（T047）**未执行**：T038 50-VU 重跑认证；Wave 25 Integration；T039；SSE remediation；connection-pool 调优；ADR 0032 修改。详见 `docs/implementation/reports/T047.md`。
 - production code、schema、index、migration、frozen write-set、frozen OpenAPI authority：**未修改**。

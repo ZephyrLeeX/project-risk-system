@@ -1,0 +1,21 @@
+# T047 — `/api/todos` list pagination remediation
+
+- **Task ID:** T047
+- **Title:** `/api/todos` list pagination remediation
+- **Status:** READY / TODO
+- **Objective:** Fix the T038 REVIEW_FAILED primary root cause — `GET /api/todos` has no pagination, double-materializes the full scoped result set (11667 todos × 6-table JOIN, ~7.4MB), causing cascade capacity failure. Deliver SQL-layer pagination (`LIMIT`/`OFFSET` + independent total count) reusing the repository's canonical pagination contract, preserving all existing behavior, for a low-concurrency usable first version.
+- **Origin:** T038 REVIEW_FAILED root-cause attribution (ADR 0032 §10) — `/api/todos` pagination缺失 returned to owning concern; this Task owns that remediation.
+- **Design baseline:** Design §§8/11; canonical per-module pagination contract (`items`/`page`/`pageSize`/`total`, `RiskQuery` `page=Field(default=1,ge=1)` / `pageSize=Field(default=20,ge=1,le=100)` precedent).
+- **Relevant ADR IDs:** 0011 (generated contracts authority), 0032 (capacity thresholds — NOT modified).
+- **Dependencies:** T038 (REVIEW_FAILED; supplies the FAIL finding this Task remediates). Does NOT reopen T038 or any REVIEW_PASSED Task.
+- **Scope (write-set):** `todos/schemas.py`, `todos/service.py` (core), `agent/schemas.py`, `agent/tools.py` (pass-through), `packages/contracts/src/index.ts`, regenerated `packages/contracts/openapi/openapi.json` + `packages/contracts/src/generated/openapi.ts`, `apps/web/src/api/dashboard.ts`, `apps/web/src/views/DashboardView.vue`, `tests/todos/test_todos.py`, `tests/todos/test_todos_pagination.py` (new).
+- **Explicit out-of-scope (this round):** connection-pool tuning; schema/index/migration optimization (unless pagination cannot be correct — then record and stop); SSE initial-event fix; SSE heartbeat/transport keepalive; deterministic Provider test seam (ADR 0032 §9); scheduler cadence change; ADR 0032 threshold change; full 50-VU ADR 0032 capacity re-certification; Wave 25 Integration; T039.
+- **Expected read set:** todos service/schema, risks pagination precedent, contracts generation tooling, DashboardView todo consumer.
+- **Expected write set:** See Scope above — limited to todos list pagination + necessary contract/frontend/generated artifacts.
+- **Contracts/invariants:** Pagination at DB query layer (no full-set materialization then Python slice); canonical `page`/`pageSize`/`items`/`total` contract; preserve permissions/DataScope/owner+status filters/archived exclusion/stable ordering/full-scoped summary+owners/updatedAt/schedule; OpenAPI authority re-freeze + reproducible generation; `contracts:check` zero diff on clean tree.
+- **Acceptance criteria:** SQL `LIMIT`/`OFFSET` + independent count proven against real PostgreSQL 16 (first/middle/last/empty page, no dup/missing across pages, pageSize/total/items/page/pageSize, owner+status filter + pagination, DataScope exclusion + archived, stable deterministic ordering, large-fixture SQL LIMIT/OFFSET capture, no full materialization); scoped performance smoke (NOT an ADR 0032 gate); todos regression + contract compatibility + authorization matrix acceptance pass; Ruff/mypy/`uv lock --check`/`git diff --check`/frontend typecheck+build/`contracts:check` PASS; Independent Review PASS.
+- **Validation:** Focused PostgreSQL 16 pagination tests; todos regression; contract compatibility + authorization matrix acceptance; Ruff; mypy; frontend typecheck+build; `contracts:check` (post-commit clean tree); `uv lock --check`; `git diff --check`.
+- **Required deliverables:** Paginated `GET /api/todos`; re-frozen OpenAPI + regenerated `openapi.ts`; updated frontend consumer; pagination tests + smoke; T047 report; T038 report remediation note; Wave 25 partial + state update.
+- **Stop conditions:** Pagination cannot be made correct without schema/index/migration change (record and stop); Independent Review blocks (remediate or stop).
+- **First-version release target:** Low-concurrency internal use. Full ADR 0032 50-VU capacity certification is DEFERRED to post-MVP hardening; T038 must be re-run at the formal capacity-ready milestone. T038 FAIL→PASS must NOT be changed this round.
+- **Known integration risks:** None new — pagination is additive to an existing endpoint; contract change is list→paginated (consumer updated).
