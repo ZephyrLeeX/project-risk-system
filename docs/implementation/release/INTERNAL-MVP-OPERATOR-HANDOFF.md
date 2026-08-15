@@ -51,17 +51,24 @@ cp infra/env.example .env.production
 
 ## 4. 首次部署与数据库初始化
 
-应用**从不在启动时创建 schema**（ADR 0010）。初始化步骤明确：
+应用**从不在启动时创建 schema**（ADR 0010）。用 deploy kit 的首次部署流程（migration 与 seed 均通过一次性 api 容器执行，**不依赖**已运行的 api 容器）：
 
 ```bash
-# 1. 构建镜像并启动全栈（postgres 先 healthy，再 api/worker/scheduler/web/proxy）
-docker compose --env-file .env.production -f infra/docker-compose.yml up -d --build
+./infra/deploy/deploy.sh --seed
+```
 
-# 2. 数据库 migration（首次，alembic head）
-docker compose --env-file .env.production -f infra/docker-compose.yml exec api alembic upgrade head
+等价的手工命令（`docker compose exec` 不行：fresh 部署时 api 尚未启动，且 `INITIAL_ADMIN_*` 不在 api 服务运行环境里）：
 
-# 3. seed + 初始 admin bootstrap（使用 INITIAL_ADMIN_PASSWORD）
-docker compose --env-file .env.production -f infra/docker-compose.yml exec api risk-platform-seed
+```bash
+# 1. 启动 postgres + redis 并等待健康（可选：直接跑 deploy.sh 会处理）
+docker compose --env-file .env.production -f infra/docker-compose.yml up -d --no-deps postgres redis
+
+# 2. 数据库 migration（首次，一次性容器，alembic head）
+docker compose --env-file .env.production -f infra/docker-compose.yml run --rm --no-deps api alembic upgrade head
+
+# 3. seed + 初始 admin bootstrap（一次性容器，显式传 INITIAL_ADMIN_*，值不打印）
+docker compose --env-file .env.production -f infra/docker-compose.yml run --rm --no-deps \
+  -e INITIAL_ADMIN_PASSWORD="$INITIAL_ADMIN_PASSWORD" api risk-platform-seed
 ```
 
 seed 幂等，创建四角色 / 权限 / 参考数据 + 初始管理员（`INITIAL_ADMIN_USERNAME` /

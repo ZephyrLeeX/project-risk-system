@@ -56,12 +56,22 @@ bash infra/scripts/init-secrets.sh
 
 ## First-time init
 
-The application never creates schema at startup (ADR 0010). Initialize once
-after the stack is up:
+The application never creates schema at startup (ADR 0010). Use the deploy kit's
+`--seed` flow, which runs the migration **and** the initial-admin seed through
+one-shot api containers — it does not require a long-running api container:
 
 ```bash
-docker compose --env-file .env.production -f infra/docker-compose.yml exec api alembic upgrade head
-docker compose --env-file .env.production -f infra/docker-compose.yml exec api risk-platform-seed
+./infra/deploy/deploy.sh --seed
+```
+
+The equivalent raw commands (migration + seed each run in a throwaway
+`compose run` container; the seed receives `INITIAL_ADMIN_PASSWORD` explicitly,
+never echoed):
+
+```bash
+docker compose --env-file .env.production -f infra/docker-compose.yml run --rm --no-deps api alembic upgrade head
+docker compose --env-file .env.production -f infra/docker-compose.yml run --rm --no-deps \
+  -e INITIAL_ADMIN_PASSWORD="$INITIAL_ADMIN_PASSWORD" api risk-platform-seed
 ```
 
 ## Operate

@@ -11,7 +11,7 @@ Full walkthrough: [`docs/deployment/SINGLE-SERVER-DOCKER-COMPOSE.md`](../../docs
 
 | Script | Purpose |
 |--------|---------|
-| `deploy.sh` | First-time deploy (build → migrate → optional seed → up → health). `--seed` for initial admin. |
+| `deploy.sh` | First-time deploy (build → migrate via one-shot api container → verify at head → optional seed → up → health). `--seed` for initial admin. |
 | `update.sh <tag\|sha>` | Upgrade to a pinned release (clean tree, fetch, backup, checkout, rebuild, migrate, recreate, health). |
 | `healthcheck.sh` | Unified health check; prints `HEALTHCHECK_OK` or exits non-zero. |
 | `status.sh` | Deployed SHA, compose ps, images, health summary, volumes, recent logs. No secrets printed. |
@@ -37,6 +37,11 @@ bash infra/scripts/init-secrets.sh          # session key + TLS cert
 
 - Every script uses `set -Eeuo pipefail`; arguments are quoted.
 - No secret is echoed or passed through `set -x`.
+- Migration and seed run in one-shot `compose run --rm --no-deps api` containers:
+  they never depend on a long-running api container, and their success is judged
+  by the command's own exit code — an api HTTP `unhealthy` (503) state is never
+  treated as a failure. The seed receives `INITIAL_ADMIN_*` explicitly (values
+  read from the env file, never printed).
 - `stop.sh` / `restart.sh` refuse `--volumes`; `docker compose down -v` is never used.
 - `update.sh` never auto-downgrades the database.
 - `restore-drill.sh` is fail-closed: it refuses any target matching the production DB.

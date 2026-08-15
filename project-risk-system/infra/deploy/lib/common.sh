@@ -152,3 +152,71 @@ probe() {
 }
 
 HEALTH_FAIL=0
+
+# --- one-shot api commands (migration / seed) --------------------------------
+
+# Read a single value from the interpolation env file by key name, without
+# printing it. Strips one layer of matching surrounding quotes exactly like
+# compose does when interpolating. Returns 1 if the key is absent or empty.
+# Usage: env_file_value <NAME>
+env_file_value() {
+  local name="$1" line
+  line="$(grep -E "^${name}=" "$(env_file_path)" 2>/dev/null | tail -n1)" || return 1
+  line="${line#*=}"
+  if { [[ "${line:0:1}" == '"' && "${line: -1}" == '"' ]] \
+       || [[ "${line:0:1}" == "'" && "${line: -1}" == "'" ]]; }; then
+    line="${line:1:${#line}-2}"
+  fi
+  [[ -n "${line}" ]] || return 1
+  printf '%s' "${line}"
+}
+
+# Run a one-shot command in the api image WITHOUT requiring a long-running api
+# container. `compose run --rm --no-deps -T` creates a throwaway container from
+# the api service definition (same image, env, secrets, volumes and network as
+# the service) and removes it on exit. Dependencies are never started by this
+# helper — callers wait on postgres/redis health themselves beforehand.
+#
+# The command's own exit code is authoritative: no HTTP health probe (e.g. a
+# 503 "unhealthy" state) is consulted, and no dependency is restarted.
+#
+# Env injection (values are read from ${ENV_FILE} and NEVER echoed):
+#   --env NAME             pass NAME into the container; die if missing/empty.
+#   --env-if-present NAME  pass NAME if present in ${ENV_FILE}, else skip.
+#
+# Usage: compose_run_api [--env NAME | --env-if-present NAME]... <command...>
+compose_run_api() {
+  local -a run_opts=()
+  local flag name val
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --env|--env-if-present)
+        flag="$1"; name="${2:-}"
+        [[ -n "${name}" ]] || die "compose_run_api: ${flag} needs a variable name"
+        if val="$(env_file_value "${name}")"; then
+          run_opts+=( -e "${name}=${val}" )
+        elif [[ "${flag}" == "--env" ]]; then
+          die "env file '${ENV_FILE}' is missing required '${name}' (needed by one-shot api command)"
+        fi
+        shift 2 ;;
+      --) shift; break ;;
+      *) break ;;
+    esac
+  done
+  compose run --rm --no-deps -T "${run_opts[@]}" api "$@"
+}
+
+# Verify the database is migrated to the alembic head. Compares the offline
+# `alembic heads` revision against the database's current revision, both via
+# one-shot api containers (never `exec`, never an HTTP probe). Dies if the
+# database is not at head — e.g. a fresh database with no alembic_version table.
+verify_migration_head() {
+  local expected actual
+  expected="$(compose run --rm --no-deps -T api alembic heads 2>/dev/null | awk '/\(head\)/{print $1; exit}' || true)"
+  actual="$(compose run --rm --no-deps -T api alembic current 2>/dev/null | awk '/\(head\)/{print $1; exit}' || true)"
+  if [[ -n "${expected}" && "${actual}" == "${expected}" ]]; then
+    ok "migration verified: database at head ${actual}"
+  else
+    die "migration verification FAILED (expected head ${expected:-unknown}, database reports ${actual:-no revision})"
+  fi
+}

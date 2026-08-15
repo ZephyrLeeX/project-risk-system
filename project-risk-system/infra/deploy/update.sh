@@ -120,8 +120,11 @@ compose build --pull api web || die "image rebuild failed"
 log "applying alembic migrations (upgrade head only; no downgrade)"
 # Ensure the durable layer is up (it should be on an existing deployment).
 compose up -d --no-deps postgres redis >/dev/null 2>&1 || true
-compose exec -T api alembic upgrade head \
+# One-shot run so the migration never depends on the long-running api container
+# (which may be mid-restart during an update). Exit status is alembic's own.
+compose_run_api alembic upgrade head \
   || die "alembic upgrade head failed after upgrade — DO NOT downgrade blindly; see rollback note below"
+verify_migration_head
 
 # --- 9. recreate stack -------------------------------------------------------
 log "recreating stack"

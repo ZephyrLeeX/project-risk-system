@@ -260,13 +260,14 @@ infra/proxy/certs/tls.key
 2. `docker compose config` 预校验（确保必填变量已设置）。
 3. `docker compose build` 构建生产镜像（api + web）。
 4. 先启动 `postgres` + `redis`，等待健康。
-5. `docker compose exec api alembic upgrade head` 应用数据库迁移。
-6. （`--seed` 时）`docker compose exec api risk-platform-seed` 创建初始管理员与参考数据。
-7. `docker compose up -d` 启动完整 stack。
-8. 调用 `healthcheck.sh` 统一健康检查。
-9. 记录已部署 SHA 到 `infra/deploy/.deployed-sha`。
+5. 用一次性容器执行 `docker compose run --rm --no-deps api alembic upgrade head` 应用数据库迁移（**不依赖**已运行的 api 容器；fresh 部署时 api 尚未启动）。
+6. 用一次性容器校验数据库已迁移到 alembic head（对比 `alembic heads` 与 `alembic current`）。
+7. （`--seed` 时）用一次性容器执行 `risk-platform-seed` 创建初始管理员与参考数据；`INITIAL_ADMIN_*` 显式传入（值不打印，`INITIAL_ADMIN_PASSWORD` 必填，其余缺省时用 seed 默认值）。
+8. `docker compose up -d` 启动完整 stack。
+9. 调用 `healthcheck.sh` 统一健康检查。
+10. 记录已部署 SHA 到 `infra/deploy/.deployed-sha`。
 
-任一步失败立即退出。部署成功后访问：
+任一步失败立即退出。迁移/seed 一次性容器的成败以命令自身 exit code 为准；api 的 HTTP `unhealthy`（503）状态不会参与判定。部署成功后访问：
 
 ```
 https://risk.example.internal:8443
@@ -278,7 +279,7 @@ https://risk.example.internal:8443
 
 seed 之后系统存在一个初始管理员：
 
-- **来源**：`risk-platform-seed` 读取 `.env.production` 中的 `INITIAL_ADMIN_USERNAME` / `INITIAL_ADMIN_DISPLAY_NAME` / `INITIAL_ADMIN_PASSWORD` 创建（默认用户名 `admin`）。
+- **来源**：`deploy.sh --seed` 将 `.env.production` 中的 `INITIAL_ADMIN_USERNAME` / `INITIAL_ADMIN_DISPLAY_NAME` / `INITIAL_ADMIN_PASSWORD` 显式传给一次性 seed 容器（默认用户名 `admin`；seed 从进程环境直接读取，compose 不会把未在 `environment:` 中引用的变量注入容器）。
 - **首次密码**：即你在 `.env.production` 中设置的 `INITIAL_ADMIN_PASSWORD`。该密码必须满足密码策略（≥12 位，含大小写、数字、符号，且不含用户名）。
 - **mustChangePassword**：初始管理员创建时 `mustChangePassword=true`，首次登录后**必须**修改密码。
 - seed 脚本**不会**在控制台输出密码，也**不会**在重复执行时覆盖已有管理员密码。
@@ -559,8 +560,8 @@ curl -sk https://127.0.0.1:8443/api/health
 
 ```bash
 ./infra/deploy/logs.sh api
-docker compose --env-file .env.production -f infra/docker-compose.yml exec api alembic current
-docker compose --env-file .env.production -f infra/docker-compose.yml exec api alembic upgrade head
+docker compose --env-file .env.production -f infra/docker-compose.yml run --rm --no-deps api alembic current
+docker compose --env-file .env.production -f infra/docker-compose.yml run --rm --no-deps api alembic upgrade head
 ```
 
 migration 失败不要盲目降级；必要时从备份恢复（隔离演练验证后）。

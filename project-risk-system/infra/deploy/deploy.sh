@@ -4,7 +4,8 @@
 # This orchestrates the validated T035 compose stack: it does NOT invent a
 # second deployment architecture. It only sequences the approved commands:
 # validate config -> build images -> start postgres/redis -> wait health ->
-# alembic upgrade head -> (optional) risk-platform-seed -> up stack -> health.
+# one-shot alembic upgrade head -> verify at head -> (optional) risk-platform-seed
+# (INITIAL_ADMIN_PASSWORD passed explicitly, never echoed) -> up stack -> health.
 #
 # Usage:
 #   ./infra/deploy/deploy.sh            # deploy without seeding
@@ -94,27 +95,43 @@ wait_until "redis healthy" \
 
 # --- 4. database migration ---------------------------------------------------
 log "applying alembic migrations (upgrade head)"
-compose exec -T api alembic upgrade head \
+# One-shot run: the migration runs in a throwaway api-image container, so a
+# fresh deploy never depends on a long-running api container (which does not
+# exist yet). The exit status is alembic's own — no HTTP health probe involved.
+compose_run_api alembic upgrade head \
   || die "alembic upgrade head failed (see 'logs.sh api')"
 
-# --- 5. optional first-time seed --------------------------------------------
+# --- 5. verify migration reached head ----------------------------------------
+verify_migration_head
+
+# --- 6. optional first-time seed --------------------------------------------
 if (( SEED )); then
   log "running risk-platform-seed (first-time bootstrap)"
-  # Seed reads INITIAL_ADMIN_* from the api container env (already injected via
-  # the compose env file). It never prints the password and never overwrites an
-  # existing administrator's password.
-  compose exec -T api risk-platform-seed \
+  # INITIAL_ADMIN_* are deliberately NOT part of the api service's runtime
+  # environment (the admin password is only needed by the one-shot seed, never
+  # by the long-running services). Pass them explicitly to the one-shot run;
+  # values are read from ${ENV_FILE} and never echoed. USERNAME / DISPLAY_NAME
+  # / PASSWORD_MIN_LENGTH fall back to the seed's own defaults when absent.
+  # The seed itself never prints the password and never overwrites an existing
+  # administrator's password.
+  compose_run_api \
+    --env INITIAL_ADMIN_PASSWORD \
+    --env-if-present INITIAL_ADMIN_USERNAME \
+    --env-if-present INITIAL_ADMIN_DISPLAY_NAME \
+    --env-if-present PASSWORD_MIN_LENGTH \
+    -- \
+    risk-platform-seed \
     || die "risk-platform-seed failed (credentials are validated by the seed itself; see 'logs.sh api')"
   ok "seed completed (initial administrator created with mustChangePassword=true)"
 else
   log "skipping seed (pass --seed for first-time admin bootstrap)"
 fi
 
-# --- 6. start the full stack -------------------------------------------------
+# --- 7. start the full stack -------------------------------------------------
 log "starting full stack (api, worker, scheduler, web, proxy)"
 compose up -d || die "failed to start the stack"
 
-# --- 7. unified healthcheck --------------------------------------------------
+# --- 8. unified healthcheck --------------------------------------------------
 log "running unified healthcheck"
 if "${SCRIPT_DIR}/healthcheck.sh"; then
   printf '\n'
