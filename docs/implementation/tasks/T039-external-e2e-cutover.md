@@ -1,7 +1,7 @@
 # T039 — Complete external E2E and cutover evidence
 - **Task ID:** T039
 - **Title:** Complete external E2E and cutover evidence
-- **Status:** BLOCKED_EXTERNAL_INPUTS plus inherits DG-04/DG-05/DG-08/DG-10 / TODO
+- **Status:** BLOCKED_EXTERNAL_INPUTS (blocked on T038 PASS + external materials) / TODO — all inherited design gaps resolved (DG-04/0027, DG-05/0032, DG-08/0031, DG-10/0022)
 - **Objective:** Demonstrate real mailbox-to-risk and Agent flows, restore readiness, frontend E2E and Python-only production release.
 - **Design baseline:** Design §§11,12.
 - **Authoritative source references:** Approved design/ADRs including ADRs 0018-0021; T036-T038 reports; provided mailbox/Provider/TLS/outbound/backup inputs.

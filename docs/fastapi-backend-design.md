@@ -186,7 +186,8 @@ AI 不可用时明确失败并允许重试；非 AI 看板、导入和风险维�
 > 备份加密/密钥/清单与 PostgreSQL+文件一致性机制由 ADR 0031（DG-08 resolution）定义：quiesce 协调的
 > 一致备份集合（PostgreSQL `pg_dump` + durable 文件存储）、AES-256-GCM 信封加密（复用 T007 版本化密钥环）、
 > manifest 绑定、版本化备份 KEK + 历史保留可恢复、fail-closed 隔离恢复。ADR 0009 的 7/4/12 与 RPO/RTO
-> 基线不变；DG-05 数值阈值不在其内。
+> 基线不变。DG-05 数值阈值（API 延迟/错误率、worker/queue/scheduler/DB/SSE 可靠性、发布门语义）由
+> ADR 0032 定义，锚定本节容量基线与单机部署契约，不重开 ADR 0009 基线或 ADR 0031 语义。
 
 ## 10. 实施顺序
 
