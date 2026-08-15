@@ -328,6 +328,48 @@ curl -sk -o /dev/null -w '%{http_code}\n' https://127.0.0.1:8443/
 
 ---
 
+## 10.1. 生成合成测试邮件（Demo 数据）
+
+```bash
+./infra/deploy/generate-demo-mails.sh            # 生成
+./infra/deploy/generate-demo-mails.sh --validate # 校验已有目录
+```
+
+该脚本在 `artifacts/demo-mails/`（已 gitignore）下生成约 24 封合成测试邮件，覆盖明确风险 / 模糊风险 / 非风险 / 已解决更新 / 长邮件 / 中英混合 / 回复链等场景，并附带真实有效的 `.txt` / `.pdf` / `.docx` / `.xlsx` 合成附件 fixture。所有 Subject 均带 `[WSLDEMO]` 前缀，正文均明确标注「完全合成数据」，项目名称与 demo seed 对齐。
+
+### 重要边界
+
+- 本脚本**只生成测试邮件内容**：不发送邮件、不实现 SMTP、不需要 SMTP 凭据。
+- 不修改 mailbox ingest，不向数据库直接插入邮件。
+- 你需要**手工**把邮件内容发到已经配置进系统的测试邮箱；系统随后通过真实链路读取：
+
+```
+user manual send
+      ↓
+real mailbox
+      ↓
+IMAP → scheduler → worker → parser → real Provider
+      ↓
+candidate / review → user confirmation → Risk / Todo
+```
+
+**不要**使用任何绕过这条路径的“快速测试”数据库写入。
+
+### 使用测试邮件
+
+1. 运行 `./infra/deploy/generate-demo-mails.sh`。
+2. 打开 `artifacts/demo-mails/`，选择一封 `.md`。
+3. 手工复制其中的 `Subject` 与 `---- BODY ----` 下的正文，发送到已配置进系统的测试邮箱。
+4. 如测试附件：将 `artifacts/demo-mails/attachments/` 下对应 fixture 手工添加到邮件。
+5. 等待 scheduler/mailbox sync，或通过系统现有方式触发同步。
+6. 在 UI 中检查 Mail Sync Summary / Messages / Candidate / AI classification /
+   Project mapping / Risk category / adjust·ignore·confirm / confirmed Risk /
+   Timeline / Audit。
+
+详细推荐发送顺序见 `artifacts/demo-mails/README.md`（第一批先发一封明确风险 + 一封非风险验证基础 AI flow，第二批发模糊与已解决场景，第三批测试附件）。
+
+---
+
 ## 11. 更新版本
 
 升级到指定 release：

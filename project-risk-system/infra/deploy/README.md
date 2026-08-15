@@ -19,8 +19,10 @@ Full walkthrough: [`docs/deployment/SINGLE-SERVER-DOCKER-COMPOSE.md`](../../docs
 | `start.sh` / `stop.sh` / `restart.sh` | Safe lifecycle wrappers; never remove volumes. |
 | `backup.sh` | Thin wrapper over the T036 backup CLI; reports backupId/status/artifact. |
 | `restore-drill.sh` | Isolated restore drill; fail-closed against the production DB. |
+| `generate-demo-mails.sh` | Generate synthetic demo mail fixtures (`artifacts/demo-mails/`, gitignored). No send, no SMTP, no DB writes. |
 | `deploy.conf.example` | Non-secret config template. Copy to `deploy.conf` (gitignored). |
 | `lib/common.sh` | Shared helpers (sourced by every script). |
+| `lib/generate_demo_mails.py` | Pure-stdlib fixture generator (called by `generate-demo-mails.sh`). |
 
 ## Quick start
 
