@@ -11,7 +11,7 @@ from risk_platform.todos.policy import (
     default_assignee_for_risk,
     urgency_for_risk,
 )
-from risk_platform.todos.schemas import ManagerTodoItem, UpdateTodoRequest
+from risk_platform.todos.schemas import ListTodosQuery, ManagerTodoItem, UpdateTodoRequest
 
 
 def todo_item(
@@ -65,3 +65,37 @@ def test_update_contract_rejects_unknown_fields_and_accepts_explicit_nulls() -> 
     assert UpdateTodoRequest(dueDate=None).dueDate is None
     with pytest.raises(ValidationError):
         UpdateTodoRequest.model_validate({"model": "unexpected"})
+
+
+def test_list_query_pagination_defaults_match_canonical_contract() -> None:
+    query = ListTodosQuery()
+    assert query.page == 1
+    assert query.pageSize == 20
+    assert query.owner is None
+    assert query.status is None
+
+
+def test_list_query_accepts_pagination_and_filters() -> None:
+    query = ListTodosQuery.model_validate(
+        {"owner": "张三", "status": "PENDING", "page": 3, "pageSize": 50}
+    )
+    assert query.owner == "张三"
+    assert query.status is ActionItemStatus.PENDING
+    assert query.page == 3
+    assert query.pageSize == 50
+
+
+@pytest.mark.parametrize(
+    ("payload",),
+    [
+        ({"page": 0},),
+        ({"pageSize": 0},),
+        ({"pageSize": 101},),
+        ({"page": 1, "unexpected": 1},),
+    ],
+)
+def test_list_query_rejects_invalid_pagination_and_unknown_fields(
+    payload: dict[str, object],
+) -> None:
+    with pytest.raises(ValidationError):
+        ListTodosQuery.model_validate(payload)

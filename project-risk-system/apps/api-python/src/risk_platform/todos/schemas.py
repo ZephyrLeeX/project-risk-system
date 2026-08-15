@@ -67,6 +67,9 @@ class ManagerTodoScheduleItem(BaseModel):
 
 class ManagerTodoListResponse(BaseModel):
     items: list[ManagerTodoItem]
+    page: int
+    pageSize: int
+    total: int
     summary: ManagerTodoSummary
     owners: list[str]
     schedule: list[ManagerTodoScheduleItem]
@@ -83,6 +86,8 @@ class ListTodosQuery(BaseModel):
 
     owner: str | None = Field(default=None, max_length=128)
     status: ActionItemStatus | None = None
+    page: int = Field(default=1, ge=1)
+    pageSize: int = Field(default=20, ge=1, le=100)
 
 
 class UpdateTodoRequest(StrictRequestModel):

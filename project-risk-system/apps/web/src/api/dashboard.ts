@@ -38,6 +38,8 @@ export type ResolvedRiskQuery = DashboardRiskQuery;
 export interface ManagerTodoQuery {
   owner?: string;
   status?: "PENDING" | "IN_PROGRESS" | "COMPLETED" | "";
+  page?: number;
+  pageSize?: number;
 }
 
 export interface RiskCollectionQuery {

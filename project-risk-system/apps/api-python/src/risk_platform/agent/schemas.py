@@ -123,6 +123,8 @@ class RiskDetailToolArguments(StrictRequestModel):
 
 class TodoToolArguments(StrictRequestModel):
     owner: str | None = Field(default=None, max_length=128)
+    page: int = Field(default=1, ge=1)
+    pageSize: int = Field(default=20, ge=1, le=100)
 
 
 class TodoDetailToolArguments(StrictRequestModel):

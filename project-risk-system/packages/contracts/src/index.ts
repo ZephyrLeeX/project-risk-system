@@ -777,6 +777,9 @@ export interface ManagerTodoScheduleItem {
 
 export interface ManagerTodoListResponse {
   items: ManagerTodoItem[];
+  page: number;
+  pageSize: number;
+  total: number;
   summary: ManagerTodoSummary;
   owners: string[];
   schedule: ManagerTodoScheduleItem[];

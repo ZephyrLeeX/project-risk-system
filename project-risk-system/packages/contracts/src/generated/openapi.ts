@@ -4157,9 +4157,15 @@ export interface components {
             items: components["schemas"]["ManagerTodoItem"][];
             /** Owners */
             owners: string[];
+            /** Page */
+            page: number;
+            /** Pagesize */
+            pageSize: number;
             /** Schedule */
             schedule: components["schemas"]["ManagerTodoScheduleItem"][];
             summary: components["schemas"]["ManagerTodoSummary"];
+            /** Total */
+            total: number;
             /** Updatedat */
             updatedAt: string | null;
         };
@@ -8494,6 +8500,8 @@ export interface operations {
         parameters: {
             query?: {
                 owner?: string | null;
+                page?: number;
+                pageSize?: number;
                 status?: components["schemas"]["ActionItemStatus"] | null;
             };
             header?: never;

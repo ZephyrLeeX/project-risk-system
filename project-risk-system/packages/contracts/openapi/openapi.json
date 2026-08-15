@@ -7661,6 +7661,14 @@
             "title": "Owners",
             "type": "array"
           },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "pageSize": {
+            "title": "Pagesize",
+            "type": "integer"
+          },
           "schedule": {
             "items": {
               "$ref": "#/components/schemas/ManagerTodoScheduleItem"
@@ -7670,6 +7678,10 @@
           },
           "summary": {
             "$ref": "#/components/schemas/ManagerTodoSummary"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
           },
           "updatedAt": {
             "anyOf": [
@@ -7685,6 +7697,9 @@
         },
         "required": [
           "items",
+          "page",
+          "pageSize",
+          "total",
           "summary",
           "owners",
           "schedule",
@@ -16663,6 +16678,29 @@
                 }
               ],
               "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageSize",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Pagesize",
+              "type": "integer"
             }
           }
         ],

@@ -8,7 +8,7 @@ from datetime import UTC, date
 from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from risk_platform.admin.models import Department, User, UserStatus
@@ -21,7 +21,12 @@ from risk_platform.rbac.models import DataScopeType
 from risk_platform.rbac.scopes import project_scope_predicate
 from risk_platform.risks.models import Risk, RiskCategory, RiskStatus
 from risk_platform.shared.errors import ApiError
-from risk_platform.todos.models import ActionItem, ActionItemSourceType, ActionItemStatus
+from risk_platform.todos.models import (
+    ActionItem,
+    ActionItemSourceType,
+    ActionItemStatus,
+    ActionItemUrgency,
+)
 from risk_platform.todos.policy import (
     build_schedule_suggestions,
     default_assignee_for_risk,
@@ -57,33 +62,50 @@ class TodosService:
     async def list(
         self, identity: SessionIdentity, query: ListTodosQuery
     ) -> ManagerTodoListResponse:
+        user_id = UUID(identity.user.id)
+        data_scope = DataScopeType(identity.user.dataScope)
+        scope_predicate = project_scope_predicate(user_id, data_scope)
+        order = (
+            ActionItem.status.asc(),
+            ActionItem.urgency.asc(),
+            ActionItem.dueDate.asc(),
+            ActionItem.updatedAt.desc(),
+            ActionItem.id.asc(),
+        )
         async with self._session_factory() as session:
-            rows = await self._rows(session, identity, query)
-            scoped_rows = await self._rows(session, identity, ListTodosQuery())
-        items = [self._item(row) for row in rows]
-        all_items = [self._item(row) for row in scoped_rows]
-        status_counts = {
-            status: sum(item.status is status for item in all_items) for status in ActionItemStatus
-        }
-        owners = sorted({item.assigneeName for item in all_items}, key=lambda value: value)
-        updated = max((item.updatedAt for item in all_items), default=None)
+            filtered = self._filtered_conditions(query, scope_predicate)
+            rows = (
+                await session.execute(
+                    self._statement(filtered)
+                    .order_by(*order)
+                    .offset((query.page - 1) * query.pageSize)
+                    .limit(query.pageSize)
+                )
+            ).all()
+            items = [self._item(cast(tuple[Any, ...], row)) for row in rows]
+            total = (
+                await session.scalar(
+                    select(func.count(ActionItem.id))
+                    .select_from(ActionItem)
+                    .join(Project, Project.id == ActionItem.projectId)
+                    .outerjoin(User, User.id == ActionItem.assigneeUserId)
+                    .where(*filtered)
+                )
+                or 0
+            )
+            summary, updated = await self._scoped_summary(session, scope_predicate)
+            owners = await self._scoped_owners(session, scope_predicate)
+            schedule_items = await self._schedule_items(session, filtered, order)
         return ManagerTodoListResponse(
             items=items,
-            summary=ManagerTodoSummary(
-                total=len(all_items),
-                pending=status_counts[ActionItemStatus.PENDING],
-                inProgress=status_counts[ActionItemStatus.IN_PROGRESS],
-                completed=status_counts[ActionItemStatus.COMPLETED],
-                emergency=sum(
-                    item.urgency.value == "EMERGENCY"
-                    and item.status is not ActionItemStatus.COMPLETED
-                    for item in all_items
-                ),
-            ),
+            page=query.page,
+            pageSize=query.pageSize,
+            total=total,
+            summary=summary,
             owners=owners,
-            schedule=build_schedule_suggestions(items),
+            schedule=build_schedule_suggestions(schedule_items),
             updatedAt=updated,
-            dataScope=DataScopeType(identity.user.dataScope),
+            dataScope=data_scope,
         )
 
     async def detail(self, identity: SessionIdentity, todo_id: UUID) -> ManagerTodoDetail:
@@ -262,12 +284,11 @@ class TodosService:
         await session.flush()
         return todo
 
-    async def _rows(
-        self, session: AsyncSession, identity: SessionIdentity, query: ListTodosQuery
-    ) -> builtin_list[tuple[Any, ...]]:
-        conditions = [
-            project_scope_predicate(UUID(identity.user.id), DataScopeType(identity.user.dataScope))
-        ]
+    @staticmethod
+    def _filtered_conditions(
+        query: ListTodosQuery, scope_predicate: Any
+    ) -> builtin_list[Any]:
+        conditions: builtin_list[Any] = [scope_predicate]
         if query.owner and query.owner.strip():
             owner = query.owner.strip()
             conditions.append(
@@ -275,15 +296,93 @@ class TodosService:
             )
         if query.status is not None:
             conditions.append(ActionItem.status == query.status)
-        result = await session.execute(
-            self._statement(conditions).order_by(
-                ActionItem.status.asc(),
-                ActionItem.urgency.asc(),
-                ActionItem.dueDate.asc(),
-                ActionItem.updatedAt.desc(),
+        return conditions
+
+    async def _scoped_summary(
+        self, session: AsyncSession, scope_predicate: Any
+    ) -> tuple[ManagerTodoSummary, str | None]:
+        """Aggregate status counts and freshness over the full scoped set.
+
+        Computed in a single SQL aggregate so the scoped summary is preserved
+        without materializing every todo row.
+        """
+        row = (
+            await session.execute(
+                select(
+                    func.count().label("total"),
+                    func.count()
+                    .filter(ActionItem.status == ActionItemStatus.PENDING)
+                    .label("pending"),
+                    func.count()
+                    .filter(ActionItem.status == ActionItemStatus.IN_PROGRESS)
+                    .label("in_progress"),
+                    func.count()
+                    .filter(ActionItem.status == ActionItemStatus.COMPLETED)
+                    .label("completed"),
+                    func.count()
+                    .filter(
+                        ActionItem.urgency == ActionItemUrgency.EMERGENCY,
+                        ActionItem.status != ActionItemStatus.COMPLETED,
+                    )
+                    .label("emergency"),
+                    func.max(ActionItem.updatedAt).label("updated"),
+                )
+                .select_from(ActionItem)
+                .join(Project, Project.id == ActionItem.projectId)
+                .where(scope_predicate)
             )
+        ).one()
+        updated = row.updated.isoformat().replace("+00:00", "Z") if row.updated else None
+        return (
+            ManagerTodoSummary(
+                total=row.total or 0,
+                pending=row.pending or 0,
+                inProgress=row.in_progress or 0,
+                completed=row.completed or 0,
+                emergency=row.emergency or 0,
+            ),
+            updated,
         )
-        return [cast(tuple[Any, ...], row) for row in result.all()]
+
+    async def _scoped_owners(
+        self, session: AsyncSession, scope_predicate: Any
+    ) -> builtin_list[str]:
+        """Distinct assignee names over the full scoped set, matching the
+        ``assigneeName`` resolution used for items (assigned user display name
+        falling back to the source name, then ``待分配``)."""
+        expr = func.coalesce(
+            User.displayName, ActionItem.assigneeNameSource, literal("待分配")
+        )
+        rows = (
+            await session.execute(
+                select(expr)
+                .distinct()
+                .select_from(ActionItem)
+                .join(Project, Project.id == ActionItem.projectId)
+                .outerjoin(User, User.id == ActionItem.assigneeUserId)
+                .where(scope_predicate)
+                .order_by(expr.asc())
+            )
+        ).scalars().all()
+        return [str(value) for value in rows if value is not None]
+
+    async def _schedule_items(
+        self,
+        session: AsyncSession,
+        filtered: builtin_list[Any],
+        order: tuple[Any, ...],
+    ) -> builtin_list[ManagerTodoItem]:
+        """Top active (non-completed) todos of the filtered set, bounded to the
+        handful ``build_schedule_suggestions`` consumes."""
+        rows = (
+            await session.execute(
+                self._statement(filtered)
+                .where(ActionItem.status != ActionItemStatus.COMPLETED)
+                .order_by(*order)
+                .limit(5)
+            )
+        ).all()
+        return [self._item(cast(tuple[Any, ...], row)) for row in rows]
 
     async def _one(
         self,

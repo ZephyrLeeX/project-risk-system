@@ -79,6 +79,7 @@ const departmentLoading = ref(false);
 const selectedDepartment = ref<DepartmentCollectionDetail | null>(null);
 const departmentDetailLoading = ref(false);
 const managerTodos = ref<ManagerTodoListResponse | null>(null);
+const todoPageSize = ref(20);
 const todoLoading = ref(false);
 const todoDetailLoading = ref(false);
 const todoSaving = ref(false);
@@ -177,6 +178,15 @@ const canUseAgent = computed(() =>
 
 const totalPages = computed(() =>
   Math.max(1, Math.ceil(riskPage.value.total / riskPage.value.pageSize)),
+);
+const todoTotalPages = computed(() =>
+  Math.max(
+    1,
+    Math.ceil(
+      (managerTodos.value?.total ?? 0) /
+        (managerTodos.value?.pageSize ?? todoPageSize.value),
+    ),
+  ),
 );
 const timelineTotalPages = computed(() =>
   Math.max(
@@ -636,11 +646,15 @@ function nextCollectionLabel(
   return item.nextCollection.label;
 }
 
-async function loadManagerTodos(): Promise<void> {
+async function loadManagerTodos(page = 1): Promise<void> {
   todoLoading.value = true;
   error.value = "";
   try {
-    managerTodos.value = await dashboardApi.managerTodos(todoFilters);
+    managerTodos.value = await dashboardApi.managerTodos({
+      ...todoFilters,
+      page,
+      pageSize: todoPageSize.value,
+    });
   } catch (requestError) {
     error.value =
       requestError instanceof Error
@@ -827,7 +841,7 @@ async function saveRiskLifecycle(): Promise<void> {
       loadRisks(riskPage.value.page),
       loadResolvedRisks(resolvedRisks.value?.page ?? 1),
     ];
-    if (managerTodos.value) refreshes.push(loadManagerTodos());
+    if (managerTodos.value) refreshes.push(loadManagerTodos(managerTodos.value.page));
     if (riskTimeline.value) {
       refreshes.push(loadRiskTimeline(riskTimeline.value.page));
     }
@@ -1292,7 +1306,7 @@ onUnmounted(() => {
               <p>MANAGEMENT ACTIONS</p>
               <h2>
                 管理者待办事项
-                <small>由风险建议与责任人自动形成</small>
+                <small>共 {{ managerTodos?.total ?? 0 }} 条待办 · 由风险建议与责任人自动形成</small>
               </h2>
             </div>
             <span>● 风险建议 + 处理跟踪</span>
@@ -1344,7 +1358,7 @@ onUnmounted(() => {
             </ol>
           </section>
 
-          <form class="todo-filter-bar" @submit.prevent="loadManagerTodos">
+          <form class="todo-filter-bar" @submit.prevent="loadManagerTodos(1)">
             <label>
               <span>负责人</span>
               <select v-model="todoFilters.owner">
@@ -1368,7 +1382,7 @@ onUnmounted(() => {
             </button>
             <button
               type="button"
-              @click="todoFilters.owner = ''; todoFilters.status = ''; loadManagerTodos()"
+              @click="todoFilters.owner = ''; todoFilters.status = ''; loadManagerTodos(1)"
             >
               重置
             </button>
@@ -1424,6 +1438,27 @@ onUnmounted(() => {
             </p>
             <p v-if="todoLoading" class="dashboard-empty">正在加载管理者待办…</p>
           </div>
+
+          <footer
+            v-if="managerTodos && managerTodos.total > managerTodos.pageSize"
+            class="risk-pagination"
+          >
+            <button
+              type="button"
+              :disabled="managerTodos.page <= 1 || todoLoading"
+              @click="loadManagerTodos(managerTodos.page - 1)"
+            >
+              上一页
+            </button>
+            <span>第 {{ managerTodos.page }} / {{ todoTotalPages }} 页</span>
+            <button
+              type="button"
+              :disabled="managerTodos.page >= todoTotalPages || todoLoading"
+              @click="loadManagerTodos(managerTodos.page + 1)"
+            >
+              下一页
+            </button>
+          </footer>
         </div>
 
         <div

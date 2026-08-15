@@ -197,7 +197,11 @@ class AgentToolRegistry:
     @staticmethod
     def _todo_list(service: TodosService) -> ToolCallable:
         async def call(identity: SessionIdentity, arguments: Mapping[str, object]) -> object:
-            query = ListTodosQuery(owner=cast(str | None, arguments.get("owner")))
+            query = ListTodosQuery(
+                owner=cast(str | None, arguments.get("owner")),
+                page=_int_argument(arguments.get("page"), 1),
+                pageSize=_int_argument(arguments.get("pageSize"), 20),
+            )
             return await service.list(identity, query)
 
         return call
