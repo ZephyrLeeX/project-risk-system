@@ -1,0 +1,37 @@
+# Non-secret deployment configuration for the single-server Docker Compose kit.
+#
+# Copy to `deploy.conf` (gitignored) and edit. This file holds ONLY non-secret
+# deployment knobs. It must NEVER contain:
+#   - POSTGRES_PASSWORD / DATA_ENCRYPTION_KEY  (use .env.production)
+#   - session key / TLS private key            (use infra/scripts/init-secrets.sh)
+#   - backup KEK contents                      (host file, e.g. /etc/risk/backup-keys/)
+#
+# All values can be overridden by environment variables of the same name.
+
+# Absolute path to the deployable project root (the directory containing
+# infra/ and apps/). Defaults to the auto-detected root two levels above
+# infra/deploy/. Override only if you invoke scripts from elsewhere.
+#PROJECT_DIR=/opt/project-risk-system
+
+# Compose file (relative to PROJECT_DIR) and env file to interpolate it.
+COMPOSE_FILE=infra/docker-compose.yml
+ENV_FILE=.env.production
+
+# Public origin the browser uses to reach the app (informational; the real
+# CORS_ORIGIN that the API enforces lives in .env.production).
+PUBLIC_BASE_URL=https://risk.example.internal:8443
+PROXY_HTTPS_PORT=8443
+
+# Seconds to wait for a service to become healthy during deploy/update.
+WAIT_TIMEOUT=300
+
+# --- backup wrapper (infra/deploy/backup.sh / restore-drill.sh) ---------------
+# Paths only; never the key material itself.
+BACKUP_DIR=/var/backups/risk
+BACKUP_TYPE=daily
+BACKUP_KEK_VERSION=v1
+BACKUP_KEK_FILE=/etc/risk/backup-keys/backup_kek_v1
+# Host docker binary, bind-mounted into the one-shot backup/restore container so
+# the in-container orchestrator can run pg_dump/pg_restore inside the postgres
+# container (ADR 0031 §12). Standard Docker Engine path on Ubuntu.
+DOCKER_BIN=/usr/bin/docker

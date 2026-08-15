@@ -6,6 +6,11 @@ worker, the ADR 0030 single-active scheduler process, the Vue frontend and a
 TLS reverse proxy. The production runtime contains **no NestJS / Prisma** — the
 legacy stack is reference-only.
 
+Single-server deployment:
+docs/deployment/SINGLE-SERVER-DOCKER-COMPOSE.md (tutorial) and `infra/deploy/`
+(operator scripts: deploy / update / healthcheck / status / logs / start /
+stop / restart / backup / restore-drill).
+
 ## Services
 
 | Service    | Image / build                | Role |
