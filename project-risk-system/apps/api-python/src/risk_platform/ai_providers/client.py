@@ -169,26 +169,46 @@ class AiProviderClient:
     def _payload(
         protocol: AiProviderProtocol, model: str, payload: Mapping[str, object], test_mode: bool
     ) -> dict[str, object]:
-        content = "ping" if test_mode else json.dumps(payload, ensure_ascii=False)
+        system_instruction, data_payload = AiProviderClient._separate_system_instruction(payload)
+        content = "ping" if test_mode else json.dumps(data_payload, ensure_ascii=False)
         if protocol is AiProviderProtocol.OPENAI_CHAT_COMPLETIONS:
+            messages: list[dict[str, str]] = [{"role": "user", "content": content}]
+            if system_instruction is not None and not test_mode:
+                messages.insert(0, {"role": "system", "content": system_instruction})
             return {
                 "model": model,
                 "temperature": 0,
-                "messages": [{"role": "user", "content": content}],
+                "messages": messages,
             }
         if protocol is AiProviderProtocol.OPENAI_RESPONSES:
-            return {
+            request: dict[str, object] = {
                 "model": model,
                 "input": content,
                 "max_output_tokens": 16 if test_mode else 1024,
                 "store": False,
             }
-        return {
+            if system_instruction is not None and not test_mode:
+                request["instructions"] = system_instruction
+            return request
+        messages = [{"role": "user", "content": content}]
+        request = {
             "model": model,
             "max_tokens": 16 if test_mode else 1024,
             "temperature": 0,
-            "messages": [{"role": "user", "content": content}],
+            "messages": messages,
         }
+        if system_instruction is not None and not test_mode:
+            request["system"] = system_instruction
+        return request
+
+    @staticmethod
+    def _separate_system_instruction(
+        payload: Mapping[str, object],
+    ) -> tuple[str | None, dict[str, object]]:
+        """Keep Agent policy in the provider's trusted instruction channel."""
+        data_payload = dict(payload)
+        instruction = data_payload.pop("systemInstruction", None)
+        return instruction if isinstance(instruction, str) else None, data_payload
 
     @staticmethod
     def _parse(protocol: AiProviderProtocol, body: str) -> tuple[str, dict[str, int]]:

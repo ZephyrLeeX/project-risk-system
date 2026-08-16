@@ -9,13 +9,13 @@ from typing import cast
 from uuid import UUID
 
 from pydantic import BaseModel, ValidationError
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from risk_platform.auth.service import SessionIdentity
 from risk_platform.dashboard.service import DashboardService
 from risk_platform.model_types import JSONValue
-from risk_platform.projects.models import Project
+from risk_platform.projects.models import Project, ProjectStatus
 from risk_platform.rbac.models import DataScopeType
 from risk_platform.rbac.scopes import project_scope_predicate
 from risk_platform.risks.schemas import RiskQuery
@@ -29,6 +29,7 @@ from .schemas import (
     AgentToolHelp,
     AgentToolResult,
     EmptyToolArguments,
+    ProjectListToolArguments,
     ProjectListToolItem,
     ProjectListToolResponse,
     RiskDetailToolArguments,
@@ -40,9 +41,6 @@ from .schemas import (
 )
 
 ToolCallable = Callable[[SessionIdentity, Mapping[str, object]], Awaitable[object]]
-MAX_PROJECT_LIST_ITEMS = 50
-
-
 @dataclass(frozen=True, slots=True)
 class AgentTool:
     name: str
@@ -71,7 +69,7 @@ class AgentToolRegistry:
                 "读取当前授权范围内的项目名称、标识和状态",
                 ("dashboard.view",),
                 False,
-                EmptyToolArguments,
+                ProjectListToolArguments,
                 self._project_list,
             ),
             AgentTool(
@@ -196,28 +194,44 @@ class AgentToolRegistry:
     async def _project_list(
         self,
         identity: SessionIdentity,
-        _arguments: Mapping[str, object],
+        arguments: Mapping[str, object],
     ) -> ProjectListToolResponse:
         scope = project_scope_predicate(
             UUID(identity.user.id), DataScopeType(identity.user.dataScope)
         )
+        keyword = cast(str | None, arguments.get("keyword"))
+        status = cast(str | None, arguments.get("status"))
+        page = _int_argument(arguments.get("page"), 1)
+        page_size = _int_argument(arguments.get("pageSize"), 20)
+        filters = [scope]
+        if keyword:
+            filters.append(Project.name.ilike(f"%{keyword}%"))
+        if status:
+            try:
+                filters.append(Project.status == ProjectStatus(status))
+            except ValueError:
+                raise ApiError(422, "VALIDATION_ERROR", "项目状态不符合约束") from None
         async with self._sessions() as session:
             rows = list(
                 (
                     await session.scalars(
                         select(Project)
-                        .where(scope)
+                        .where(*filters)
                         .order_by(Project.name, Project.id)
-                        .limit(MAX_PROJECT_LIST_ITEMS + 1)
+                        .offset((page - 1) * page_size)
+                        .limit(page_size)
                     )
                 ).all()
             )
+            total = int(await session.scalar(select(func.count(Project.id)).where(*filters)) or 0)
         return ProjectListToolResponse(
             items=[
                 ProjectListToolItem(id=row.id, name=row.name, status=row.status.value)
-                for row in rows[:MAX_PROJECT_LIST_ITEMS]
+                for row in rows
             ],
-            truncated=len(rows) > MAX_PROJECT_LIST_ITEMS,
+            page=page,
+            pageSize=page_size,
+            total=total,
         )
 
     @staticmethod
