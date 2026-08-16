@@ -150,6 +150,18 @@ def test_public_provider_and_imap_targets_return_pinned_addresses() -> None:
     asyncio.run(scenario())
 
 
+def test_public_deepseek_provider_needs_no_allowlist() -> None:
+    async def scenario() -> None:
+        endpoint = await OutboundEndpointGuard(
+            resolver=StaticResolver(("47.246.24.173",))
+        ).resolve_provider("https://api.deepseek.com")
+
+        assert endpoint.connection_address == "47.246.24.173"
+        assert provider_subresource_url(endpoint, "models") == "https://api.deepseek.com/models"
+
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize(
     ("host", "address"),
     [
@@ -198,13 +210,40 @@ def test_approved_internal_provider_requires_hostname_and_network() -> None:
     asyncio.run(scenario())
 
 
+def test_token_longshine_internal_provider_requires_both_explicit_allowlists() -> None:
+    async def scenario() -> None:
+        policy = OutboundPolicy(
+            approved_internal_hostnames=frozenset({"TOKEN.LONGSHINE.COM."}),
+            approved_internal_networks=(ip_network("10.0.0.0/8"),),
+        )
+        guard = OutboundEndpointGuard(policy, StaticResolver(("10.0.0.1",)))
+        endpoint = await guard.resolve_provider("https://token.longshine.com:18443")
+
+        assert endpoint.hostname == "token.longshine.com"
+        assert provider_subresource_url(endpoint, "models") == (
+            "https://token.longshine.com:18443/models"
+        )
+        for hostname, address in (
+            ("token.longshine.com", "172.16.0.1"),
+            ("other.longshine.com", "10.0.0.1"),
+            ("localhost", "127.0.0.1"),
+        ):
+            with pytest.raises(OutboundSecurityError) as error:
+                await OutboundEndpointGuard(policy, StaticResolver((address,))).resolve_provider(
+                    f"https://{hostname}:18443"
+                )
+            assert error.value.code == "OUTBOUND_DESTINATION_FORBIDDEN"
+
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize(
     ("host", "address", "network"),
     [
-        ("100.100.100.200", "100.100.100.200", "100.0.0.0/8"),
+        ("metadata-deny.example", "100.100.100.200", "100.0.0.0/8"),
         ("model.ai.internal", "100.100.100.200", "100.0.0.0/8"),
         ("model.ai.internal", "::ffff:100.100.100.200", "100.0.0.0/8"),
-        ("168.63.129.16", "168.63.129.16", "168.0.0.0/8"),
+        ("metadata-deny.example", "168.63.129.16", "168.0.0.0/8"),
         ("model.ai.internal", "fd00:ec2::254", "fd00::/8"),
     ],
 )

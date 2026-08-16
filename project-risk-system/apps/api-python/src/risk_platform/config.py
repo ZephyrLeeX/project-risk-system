@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import re
 from collections.abc import Mapping
-from ipaddress import IPv4Network, IPv6Network, ip_network
+from ipaddress import IPv4Network, IPv6Network, ip_address, ip_network
 from pathlib import Path
 from typing import Literal, Self
 from urllib.parse import urlsplit
@@ -23,6 +23,41 @@ Environment = Literal["development", "test", "production"]
 IpNetwork = IPv4Network | IPv6Network
 
 
+def normalize_outbound_hostname(hostname: str) -> str:
+    """Normalize an explicitly configured outbound hostname safely."""
+
+    normalized = hostname.rstrip(".").lower()
+    if (
+        not normalized
+        or "*" in normalized
+        or any(character.isspace() for character in normalized)
+    ):
+        raise ValueError("invalid outbound hostname")
+    try:
+        canonical = normalized.encode("idna").decode("ascii")
+    except UnicodeError:
+        raise ValueError("invalid outbound hostname") from None
+    if len(canonical) > 253:
+        raise ValueError("invalid outbound hostname")
+    try:
+        ip_address(canonical)
+    except ValueError:
+        pass
+    else:
+        raise ValueError("invalid outbound hostname")
+    labels = canonical.split(".")
+    if any(
+        not label
+        or len(label) > 63
+        or label.startswith("-")
+        or label.endswith("-")
+        or not re.fullmatch(r"[a-z0-9-]+", label)
+        for label in labels
+    ):
+        raise ValueError("invalid outbound hostname")
+    return canonical
+
+
 class SettingsError(RuntimeError):
     """A safe startup error that never includes configuration values."""
 
@@ -36,6 +71,8 @@ class Settings(BaseModel):
     api_port: int = Field(default=3000, ge=1, le=65_535)
     cors_origins: tuple[str, ...] = ("http://localhost:5173",)
     trusted_proxy_cidrs: tuple[IpNetwork, ...] = ()
+    ai_outbound_allowed_hostnames: frozenset[str] = frozenset()
+    ai_outbound_allowed_cidrs: tuple[IpNetwork, ...] = ()
     session_cookie_name: str = "project_risk_session"
     session_secret_file: Path | None = None
 
@@ -101,16 +138,35 @@ class Settings(BaseModel):
             if env_name in source:
                 raw[field_name] = source[env_name]
 
-        try:
-            if "CORS_ORIGIN" in source:
-                raw["cors_origins"] = cls._split_csv(source["CORS_ORIGIN"])
-            if "TRUSTED_PROXY_CIDRS" in source:
+        if "CORS_ORIGIN" in source:
+            raw["cors_origins"] = cls._split_csv(source["CORS_ORIGIN"])
+        if "TRUSTED_PROXY_CIDRS" in source:
+            try:
                 raw["trusted_proxy_cidrs"] = tuple(
                     ip_network(value, strict=False)
                     for value in cls._split_csv(source["TRUSTED_PROXY_CIDRS"])
                 )
+            except ValueError:
+                raise SettingsError("配置项无效: TRUSTED_PROXY_CIDRS") from None
+        if "AI_OUTBOUND_ALLOWED_HOSTNAMES" in source:
+            try:
+                raw["ai_outbound_allowed_hostnames"] = frozenset(
+                    normalize_outbound_hostname(value)
+                    for value in cls._split_csv(source["AI_OUTBOUND_ALLOWED_HOSTNAMES"])
+                )
+            except ValueError:
+                raise SettingsError("配置项无效: AI_OUTBOUND_ALLOWED_HOSTNAMES") from None
+        if "AI_OUTBOUND_ALLOWED_CIDRS" in source:
+            try:
+                raw["ai_outbound_allowed_cidrs"] = tuple(
+                    ip_network(value, strict=False)
+                    for value in cls._split_csv(source["AI_OUTBOUND_ALLOWED_CIDRS"])
+                )
+            except ValueError:
+                raise SettingsError("配置项无效: AI_OUTBOUND_ALLOWED_CIDRS") from None
+        try:
             return cls.model_validate(raw)
-        except (ValidationError, ValueError) as exc:
+        except ValidationError as exc:
             fields = cls._invalid_fields(exc)
             raise SettingsError(f"配置项无效: {', '.join(fields)}") from None
 
@@ -119,15 +175,19 @@ class Settings(BaseModel):
         return tuple(item.strip() for item in value.split(",") if item.strip())
 
     @staticmethod
-    def _invalid_fields(exc: ValidationError | ValueError) -> list[str]:
-        if isinstance(exc, ValidationError):
-            return sorted(
-                {
-                    str(error["loc"][0]) if error["loc"] else "SESSION_SECRET_FILE"
-                    for error in exc.errors()
-                }
-            )
-        return ["TRUSTED_PROXY_CIDRS"]
+    def _invalid_fields(exc: ValidationError) -> list[str]:
+        return sorted(
+            {
+                str(error["loc"][0]) if error["loc"] else "SESSION_SECRET_FILE"
+                for error in exc.errors()
+            }
+        )
 
 
-__all__ = ["Environment", "IpNetwork", "Settings", "SettingsError"]
+__all__ = [
+    "Environment",
+    "IpNetwork",
+    "Settings",
+    "SettingsError",
+    "normalize_outbound_hostname",
+]

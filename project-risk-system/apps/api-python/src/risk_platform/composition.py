@@ -35,6 +35,7 @@ from risk_platform.agent.execution import (
 from risk_platform.agent.models import AgentExecutionConfig
 from risk_platform.agent.service import AgentConversationService
 from risk_platform.agent.tools import AgentToolRegistry
+from risk_platform.ai_providers.client import AiProviderClient
 from risk_platform.ai_providers.service import AiProvidersService
 from risk_platform.audit.http import AuditQueryService
 from risk_platform.auth.service import AuthService
@@ -57,7 +58,11 @@ from risk_platform.retention.cleanup import RetentionCleanupService
 from risk_platform.retention.service import RetentionHoldService
 from risk_platform.risks.service import RisksService
 from risk_platform.shared.crypto import KeyRing, SecretCipher, SecretCryptoError
-from risk_platform.shared.outbound import OutboundEndpointGuard, provider_subresource_url
+from risk_platform.shared.outbound import (
+    OutboundEndpointGuard,
+    OutboundPolicy,
+    provider_subresource_url,
+)
 from risk_platform.system_config.service import SystemConfigService
 from risk_platform.todos.service import TodosService
 from risk_platform.weekly_reports import tasks as weekly_tasks
@@ -165,10 +170,29 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def build_provider(cipher: SecretCipher) -> Provider:
+def build_ai_outbound_policy(settings: Settings) -> OutboundPolicy:
+    """Create the AI-only private-network exception policy.
+
+    IMAP deliberately continues to use its default guard, so an AI endpoint
+    allowlist cannot expand the mailbox connection boundary.
+    """
+
+    return OutboundPolicy(
+        approved_internal_hostnames=settings.ai_outbound_allowed_hostnames,
+        approved_internal_networks=settings.ai_outbound_allowed_cidrs,
+    )
+
+
+def build_ai_provider_client(settings: Settings) -> AiProviderClient:
+    """Inject the validated AI policy through the provider client boundary."""
+
+    return AiProviderClient(OutboundEndpointGuard(build_ai_outbound_policy(settings)))
+
+
+def build_provider(cipher: SecretCipher, settings: Settings) -> Provider:
     """Construct the production Agent Provider adapter from the secret boundary."""
 
-    return AgentProviderAdapter(cipher)
+    return AgentProviderAdapter(cipher, OutboundEndpointGuard(build_ai_outbound_policy(settings)))
 
 
 def build_tool_registry(sessions: async_sessionmaker[AsyncSession]) -> AgentToolRegistry:
@@ -202,6 +226,7 @@ def build_services(
     risks = RisksService(sessions)
     todos = TodosService(sessions)
     weekly = WeeklyReportService(sessions)
+    provider_client = build_ai_provider_client(settings)
     return {
         "auth_service": AuthService.from_settings(sessions, settings),
         "risks_service": risks,
@@ -214,7 +239,7 @@ def build_services(
         "admin_users_service": AdminUsersService(sessions),
         "admin_roles_service": AdminRolesService(sessions),
         "admin_options_service": AdminOptionsService(sessions),
-        "ai_providers_service": AiProvidersService(sessions, cipher),
+        "ai_providers_service": AiProvidersService(sessions, cipher, provider_client),
         "audit_query_service": AuditQueryService(sessions),
         "system_config_service": SystemConfigService(sessions),
         "mailbox_service": MailboxService(sessions, cipher),
@@ -223,7 +248,7 @@ def build_services(
         "import_preview_service": ImportPreviewService(sessions, import_root),
         "import_commit_service": ImportCommitService(sessions, import_root),
         "admin_overview_service": AdminOverviewService(
-            sessions, cipher, api_check=overview_api_check
+            sessions, cipher, provider_client, api_check=overview_api_check
         ),
     }
 
@@ -234,6 +259,7 @@ def merge_worker_handlers(
     import_root: Path,
     provider: Provider,
     tool_registry: AgentToolRegistry,
+    ai_provider_client: AiProviderClient,
 ) -> Mapping[str, TaskHandler]:
     """Merge every module-local handler mapping into one closed registry."""
 
@@ -243,7 +269,7 @@ def merge_worker_handlers(
         mailbox_tasks.handlers(
             MailboxSyncService(sessions, cipher),
             MailParseWorker(sessions, cipher),
-            MailRiskExtractionWorker(sessions, cipher),
+            MailRiskExtractionWorker(sessions, cipher, ai_provider_client),
         )
     )
     merged.update(weekly_tasks.handlers(WeeklyReportService(sessions)))
@@ -263,6 +289,8 @@ def merge_worker_handlers(
 __all__ = [
     "AgentProviderAdapter",
     "CompositionError",
+    "build_ai_outbound_policy",
+    "build_ai_provider_client",
     "build_provider",
     "build_services",
     "build_tool_registry",

@@ -405,6 +405,34 @@ def test_settings_are_validated_without_exposing_values() -> None:
     assert "secret-invalid-value" not in str(captured.value)
 
 
+def test_ai_outbound_allowlists_are_normalized_and_validate_without_leaks() -> None:
+    settings = Settings.from_env(
+        {
+            "AI_OUTBOUND_ALLOWED_HOSTNAMES": "TOKEN.LONGSHINE.COM.,ai.internal.example.com",
+            "AI_OUTBOUND_ALLOWED_CIDRS": "10.0.0.1/8,172.16.1.1/12",
+        }
+    )
+
+    assert settings.ai_outbound_allowed_hostnames == frozenset(
+        {"token.longshine.com", "ai.internal.example.com"}
+    )
+    assert tuple(str(network) for network in settings.ai_outbound_allowed_cidrs) == (
+        "10.0.0.0/8",
+        "172.16.0.0/12",
+    )
+    for name, value in (
+        ("AI_OUTBOUND_ALLOWED_HOSTNAMES", "bad hostname value"),
+        ("AI_OUTBOUND_ALLOWED_HOSTNAMES", "*.internal.example.com"),
+        ("AI_OUTBOUND_ALLOWED_HOSTNAMES", "https://ai.internal.example.com"),
+        ("AI_OUTBOUND_ALLOWED_HOSTNAMES", "ai.internal.example.com:8443"),
+        ("AI_OUTBOUND_ALLOWED_HOSTNAMES", "10.0.0.1"),
+        ("AI_OUTBOUND_ALLOWED_CIDRS", "not-a-cidr"),
+    ):
+        with pytest.raises(SettingsError) as captured:
+            Settings.from_env({name: value})
+        assert value not in str(captured.value)
+
+
 def test_cookie_security_defaults_match_environment() -> None:
     development = session_cookie_options(Settings(environment="development"))
     production = session_cookie_options(

@@ -15,6 +15,7 @@ from risk_platform.agent.tools import AgentToolRegistry
 from risk_platform.ai_providers.service import AiProvidersService
 from risk_platform.auth.service import AuthService
 from risk_platform.composition import (
+    build_ai_provider_client,
     build_provider,
     build_services,
     build_tool_registry,
@@ -120,7 +121,12 @@ def test_worker_handlers_cover_every_task_kind(tmp_path: Path) -> None:
     sessions = _sessions()
     cipher = _cipher()
     handlers = merge_worker_handlers(
-        sessions, cipher, tmp_path, build_provider(cipher), build_tool_registry(sessions)
+        sessions,
+        cipher,
+        tmp_path,
+        build_provider(cipher, _settings(tmp_path)),
+        build_tool_registry(sessions),
+        build_ai_provider_client(_settings(tmp_path)),
     )
 
     assert set(handlers) == {kind.value for kind in DurableTaskKind}

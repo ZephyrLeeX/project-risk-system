@@ -27,6 +27,21 @@ The API, worker and scheduler share one production image (`risk-platform-api`);
 only the per-service `command` differs. The scheduler uses the T046 entrypoint
 unchanged — no scheduler logic lives in T035.
 
+## AI Provider internal endpoint allowlist
+
+Public HTTPS AI APIs work with the default empty allowlists. An internal
+Provider requires both its exact hostname and every permitted DNS CIDR:
+
+```dotenv
+AI_OUTBOUND_ALLOWED_HOSTNAMES=token.longshine.com
+AI_OUTBOUND_ALLOWED_CIDRS=10.0.0.0/8
+```
+
+This permits `https://token.longshine.com:18443` only when DNS resolves in
+`10.0.0.0/8`. Localhost, link-local, metadata and other forbidden addresses
+remain blocked even if listed. API, worker and scheduler receive the same
+values; only AI calls consume them, so IMAP is not widened.
+
 ## Networking and trust
 
 - `project-risk-backend` (fixed subnet `10.30.0.0/24`) is the internal app

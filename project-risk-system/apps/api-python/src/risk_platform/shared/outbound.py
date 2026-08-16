@@ -10,7 +10,7 @@ from ipaddress import IPv4Address, IPv6Address, ip_address
 from typing import Literal
 from urllib.parse import unquote, urljoin, urlsplit, urlunsplit
 
-from risk_platform.config import IpNetwork
+from risk_platform.config import IpNetwork, normalize_outbound_hostname
 
 IpAddress = IPv4Address | IPv6Address
 Resolver = Callable[[str, int], Awaitable[Sequence[str]]]
@@ -237,12 +237,9 @@ def provider_subresource_url(endpoint: ResolvedEndpoint, relative_path: str) -> 
 
 
 def _normalize_hostname(hostname: str) -> str:
-    normalized = hostname.rstrip(".").lower()
-    if not normalized or any(character.isspace() for character in normalized):
-        raise OutboundSecurityError("INVALID_OUTBOUND_HOSTNAME")
     try:
-        return normalized.encode("idna").decode("ascii")
-    except UnicodeError:
+        return normalize_outbound_hostname(hostname)
+    except ValueError:
         raise OutboundSecurityError("INVALID_OUTBOUND_HOSTNAME") from None
 
 

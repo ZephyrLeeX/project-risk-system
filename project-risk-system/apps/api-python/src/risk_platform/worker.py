@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from risk_platform.composition import (
     CompositionError,
+    build_ai_provider_client,
     build_provider,
     build_tool_registry,
     import_storage_root,
     load_cipher,
     merge_worker_handlers,
 )
+from risk_platform.config import Settings
 from risk_platform.db import create_database_engine, create_session_factory, database_url
 from risk_platform.reliability.celery_app import celery_app
 from risk_platform.reliability.dispatcher import register_executor
@@ -31,10 +33,16 @@ def register_production_worker(*, owner: str = "risk-platform-worker") -> None:
     cipher = load_cipher()
     if cipher is None:
         raise CompositionError("DATA_ENCRYPTION_KEY 未配置或无效，无法启动 worker")  # noqa: RUF001
-    provider = build_provider(cipher)
+    settings = Settings.from_env()
+    provider = build_provider(cipher, settings)
     tool_registry = build_tool_registry(sessions)
     handlers = merge_worker_handlers(
-        sessions, cipher, import_storage_root(), provider, tool_registry
+        sessions,
+        cipher,
+        import_storage_root(),
+        provider,
+        tool_registry,
+        build_ai_provider_client(settings),
     )
     register_executor(celery_app, sessions, handlers, owner=owner)
     _registered = True
