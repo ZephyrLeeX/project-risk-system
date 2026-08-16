@@ -105,12 +105,14 @@ def service(database: async_sessionmaker[AsyncSession]) -> AgentConversationServ
 
 def test_tool_registry_is_closed_and_help_is_permission_filtered() -> None:
     registry = AgentToolRegistry(
+        None,  # type: ignore[arg-type]
         DashboardService(None),  # type: ignore[arg-type]
         RisksService(None),  # type: ignore[arg-type]
         TodosService(None),  # type: ignore[arg-type]
         WeeklyReportService(None),  # type: ignore[arg-type]
     )
     assert {item.name for item in registry.help(identity())} == {
+        "project_list",
         "dashboard_summary",
         "dashboard_focus",
         "risk_list",

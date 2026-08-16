@@ -195,6 +195,12 @@ class AiProvidersService:
             self._endpoint_shape(payload.endpoint)
             if row.isDefault and not payload.enabled:
                 raise ApiError(400, "BAD_REQUEST", "默认服务不能直接停用，请先切换默认服务")  # noqa: RUF001
+            endpoint = self._normalize_endpoint(payload.endpoint)
+            protocol = AiProviderProtocol(payload.protocol)
+            model = payload.model.strip()
+            self._invalidate_health_for_connection_change(
+                row, endpoint, protocol, model, payload.timeoutSeconds, payload.retryCount
+            )
             (
                 row.name,
                 row.vendor,
@@ -209,9 +215,9 @@ class AiProvidersService:
             ) = (
                 payload.name.strip(),
                 payload.vendor.strip(),
-                self._normalize_endpoint(payload.endpoint),
-                AiProviderProtocol(payload.protocol),
-                payload.model.strip(),
+                endpoint,
+                protocol,
+                model,
                 payload.expiresAt,
                 payload.timeoutSeconds,
                 payload.retryCount,
@@ -601,6 +607,47 @@ class AiProvidersService:
     def _endpoint_shape(value: str) -> None:
         if not value.strip().lower().startswith("https://"):
             raise ApiError(400, "BAD_REQUEST", "AI服务地址必须使用HTTPS")
+
+    @staticmethod
+    def _connection_fields_changed(
+        row: AiProviderConfig,
+        endpoint: str,
+        protocol: AiProviderProtocol,
+        model: str,
+        timeout_seconds: int,
+        retry_count: int,
+    ) -> bool:
+        """Return whether a stored connection test no longer covers this configuration."""
+
+        return (
+            row.endpoint != endpoint
+            or row.protocol is not protocol
+            or row.model != model
+            or row.timeoutSeconds != timeout_seconds
+            or row.retryCount != retry_count
+        )
+
+    @classmethod
+    def _invalidate_health_for_connection_change(
+        cls,
+        row: AiProviderConfig,
+        endpoint: str,
+        protocol: AiProviderProtocol,
+        model: str,
+        timeout_seconds: int,
+        retry_count: int,
+    ) -> bool:
+        if not cls._connection_fields_changed(
+            row, endpoint, protocol, model, timeout_seconds, retry_count
+        ):
+            return False
+        (
+            row.lastTestStatus,
+            row.lastTestAt,
+            row.lastTestLatencyMs,
+            row.lastTestErrorCode,
+        ) = (AiConnectionStatus.UNTESTED, None, None, None)
+        return True
 
 
 __all__ = ["AiProvidersService"]

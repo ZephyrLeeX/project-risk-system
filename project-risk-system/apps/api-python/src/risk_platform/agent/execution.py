@@ -14,7 +14,7 @@ from typing import Literal, Protocol, cast
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from risk_platform.admin.models import User, UserStatus
@@ -27,7 +27,7 @@ from risk_platform.rbac.scopes import get_scoped_project, project_scope_predicat
 from risk_platform.reliability.core import TaskHandler, heartbeat
 from risk_platform.reliability.dispatcher import DurableTaskCancelled, DurableTaskFailure
 from risk_platform.reliability.models import DurableTask, DurableTaskStatus
-from risk_platform.risks.models import Risk, RiskCategory, RiskStatus
+from risk_platform.risks.models import ProjectRiskLevel, Risk, RiskCategory, RiskStatus
 from risk_platform.shared.errors import ApiError
 from risk_platform.todos.models import ActionItem
 
@@ -51,6 +51,14 @@ MAX_RESPONSE_BYTES = 128 * 1024
 MAX_HISTORY_BYTES = 24 * 1024
 MAX_TOOL_RESULT_BYTES = 48 * 1024
 MAX_ACTION_TEXT_BYTES = 32 * 1024
+MAX_CONTEXT_PROJECTS = 50
+SYSTEM_INSTRUCTION = (
+    "你是项目风险管理系统 Agent。用户询问当前项目、风险、待办或周报时,"
+    "只能以 businessContext 和 toolResults 作为系统业务事实来源, 不得用模型自身世界知识替代。"
+    "信息不足时必须调用工具; 不得虚构项目、风险、金额、负责人或状态。"
+    "系统数据中没有答案时, 明确说明“当前系统数据中未找到”。回答优先使用项目名称而非仅 UUID。"
+    "RESPOND 阶段必须依据 toolResults, 不得忽略工具结果重新按常识生成答案。"
+)
 
 
 class _ProtocolModel(BaseModel):
@@ -154,12 +162,20 @@ class Provider(Protocol):
 class AgentProviderError(RuntimeError):
     """Safe transport classification supplied by a Provider adapter."""
 
-    def __init__(self, *, status_code: int | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        status_code: int | None = None,
+        code: str | None = None,
+        retryable: bool | None = None,
+    ) -> None:
         super().__init__("agent provider request failed")
-        self.status_code = status_code
+        self.status_code, self.code, self._retryable = status_code, code, retryable
 
     @property
     def retryable(self) -> bool:
+        if self._retryable is not None:
+            return self._retryable
         return self.status_code is None or self.status_code in {408, 429} or bool(
             self.status_code and self.status_code >= 500
         )
@@ -234,11 +250,13 @@ class AgentExecutionWorker:
                     "AGENT_PROVIDER_UNAVAILABLE",
                     retryable=False,
                 )
+            business_context = await self._business_context(identity)
             plan_request = self._request(
                 phase="PLAN",
                 message=message.content,
                 history=history,
                 tools=cast(list[JSONValue], self._tools.catalogue(identity)),
+                business_context=business_context,
             )
             plan_raw = await self._provider_round(
                 config, task_id, lease_token, plan_request, started
@@ -257,6 +275,7 @@ class AgentExecutionWorker:
                 tools=cast(list[JSONValue], self._tools.catalogue(identity)),
                 tool_results=tool_results,
                 categories=categories,
+                business_context=business_context,
             )
             response_raw = await self._provider_round(
                 config, task_id, lease_token, respond_request, started
@@ -322,7 +341,7 @@ class AgentExecutionWorker:
             ) from None
         except AgentProviderError as exc:
             assert ids is not None
-            code = (
+            code = exc.code or (
                 "AGENT_PROVIDER_UNAVAILABLE"
                 if exc.retryable
                 else "AGENT_PROVIDER_REQUEST_REJECTED"
@@ -423,6 +442,7 @@ class AgentExecutionWorker:
         tools: list[JSONValue],
         tool_results: list[JSONValue] | None = None,
         categories: dict[str, RiskCategory] | None = None,
+        business_context: dict[str, JSONValue] | None = None,
     ) -> dict[str, JSONValue]:
         request: dict[str, JSONValue] = {
             "protocol": PROTOCOL,
@@ -430,7 +450,10 @@ class AgentExecutionWorker:
             "message": message,
             "history": cast(list[JSONValue], history),
             "tools": tools,
+            "systemInstruction": SYSTEM_INSTRUCTION,
         }
+        if business_context is not None:
+            request["businessContext"] = business_context
         if phase == "RESPOND":
             request["toolResults"] = tool_results or []
             request["riskCategoryOptions"] = {
@@ -450,6 +473,46 @@ class AgentExecutionWorker:
         if len(self._json_bytes(request)) > MAX_REQUEST_BYTES:
             raise AgentProviderInvalidOutput
         return request
+
+    async def _business_context(self, identity: SessionIdentity) -> dict[str, JSONValue]:
+        """Load a bounded, scope-filtered grounding summary for one execution."""
+
+        scope = project_scope_predicate(
+            UUID(identity.user.id), DataScopeType(identity.user.dataScope)
+        )
+        async with self._sessions() as session:
+            projects = list(
+                (
+                    await session.scalars(
+                        select(Project)
+                        .where(scope)
+                        .order_by(Project.name, Project.id)
+                        .limit(MAX_CONTEXT_PROJECTS)
+                    )
+                ).all()
+            )
+            risk_counts = await session.execute(
+                select(Risk.level, func.count())
+                .join(Project, Project.id == Risk.projectId)
+                .where(scope, Risk.status == RiskStatus.ACTIVE)
+                .group_by(Risk.level)
+            )
+            counts: dict[ProjectRiskLevel, int] = {
+                level: int(count) for level, count in risk_counts.tuples().all()
+            }
+        return {
+            "dataAsOf": datetime.now(UTC).isoformat(),
+            "projects": [
+                {"id": str(project.id), "name": project.name, "status": project.status.value}
+                for project in projects
+            ],
+            "riskSummary": {
+                "active": sum(int(value) for value in counts.values()),
+                "high": int(counts.get(ProjectRiskLevel.HIGH, 0)),
+                "medium": int(counts.get(ProjectRiskLevel.MEDIUM, 0)),
+                "low": int(counts.get(ProjectRiskLevel.LOW, 0)),
+            },
+        }
 
     async def _provider_round(
         self,

@@ -390,10 +390,17 @@ class RisksService:
         )
 
     async def list(
-        self, identity: SessionIdentity, query: RiskQuery, *, resolved: bool = False
+        self,
+        identity: SessionIdentity,
+        query: RiskQuery,
+        *,
+        resolved: bool = False,
+        project_id: UUID | None = None,
     ) -> RiskPage | ResolvedRiskPage:
         async with self._session_factory() as session:
-            conditions = self._risk_conditions(identity, query, resolved=resolved)
+            conditions = self._risk_conditions(
+                identity, query, resolved=resolved, project_id=project_id
+            )
             rows = (
                 await session.execute(
                     self._risk_statement(conditions)
@@ -447,6 +454,13 @@ class RisksService:
                 updatedAt=_iso(latest),
                 dataScope=DataScopeType(identity.user.dataScope),
             )
+
+    async def list_for_project(
+        self, identity: SessionIdentity, project_id: UUID, query: RiskQuery
+    ) -> RiskPage:
+        page = await self.list(identity, query, project_id=project_id)
+        assert isinstance(page, RiskPage)
+        return page
 
     async def timeline(self, identity: SessionIdentity, query: TimelineQuery) -> TimelinePage:
         async with self._session_factory() as session:
@@ -606,7 +620,11 @@ class RisksService:
 
     @staticmethod
     def _risk_conditions(
-        identity: SessionIdentity, query: RiskQuery, *, resolved: bool
+        identity: SessionIdentity,
+        query: RiskQuery,
+        *,
+        resolved: bool,
+        project_id: UUID | None = None,
     ) -> Sequence[Any]:
         conditions: list[Any] = [
             project_scope_predicate(UUID(identity.user.id), DataScopeType(identity.user.dataScope)),
@@ -621,6 +639,8 @@ class RisksService:
                     Project.name.ilike(pattern),
                 )
             )
+        if project_id is not None:
+            conditions.append(Risk.projectId == project_id)
         if query.level:
             conditions.append(Risk.level == query.level)
         if query.categoryId:

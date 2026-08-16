@@ -91,6 +91,10 @@ function sceneLabel(scene: AiCallScene): string {
   return { WEEKLY_REPORT: "周报分析", AGENT_QUERY: "Agent问答", RISK_EXTRACTION: "风险提取", CONNECTION_TEST: "连接测试" }[scene];
 }
 
+function connectionStatusLabel(status: AiProviderListItem["lastTestStatus"]): string {
+  return { HEALTHY: "连接正常", FAILED: "测试失败", UNTESTED: "未测试" }[status];
+}
+
 async function loadPage(): Promise<void> {
   loading.value = true;
   try {
@@ -156,17 +160,30 @@ function validateForm(requireKey = false): string | null {
 async function saveProvider(): Promise<void> {
   const validation = validateForm(!editingId.value);
   if (validation) return showToast(validation);
+  const existing = editingId.value ? providers.value.find((item) => item.id === editingId.value) : null;
+  const connectionChanged = Boolean(existing && (
+    existing.endpoint !== form.endpoint.trim()
+    || existing.protocol !== form.protocol
+    || existing.model !== form.model.trim()
+    || existing.timeoutSeconds !== Number(form.timeout)
+    || existing.retryCount !== Number(form.retries)
+  ));
   saving.value = true;
   try {
     const body = { name: form.name.trim(), vendor: form.vendor.trim(), endpoint: form.endpoint.trim(), protocol: form.protocol, model: form.model.trim(), expiresAt: form.expiry || null, timeoutSeconds: Number(form.timeout), retryCount: Number(form.retries), enabled: form.enabled };
+    let savedProvider: AiProviderListItem;
     if (editingId.value) {
-      await aiProviderApi.update(editingId.value, body);
-      if (form.key.trim()) await aiProviderApi.rotateKey(editingId.value, { apiKey: form.key.trim(), expiresAt: form.expiry || null });
+      savedProvider = await aiProviderApi.update(editingId.value, body);
+      if (form.key.trim()) savedProvider = await aiProviderApi.rotateKey(editingId.value, { apiKey: form.key.trim(), expiresAt: form.expiry || null });
     } else {
-      await aiProviderApi.create({ ...body, apiKey: form.key.trim() });
+      savedProvider = await aiProviderApi.create({ ...body, apiKey: form.key.trim() });
     }
     drawerOpen.value = false;
-    showToast("AI 服务配置已保存");
+    showToast(
+      savedProvider.lastTestStatus === "UNTESTED" && (connectionChanged || Boolean(form.key.trim()) || !existing)
+        ? "AI 服务配置已保存，当前为未测试，请重新执行连接测试。"
+        : "AI 服务配置已保存"
+    );
     await loadPage();
   } catch (error) {
     showToast(messageOf(error));
@@ -234,7 +251,7 @@ onMounted(() => void loadPage());
 
     <div class="prototype-two-columns api-main-grid">
       <section class="prototype-panel"><header class="prototype-panel-heading"><div><p>AI SERVICE CONFIGURATION</p><h2>AI 服务配置 <small>{{ filteredProviders.length }}项服务</small></h2></div></header><div class="prototype-filter-row"><input v-model="keyword" type="search" placeholder="搜索服务名称、厂商或模型"><div class="segmented"><button :class="{active:status==='all'}" type="button" @click="status='all'">全部</button><button :class="{active:status==='ACTIVE'}" type="button" @click="status='ACTIVE'">已启用</button><button :class="{active:status==='DISABLED'}" type="button" @click="status='DISABLED'">已停用</button></div></div>
-        <div class="provider-list"><article v-for="provider in filteredProviders" :key="provider.id" class="provider-card"><header><span class="provider-avatar">AI</span><span><strong>{{ provider.name }}</strong><small>{{ provider.vendor }} · {{ provider.model }} · {{ provider.protocol }}</small></span><em v-if="provider.isDefault">默认</em><i :class="{off:!provider.enabled}">{{ provider.enabled?'已启用':'已停用' }}</i></header><dl><div><dt>服务地址</dt><dd>{{ provider.endpoint }}</dd></div><div><dt>API Key</dt><dd><code>{{ provider.maskedKey }}</code></dd></div><div><dt>密钥有效期</dt><dd>{{ formatDate(provider.expiresAt) }}</dd></div><div><dt>超时 / 重试</dt><dd>{{ provider.timeoutSeconds }}s / {{ provider.retryCount }}次</dd></div></dl><footer><button type="button" @click="openTest(provider)">连接测试</button><button type="button" @click="openCreate(provider)">编辑</button><button type="button" :disabled="provider.isDefault" @click="defaultCandidate=provider">{{ provider.isDefault?'当前默认服务':'设为默认服务' }}</button><button type="button" @click="toggleStatus(provider)">{{ provider.enabled?'停用服务':'启用服务' }}</button></footer></article><p v-if="!filteredProviders.length" class="prototype-empty">{{ loading ? '正在加载 AI 服务配置…' : '没有符合条件的 AI 服务配置。' }}</p></div>
+        <div class="provider-list"><article v-for="provider in filteredProviders" :key="provider.id" class="provider-card"><header><span class="provider-avatar">AI</span><span><strong>{{ provider.name }}</strong><small>{{ provider.vendor }} · {{ provider.model }} · {{ provider.protocol }}</small></span><em v-if="provider.isDefault">默认</em><i :class="{off:!provider.enabled}">{{ provider.enabled?'已启用':'已停用' }}</i></header><dl><div><dt>服务地址</dt><dd>{{ provider.endpoint }}</dd></div><div><dt>API Key</dt><dd><code>{{ provider.maskedKey }}</code></dd></div><div><dt>密钥有效期</dt><dd>{{ formatDate(provider.expiresAt) }}</dd></div><div><dt>超时 / 重试</dt><dd>{{ provider.timeoutSeconds }}s / {{ provider.retryCount }}次</dd></div><div><dt>连接状态</dt><dd>{{ connectionStatusLabel(provider.lastTestStatus) }}<template v-if="provider.lastTestStatus === 'UNTESTED'">，请重新执行连接测试</template></dd></div></dl><footer><button type="button" @click="openTest(provider)">连接测试</button><button type="button" @click="openCreate(provider)">编辑</button><button type="button" :disabled="provider.isDefault" @click="defaultCandidate=provider">{{ provider.isDefault?'当前默认服务':'设为默认服务' }}</button><button type="button" @click="toggleStatus(provider)">{{ provider.enabled?'停用服务':'启用服务' }}</button></footer></article><p v-if="!filteredProviders.length" class="prototype-empty">{{ loading ? '正在加载 AI 服务配置…' : '没有符合条件的 AI 服务配置。' }}</p></div>
       </section>
       <aside class="stacked-panels"><section class="prototype-panel"><header class="prototype-panel-heading"><div><p>CALL STRATEGY</p><h2>调用策略</h2></div><button type="button" aria-label="查看调用策略说明" @click="strategyHelpOpen=true">?</button></header><ol class="strategy-list"><li v-for="(provider,index) in strategy" :key="provider.id"><b>{{ index+1 }}</b><span><strong>{{ provider.name }}</strong><small>{{ provider.isDefault?'默认主服务':'主服务失败后自动切换' }}</small></span><em>{{ provider.enabled?'可用':'停用' }}</em></li><li v-if="!strategy.length"><span><strong>暂无调用服务</strong><small>请先新增 AI 服务配置</small></span></li></ol></section><section class="prototype-panel expiry-card"><header class="prototype-panel-heading"><div><p>KEY LIFECYCLE</p><h2>密钥有效期</h2></div></header><template v-if="expiringProvider"><strong>{{ expiringProvider.name }}</strong><p>API Key 将于 {{ formatDate(expiringProvider.expiresAt) }} 到期，建议提前更新并完成连通性测试。</p><button type="button" @click="openCreate(expiringProvider)">立即更新密钥</button></template><template v-else><strong>暂无到期提醒</strong><p>当前没有已设置有效期的 API Key。</p></template></section></aside>
     </div>

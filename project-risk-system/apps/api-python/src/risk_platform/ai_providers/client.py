@@ -252,17 +252,19 @@ class AiProviderClient:
     @staticmethod
     def _http_error(status: int) -> ProviderRequestError:
         if status in {401, 403}:
-            return ProviderRequestError("AUTHENTICATION_FAILED", retryable=False)
+            return ProviderRequestError(
+                "AUTHENTICATION_FAILED", retryable=False, status_code=status
+            )
         if status == 404:
-            return ProviderRequestError("MODEL_NOT_FOUND", retryable=False)
+            return ProviderRequestError("MODEL_NOT_FOUND", retryable=False, status_code=status)
         if status == 429:
-            return ProviderRequestError("RATE_LIMITED", retryable=True)
+            return ProviderRequestError("RATE_LIMITED", retryable=True, status_code=status)
         if status == 408:
-            return ProviderRequestError("UPSTREAM_TIMEOUT", retryable=True)
+            return ProviderRequestError("UPSTREAM_TIMEOUT", retryable=True, status_code=status)
         if status >= 500:
-            return ProviderRequestError("HTTP_5XX", retryable=True)
+            return ProviderRequestError("HTTP_5XX", retryable=True, status_code=status)
         if 400 <= status < 500:
-            return ProviderRequestError("INVALID_REQUEST", retryable=False)
+            return ProviderRequestError("INVALID_REQUEST", retryable=False, status_code=status)
         return ProviderRequestError("UPSTREAM_UNREACHABLE", retryable=True)
 
     @staticmethod
@@ -282,9 +284,9 @@ class AiProviderClient:
 
 
 class ProviderRequestError(RuntimeError):
-    def __init__(self, code: str, *, retryable: bool) -> None:
+    def __init__(self, code: str, *, retryable: bool, status_code: int | None = None) -> None:
         super().__init__(code)
-        self.code, self.retryable = code, retryable
+        self.code, self.retryable, self.status_code = code, retryable, status_code
 
 
 __all__ = [

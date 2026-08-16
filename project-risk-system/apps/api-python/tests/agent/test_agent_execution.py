@@ -10,7 +10,7 @@ from collections.abc import AsyncGenerator, Iterator, Mapping
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import cast
+from typing import Literal, cast
 from uuid import UUID
 
 import httpx2
@@ -87,6 +87,8 @@ class FakeProvider:
         phase = request["phase"]
         if message == "invalid":
             return self._response({"protocol": "wrong", "phase": phase, "actions": []})
+        if message == "provider-invalid-output":
+            raise AgentProviderError(code="AGENT_PROVIDER_INVALID_OUTPUT")
         if message == "timeout":
             raise TimeoutError
         if message == "heartbeat":
@@ -101,6 +103,8 @@ class FakeProvider:
                     {"type": "tool_call", "name": "risk_list", "arguments": {}}
                     for _ in range(count)
                 )
+            if message == "current-high-risks":
+                actions.append({"type": "tool_call", "name": "dashboard_focus", "arguments": {}})
             return self._response(
                 {"protocol": "AGENT_PROVIDER_EXECUTION_V2", "phase": phase, "actions": actions}
             )
@@ -295,7 +299,9 @@ async def _seed(factory: async_sessionmaker[AsyncSession]) -> None:
         )
 
 
-def identity() -> SessionIdentity:
+def identity(
+    data_scope: Literal["ALL", "OWNED", "ASSIGNED", "OWNED_OR_ASSIGNED", "NONE"] = "ALL",
+) -> SessionIdentity:
     return SessionIdentity(
         session_id=uuid.uuid4(),
         expires_at=datetime.now(UTC) + timedelta(hours=1),
@@ -306,7 +312,7 @@ def identity() -> SessionIdentity:
             departmentName=None,
             roleCodes=["RISK_ADMIN"],
             permissions=["agent.use", "dashboard.view", "risk.report", "risk.resolve"],
-            dataScope="ALL",
+            dataScope=data_scope,
             mustChangePassword=False,
         ),
     )
@@ -314,6 +320,7 @@ def identity() -> SessionIdentity:
 
 def tools(factory: async_sessionmaker[AsyncSession]) -> AgentToolRegistry:
     return AgentToolRegistry(
+        factory,
         DashboardService(factory),
         RisksService(factory),
         TodosService(factory),
@@ -579,6 +586,115 @@ def test_v2_respond_request_reuses_exact_adr0026_category_projection_shape() -> 
     }
 
 
+def test_request_rejects_oversized_business_context() -> None:
+    worker = AgentExecutionWorker(
+        cast(async_sessionmaker[AsyncSession], None), FakeProvider(), cast(AgentToolRegistry, None)
+    )
+    with pytest.raises(AgentProviderInvalidOutput):
+        worker._request(
+            phase="PLAN",
+            message="projects",
+            history=[],
+            tools=[],
+            business_context={
+                "dataAsOf": "2026-08-16T00:00:00+00:00",
+                "projects": [{"id": str(PROJECT), "name": "x" * (64 * 1024), "status": "DELIVERY"}],
+                "riskSummary": {"active": 0, "high": 0, "medium": 0, "low": 0},
+            },
+        )
+
+
+def test_postgresql_business_context_and_project_tool_respect_scope(
+    database: async_sessionmaker[AsyncSession],
+) -> None:
+    hidden_owner = UUID("00000000-0000-0000-0000-000000000131")
+    hidden_project = UUID("00000000-0000-0000-0000-000000000132")
+
+    async def run() -> None:
+        async with transaction(database) as session:
+            session.add(
+                User(
+                    id=hidden_owner,
+                    username="t029-hidden",
+                    passwordHash="not-used",
+                    displayName="T029 Hidden",
+                    mustChangePassword=False,
+                )
+            )
+            session.add(Project(id=hidden_project, name="Hidden Project", managerId=hidden_owner))
+
+        registry = tools(database)
+        worker = AgentExecutionWorker(database, FakeProvider(), registry)
+        scoped_identity = identity("OWNED")
+        context = await worker._business_context(scoped_identity)
+        assert context["projects"] == [
+            {"id": str(PROJECT), "name": "T029 Project", "status": "DELIVERY"}
+        ]
+        result = await registry.invoke(scoped_identity, "project_list", {}, trace_id="trace")
+        assert result.data == {
+            "items": [{"id": str(PROJECT), "name": "T029 Project", "status": "DELIVERY"}],
+            "truncated": False,
+        }
+
+    asyncio.run(run())
+
+
+def test_postgresql_agent_selects_only_healthy_provider_and_freezes_snapshot(
+    database: async_sessionmaker[AsyncSession],
+) -> None:
+    async def config_for(message: str) -> AgentExecutionConfig:
+        result = await AgentConversationService(database).create(identity(), message)
+        async with database() as session:
+            config = await session.scalar(
+                select(AgentExecutionConfig).where(
+                    AgentExecutionConfig.userMessageId == result.userMessage.id
+                )
+            )
+            assert config is not None
+            return config
+
+    async def run() -> None:
+        async with transaction(database) as session:
+            provider = await session.scalar(select(AiProviderConfig))
+            assert provider is not None
+            provider.lastTestStatus = AiConnectionStatus.UNTESTED
+        assert (await config_for("untested-provider")).providerConfigId is None
+
+        async with transaction(database) as session:
+            provider = await session.scalar(select(AiProviderConfig))
+            assert provider is not None
+            provider.lastTestStatus = AiConnectionStatus.FAILED
+        assert (await config_for("failed-provider")).providerConfigId is None
+
+        async with transaction(database) as session:
+            provider = await session.scalar(select(AiProviderConfig))
+            assert provider is not None
+            provider.lastTestStatus = AiConnectionStatus.HEALTHY
+        snapshot = await config_for("healthy-provider")
+        assert snapshot.providerConfigId is not None
+        assert snapshot.endpointSnapshot == "https://provider.example.test/v1"
+
+        async with transaction(database) as session:
+            provider = await session.scalar(select(AiProviderConfig))
+            assert provider is not None
+            provider.endpoint = "https://provider.example.test/v2"
+            provider.model = "new-model"
+            provider.lastTestStatus = AiConnectionStatus.UNTESTED
+        async with database() as session:
+            persisted = await session.get(AgentExecutionConfig, snapshot.id)
+            assert persisted is not None
+            assert persisted.endpointSnapshot == "https://provider.example.test/v1"
+            assert persisted.modelSnapshot == "fake-model"
+        async with transaction(database) as session:
+            provider = await session.scalar(select(AiProviderConfig))
+            assert provider is not None
+            provider.endpoint = "https://provider.example.test/v1"
+            provider.model = "fake-model"
+            provider.lastTestStatus = AiConnectionStatus.HEALTHY
+
+    asyncio.run(run())
+
+
 def test_real_module_local_worker_success_preview_invalid_timeout_and_cancellation(
     database: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -615,6 +731,10 @@ def test_real_module_local_worker_success_preview_invalid_timeout_and_cancellati
         celery.send_task("risk_platform.reliability.execute", args=[str(tool_task), 1])
         await _wait(database, tool_task, {DurableTaskStatus.SUCCEEDED})
 
+        _high_conversation, high_task = await _created(database, "current-high-risks")
+        celery.send_task("risk_platform.reliability.execute", args=[str(high_task), 1])
+        await _wait(database, high_task, {DurableTaskStatus.SUCCEEDED})
+
         preview_conversation, preview_task = await _created(database, "preview")
         celery.send_task("risk_platform.reliability.execute", args=[str(preview_task), 1])
         await _wait(database, preview_task, {DurableTaskStatus.SUCCEEDED})
@@ -623,6 +743,13 @@ def test_real_module_local_worker_success_preview_invalid_timeout_and_cancellati
         celery.send_task("risk_platform.reliability.execute", args=[str(invalid_task), 1])
         invalid = await _wait(database, invalid_task, {DurableTaskStatus.FAILED})
         assert invalid.failureCode == "AGENT_PROVIDER_INVALID_OUTPUT"
+
+        _invalid_output_conversation, invalid_output_task = await _created(
+            database, "provider-invalid-output"
+        )
+        celery.send_task("risk_platform.reliability.execute", args=[str(invalid_output_task), 1])
+        invalid_output = await _wait(database, invalid_output_task, {DurableTaskStatus.FAILED})
+        assert invalid_output.failureCode == "AGENT_PROVIDER_INVALID_OUTPUT"
 
         _timeout_conversation, timeout_task = await _created(database, "timeout")
         celery.send_task("risk_platform.reliability.execute", args=[str(timeout_task), 1])
@@ -671,6 +798,12 @@ def test_real_module_local_worker_success_preview_invalid_timeout_and_cancellati
     with real_worker(database, provider) as celery:
         asyncio.run(run(celery))
     assert any(request.get("toolResults") for request in provider.requests)
+    high_requests = [
+        request for request in provider.requests if request.get("message") == "current-high-risks"
+    ]
+    assert high_requests[0]["businessContext"]
+    assert "不得用模型自身世界知识替代" in str(high_requests[0]["systemInstruction"])
+    assert high_requests[1]["toolResults"]
 
 
 def test_real_worker_heartbeat_and_backpressure_are_persisted_and_fail_closed(

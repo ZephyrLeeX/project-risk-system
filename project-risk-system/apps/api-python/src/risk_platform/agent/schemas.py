@@ -111,8 +111,20 @@ class EmptyToolArguments(StrictRequestModel):
     pass
 
 
+class ProjectListToolItem(_Contract):
+    id: UUID
+    name: str
+    status: str
+
+
+class ProjectListToolResponse(_Contract):
+    items: list[ProjectListToolItem]
+    truncated: bool
+
+
 class RiskToolArguments(StrictRequestModel):
     keyword: str | None = Field(default=None, max_length=100)
+    projectId: UUID | None = None
     page: int = Field(default=1, ge=1)
     pageSize: int = Field(default=20, ge=1, le=100)
 
@@ -154,6 +166,8 @@ __all__ = [
     "AgentToolHelp",
     "AgentToolResult",
     "EmptyToolArguments",
+    "ProjectListToolItem",
+    "ProjectListToolResponse",
     "RiskDetailToolArguments",
     "RiskToolArguments",
     "TodoDetailToolArguments",

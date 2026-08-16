@@ -118,12 +118,19 @@ class AgentProviderAdapter:
                 endpoint, protocol, model, api_key, request, config.timeoutSeconds, 0
             )
         except ProviderRequestError as error:
+            if error.code == "PROVIDER_INVALID_OUTPUT":
+                raise AgentProviderError(
+                    code="AGENT_PROVIDER_INVALID_OUTPUT", retryable=False
+                ) from None
+            if error.status_code is not None and 400 <= error.status_code < 500:
+                raise AgentProviderError(
+                    code="AGENT_PROVIDER_REQUEST_REJECTED", retryable=False
+                ) from None
             status = {
                 "UPSTREAM_TIMEOUT": 408,
                 "AUTHENTICATION_FAILED": 401,
                 "MODEL_NOT_FOUND": 404,
                 "INVALID_REQUEST": 400,
-                "PROVIDER_INVALID_OUTPUT": 400,
             }.get(error.code)
             raise AgentProviderError(status_code=status) from None
         except (TimeoutError, ValueError):
@@ -160,6 +167,7 @@ def build_tool_registry(sessions: async_sessionmaker[AsyncSession]) -> AgentTool
     """Assemble the closed T028 read-tool registry from existing domain services."""
 
     return AgentToolRegistry(
+        sessions,
         DashboardService(sessions),
         RisksService(sessions),
         TodosService(sessions),
@@ -195,7 +203,7 @@ def build_services(
         "dashboard_service": dashboard,
         "weekly_report_service": weekly,
         "agent_conversation_service": AgentConversationService(sessions),
-        "agent_tool_registry": AgentToolRegistry(dashboard, risks, todos, weekly),
+        "agent_tool_registry": AgentToolRegistry(sessions, dashboard, risks, todos, weekly),
         "retention_hold_service": RetentionHoldService(sessions),
         "admin_users_service": AdminUsersService(sessions),
         "admin_roles_service": AdminRolesService(sessions),
