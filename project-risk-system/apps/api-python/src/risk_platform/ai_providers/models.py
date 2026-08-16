@@ -33,6 +33,12 @@ class AiConnectionStatus(StrEnum):
     FAILED = "FAILED"
 
 
+class AiProviderProtocol(StrEnum):
+    OPENAI_CHAT_COMPLETIONS = "OPENAI_CHAT_COMPLETIONS"
+    OPENAI_RESPONSES = "OPENAI_RESPONSES"
+    ANTHROPIC_MESSAGES = "ANTHROPIC_MESSAGES"
+
+
 class AiProviderConfig(Base):
     __tablename__ = "ai_provider_configs"
     __table_args__ = (
@@ -47,6 +53,11 @@ class AiProviderConfig(Base):
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     vendor: Mapped[str] = mapped_column(String(128), nullable=False)
     endpoint: Mapped[str] = mapped_column(String(500), nullable=False)
+    protocol: Mapped[AiProviderProtocol] = mapped_column(
+        Enum(AiProviderProtocol, name="AiProviderProtocol", native_enum=True),
+        nullable=False,
+        server_default=text("'OPENAI_CHAT_COMPLETIONS'"),
+    )
     model: Mapped[str] = mapped_column(String(128), nullable=False)
     encryptedApiKey: Mapped[str] = mapped_column(Text, nullable=False)
     keyIv: Mapped[str] = mapped_column(String(64), nullable=False)

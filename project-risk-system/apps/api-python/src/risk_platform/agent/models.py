@@ -205,6 +205,7 @@ class AgentExecutionConfig(Base):
     )
     providerNameSnapshot: Mapped[str | None] = mapped_column(String(128))
     endpointSnapshot: Mapped[str | None] = mapped_column(String(500))
+    protocolSnapshot: Mapped[str | None] = mapped_column(String(32))
     modelSnapshot: Mapped[str | None] = mapped_column(String(128))
     encryptedApiKeySnapshot: Mapped[str | None] = mapped_column(Text)
     timeoutSeconds: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("90"))

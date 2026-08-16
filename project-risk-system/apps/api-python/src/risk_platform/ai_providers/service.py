@@ -17,6 +17,7 @@ from risk_platform.ai_providers.models import (
     AiCallScene,
     AiConnectionStatus,
     AiProviderConfig,
+    AiProviderProtocol,
 )
 from risk_platform.ai_providers.schemas import (
     CallDetail,
@@ -161,6 +162,7 @@ class AiProvidersService:
                 name=payload.name.strip(),
                 vendor=payload.vendor.strip(),
                 endpoint=self._normalize_endpoint(payload.endpoint),
+                protocol=AiProviderProtocol(payload.protocol),
                 model=payload.model.strip(),
                 encryptedApiKey=encrypted.envelope,
                 keyIv="",
@@ -197,6 +199,7 @@ class AiProvidersService:
                 row.name,
                 row.vendor,
                 row.endpoint,
+                row.protocol,
                 row.model,
                 row.expiresAt,
                 row.timeoutSeconds,
@@ -207,6 +210,7 @@ class AiProvidersService:
                 payload.name.strip(),
                 payload.vendor.strip(),
                 self._normalize_endpoint(payload.endpoint),
+                AiProviderProtocol(payload.protocol),
                 payload.model.strip(),
                 payload.expiresAt,
                 payload.timeoutSeconds,
@@ -301,6 +305,7 @@ class AiProvidersService:
                 row.id,
                 row.name,
                 row.endpoint,
+                row.protocol,
                 row.model,
                 key,
                 row.timeoutSeconds,
@@ -316,6 +321,7 @@ class AiProvidersService:
             None,
             payload.name.strip(),
             payload.endpoint,
+            AiProviderProtocol(payload.protocol),
             payload.model.strip(),
             payload.apiKey,
             payload.timeoutSeconds,
@@ -426,6 +432,7 @@ class AiProvidersService:
         provider_id: UUID | None,
         name: str,
         endpoint: str,
+        protocol: AiProviderProtocol,
         model: str,
         key: str,
         timeout: int,
@@ -433,7 +440,7 @@ class AiProvidersService:
         identity: SessionIdentity,
         trace_id: UUID,
     ) -> ConnectionResult:
-        outcome = await self._client.test(endpoint, model, key, timeout, retries)
+        outcome = await self._client.test(endpoint, model, key, timeout, retries, protocol)
         tested = datetime.now(UTC)
         test_trace = uuid4()
         async with transaction(self._session_factory) as session:
@@ -548,6 +555,7 @@ class AiProvidersService:
             name=row.name,
             vendor=row.vendor,
             endpoint=row.endpoint,
+            protocol=row.protocol.value,
             model=row.model,
             maskedKey=f"••••••••••••{row.keyLast4}",
             expiresAt=row.expiresAt.isoformat() if row.expiresAt else None,

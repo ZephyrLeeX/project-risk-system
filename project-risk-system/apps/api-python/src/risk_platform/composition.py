@@ -9,13 +9,9 @@ mappings and registers the shared executor exactly once.
 
 from __future__ import annotations
 
-import asyncio
 import base64
-import json
 import os
 import tempfile
-import urllib.error
-import urllib.request
 from collections.abc import Awaitable, Callable, Mapping
 from pathlib import Path
 
@@ -26,7 +22,6 @@ from risk_platform.admin.overview.service import AdminOverviewService
 from risk_platform.admin.roles.service import AdminRolesService
 from risk_platform.admin.users.service import AdminUsersService
 from risk_platform.agent.execution import (
-    MAX_RESPONSE_BYTES,
     AgentProviderError,
     Provider,
     ProviderTransportResponse,
@@ -35,7 +30,8 @@ from risk_platform.agent.execution import (
 from risk_platform.agent.models import AgentExecutionConfig
 from risk_platform.agent.service import AgentConversationService
 from risk_platform.agent.tools import AgentToolRegistry
-from risk_platform.ai_providers.client import AiProviderClient
+from risk_platform.ai_providers.client import AiProviderClient, ProviderRequestError
+from risk_platform.ai_providers.models import AiProviderProtocol
 from risk_platform.ai_providers.service import AiProvidersService
 from risk_platform.audit.http import AuditQueryService
 from risk_platform.auth.service import AuthService
@@ -61,14 +57,11 @@ from risk_platform.shared.crypto import KeyRing, SecretCipher, SecretCryptoError
 from risk_platform.shared.outbound import (
     OutboundEndpointGuard,
     OutboundPolicy,
-    provider_subresource_url,
 )
 from risk_platform.system_config.service import SystemConfigService
 from risk_platform.todos.service import TodosService
 from risk_platform.weekly_reports import tasks as weekly_tasks
 from risk_platform.weekly_reports.service import WeeklyReportService
-
-_ERROR_BODY_BYTES = 64 * 1024
 
 
 class CompositionError(RuntimeError):
@@ -108,7 +101,7 @@ class AgentProviderAdapter:
 
     def __init__(self, cipher: SecretCipher, guard: OutboundEndpointGuard | None = None) -> None:
         self._cipher = cipher
-        self._guard = guard or OutboundEndpointGuard()
+        self._client = AiProviderClient(guard or OutboundEndpointGuard())
 
     async def __call__(
         self, config: AgentExecutionConfig, request: dict[str, JSONValue]
@@ -120,54 +113,22 @@ class AgentProviderAdapter:
             raise AgentProviderError()
         api_key = self._cipher.decrypt(snapshot)
         try:
-            resolved = await self._guard.resolve_provider(endpoint)
-            url = provider_subresource_url(resolved, "chat/completions")
-            await self._guard.revalidate(resolved)
-            status, body = await asyncio.to_thread(
-                self._request, url, api_key, model, request, config.timeoutSeconds
+            protocol = AiProviderProtocol(config.protocolSnapshot or "OPENAI_CHAT_COMPLETIONS")
+            result = await self._client.complete(
+                endpoint, protocol, model, api_key, request, config.timeoutSeconds, 0
             )
-        except TimeoutError:
-            raise
-        except (OSError, urllib.error.URLError):
+        except ProviderRequestError as error:
+            status = {
+                "UPSTREAM_TIMEOUT": 408,
+                "AUTHENTICATION_FAILED": 401,
+                "MODEL_NOT_FOUND": 404,
+                "INVALID_REQUEST": 400,
+                "PROVIDER_INVALID_OUTPUT": 400,
+            }.get(error.code)
+            raise AgentProviderError(status_code=status) from None
+        except (TimeoutError, ValueError):
             raise AgentProviderError() from None
-        return ProviderTransportResponse(status, body)
-
-    @staticmethod
-    def _request(
-        url: str,
-        api_key: str,
-        model: str,
-        payload: dict[str, JSONValue],
-        timeout_seconds: int,
-    ) -> tuple[int, bytes]:
-        body = json.dumps(
-            {
-                "model": model,
-                "temperature": 0,
-                "response_format": {"type": "json_object"},
-                "messages": [{"role": "user", "content": json.dumps(payload, ensure_ascii=False)}],
-            },
-            ensure_ascii=False,
-        ).encode()
-        request = urllib.request.Request(
-            url,
-            data=body,
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            method="POST",
-        )
-        opener = urllib.request.build_opener(_NoRedirect())
-        try:
-            with opener.open(request, timeout=timeout_seconds) as response:
-                return int(response.status), response.read(MAX_RESPONSE_BYTES + 1)
-        except urllib.error.HTTPError as error:
-            return error.code, error.read(_ERROR_BODY_BYTES)
-
-
-class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(
-        self, request: object, fp: object, code: int, msg: str, headers: object, newurl: str
-    ) -> None:
-        return None
+        return ProviderTransportResponse(200, result.text.encode())
 
 
 def build_ai_outbound_policy(settings: Settings) -> OutboundPolicy:

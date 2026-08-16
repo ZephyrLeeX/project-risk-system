@@ -4078,6 +4078,16 @@
             "title": "Name",
             "type": "string"
           },
+          "protocol": {
+            "default": "OPENAI_CHAT_COMPLETIONS",
+            "enum": [
+              "OPENAI_CHAT_COMPLETIONS",
+              "OPENAI_RESPONSES",
+              "ANTHROPIC_MESSAGES"
+            ],
+            "title": "Protocol",
+            "type": "string"
+          },
           "retryCount": {
             "maximum": 5.0,
             "minimum": 0.0,
@@ -4639,6 +4649,16 @@
             "maxLength": 128,
             "minLength": 2,
             "title": "Name",
+            "type": "string"
+          },
+          "protocol": {
+            "default": "OPENAI_CHAT_COMPLETIONS",
+            "enum": [
+              "OPENAI_CHAT_COMPLETIONS",
+              "OPENAI_RESPONSES",
+              "ANTHROPIC_MESSAGES"
+            ],
+            "title": "Protocol",
             "type": "string"
           },
           "retryCount": {
@@ -8384,6 +8404,15 @@
             "title": "Priority",
             "type": "integer"
           },
+          "protocol": {
+            "enum": [
+              "OPENAI_CHAT_COMPLETIONS",
+              "OPENAI_RESPONSES",
+              "ANTHROPIC_MESSAGES"
+            ],
+            "title": "Protocol",
+            "type": "string"
+          },
           "retryCount": {
             "title": "Retrycount",
             "type": "integer"
@@ -8410,6 +8439,7 @@
           "name",
           "vendor",
           "endpoint",
+          "protocol",
           "model",
           "maskedKey",
           "expiresAt",
@@ -11116,6 +11146,16 @@
             "maxLength": 128,
             "minLength": 2,
             "title": "Name",
+            "type": "string"
+          },
+          "protocol": {
+            "default": "OPENAI_CHAT_COMPLETIONS",
+            "enum": [
+              "OPENAI_CHAT_COMPLETIONS",
+              "OPENAI_RESPONSES",
+              "ANTHROPIC_MESSAGES"
+            ],
+            "title": "Protocol",
             "type": "string"
           },
           "retryCount": {

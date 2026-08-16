@@ -3043,6 +3043,12 @@ export interface components {
             model: string;
             /** Name */
             name: string;
+            /**
+             * Protocol
+             * @default OPENAI_CHAT_COMPLETIONS
+             * @enum {string}
+             */
+            protocol: "OPENAI_CHAT_COMPLETIONS" | "OPENAI_RESPONSES" | "ANTHROPIC_MESSAGES";
             /** Retrycount */
             retryCount: number;
             /** Timeoutseconds */
@@ -3196,6 +3202,12 @@ export interface components {
             model: string;
             /** Name */
             name: string;
+            /**
+             * Protocol
+             * @default OPENAI_CHAT_COMPLETIONS
+             * @enum {string}
+             */
+            protocol: "OPENAI_CHAT_COMPLETIONS" | "OPENAI_RESPONSES" | "ANTHROPIC_MESSAGES";
             /** Retrycount */
             retryCount: number;
             /** Timeoutseconds */
@@ -4415,6 +4427,11 @@ export interface components {
             name: string;
             /** Priority */
             priority: number;
+            /**
+             * Protocol
+             * @enum {string}
+             */
+            protocol: "OPENAI_CHAT_COMPLETIONS" | "OPENAI_RESPONSES" | "ANTHROPIC_MESSAGES";
             /** Retrycount */
             retryCount: number;
             /** Sevendayusagecount */
@@ -5366,6 +5383,12 @@ export interface components {
             model: string;
             /** Name */
             name: string;
+            /**
+             * Protocol
+             * @default OPENAI_CHAT_COMPLETIONS
+             * @enum {string}
+             */
+            protocol: "OPENAI_CHAT_COMPLETIONS" | "OPENAI_RESPONSES" | "ANTHROPIC_MESSAGES";
             /** Retrycount */
             retryCount: number;
             /** Timeoutseconds */

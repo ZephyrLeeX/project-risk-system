@@ -20,7 +20,11 @@ from risk_platform.admin.overview.schemas import (
     UnavailableSection,
 )
 from risk_platform.ai_providers.client import AiProviderClient, ConnectionOutcome
-from risk_platform.ai_providers.models import AiConnectionStatus, AiProviderConfig
+from risk_platform.ai_providers.models import (
+    AiConnectionStatus,
+    AiProviderConfig,
+    AiProviderProtocol,
+)
 from risk_platform.audit.models import AuditLog
 from risk_platform.audit.schemas import AuditModuleKey
 from risk_platform.auth.service import SessionIdentity
@@ -33,7 +37,13 @@ _CHECK_TIMEOUT_SECONDS = 2
 
 class ProviderClient(Protocol):
     async def test(
-        self, endpoint: str, model: str, api_key: str, timeout_seconds: int, retry_count: int
+        self,
+        endpoint: str,
+        model: str,
+        api_key: str,
+        timeout_seconds: int,
+        retry_count: int,
+        protocol: AiProviderProtocol = AiProviderProtocol.OPENAI_CHAT_COMPLETIONS,
     ) -> ConnectionOutcome: ...
 
 
@@ -209,7 +219,9 @@ class AdminOverviewService:
         try:
             key = self._cipher.decrypt(provider.encryptedApiKey)
             result = await asyncio.wait_for(
-                self._provider_client.test(provider.endpoint, provider.model, key, 2, 0),
+                self._provider_client.test(
+                    provider.endpoint, provider.model, key, 2, 0, provider.protocol
+                ),
                 timeout=_CHECK_TIMEOUT_SECONDS,
             )
             if result.success:

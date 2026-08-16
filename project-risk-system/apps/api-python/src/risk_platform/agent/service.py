@@ -174,6 +174,7 @@ class AgentConversationService:
                     providerConfigId=provider.id if provider else None,
                     providerNameSnapshot=provider.name if provider else None,
                     endpointSnapshot=provider.endpoint if provider else None,
+                    protocolSnapshot=provider.protocol.value if provider else None,
                     modelSnapshot=provider.model if provider else None,
                     encryptedApiKeySnapshot=provider.encryptedApiKey if provider else None,
                     timeoutSeconds=90,

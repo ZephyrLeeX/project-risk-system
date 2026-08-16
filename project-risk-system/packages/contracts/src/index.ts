@@ -305,6 +305,7 @@ export interface AiProviderListItem {
   name: string;
   vendor: string;
   endpoint: string;
+  protocol: AiProviderProtocol;
   model: string;
   maskedKey: string;
   expiresAt: string | null;
@@ -326,6 +327,7 @@ export interface AiProviderMutationRequest {
   name: string;
   vendor: string;
   endpoint: string;
+  protocol: AiProviderProtocol;
   model: string;
   expiresAt?: string | null;
   timeoutSeconds: number;
@@ -349,11 +351,14 @@ export interface SetAiProviderStatusRequest {
 export interface AiConnectionTestRequest {
   name: string;
   endpoint: string;
+  protocol: AiProviderProtocol;
   model: string;
   apiKey: string;
   timeoutSeconds: number;
   retryCount: number;
 }
+
+export type AiProviderProtocol = "OPENAI_CHAT_COMPLETIONS" | "OPENAI_RESPONSES" | "ANTHROPIC_MESSAGES";
 
 export interface AiConnectionTestResult {
   providerId: string | null;

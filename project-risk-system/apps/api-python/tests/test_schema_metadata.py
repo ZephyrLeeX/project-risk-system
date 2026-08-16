@@ -69,6 +69,7 @@ def test_metadata_has_final_prisma_tables_with_approved_audit_override() -> None
         }
     )
     expected["mail_messages"].update({"uidValidity", "receivedAt", "receivedAtSource"})
+    expected["ai_provider_configs"].add("protocol")
     expected["durable_tasks"] = {
         "id",
         "kind",
@@ -217,7 +218,8 @@ def test_metadata_has_final_prisma_tables_with_approved_audit_override() -> None
         "requestedByUserId",
         "providerConfigId",
         "providerNameSnapshot",
-        "endpointSnapshot",
+            "endpointSnapshot",
+            "protocolSnapshot",
         "modelSnapshot",
         "encryptedApiKeySnapshot",
         "timeoutSeconds",

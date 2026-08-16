@@ -10,6 +10,9 @@ from pydantic import Field, field_validator
 from risk_platform.shared.http import StrictRequestModel
 
 AiConnectionStatus = Literal["UNTESTED", "HEALTHY", "FAILED"]
+AiProviderProtocol = Literal[
+    "OPENAI_CHAT_COMPLETIONS", "OPENAI_RESPONSES", "ANTHROPIC_MESSAGES"
+]
 AiCallResult = Literal["SUCCESS", "FAILURE"]
 AiCallScene = Literal["WEEKLY_REPORT", "AGENT_QUERY", "RISK_EXTRACTION", "CONNECTION_TEST"]
 
@@ -23,6 +26,7 @@ class ProviderMutation(StrictRequestModel):
     name: str = Field(min_length=2, max_length=128)
     vendor: str = Field(min_length=2, max_length=128)
     endpoint: str = Field(min_length=1, max_length=500)
+    protocol: AiProviderProtocol = "OPENAI_CHAT_COMPLETIONS"
     model: str = Field(min_length=1, max_length=128)
     expiresAt: date | None = None
     timeoutSeconds: int = Field(ge=1, le=300)
@@ -57,6 +61,7 @@ class ProviderStatusRequest(StrictRequestModel):
 class DraftTestRequest(StrictRequestModel):
     name: str = Field(min_length=2, max_length=128)
     endpoint: str = Field(min_length=1, max_length=500)
+    protocol: AiProviderProtocol = "OPENAI_CHAT_COMPLETIONS"
     model: str = Field(min_length=1, max_length=128)
     apiKey: str = Field(min_length=8, max_length=500)
     timeoutSeconds: int = Field(ge=1, le=300)
@@ -94,6 +99,7 @@ class ProviderResponse(StrictRequestModel):
     name: str
     vendor: str
     endpoint: str
+    protocol: AiProviderProtocol
     model: str
     maskedKey: str
     expiresAt: str | None

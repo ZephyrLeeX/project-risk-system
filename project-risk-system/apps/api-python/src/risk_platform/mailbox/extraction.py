@@ -477,7 +477,12 @@ class MailRiskExtractionWorker:
             trace = uuid4()
             try:
                 raw, usage, duration = await self._client.extract_risks(
-                    provider.endpoint, provider.model, key, provider.timeoutSeconds, payload
+                    provider.endpoint,
+                    provider.model,
+                    key,
+                    provider.timeoutSeconds,
+                    payload,
+                    provider.protocol,
                 )
             except ProviderRequestError as error:
                 await self._log_call(provider, trace, error.code)
