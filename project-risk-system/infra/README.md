@@ -15,7 +15,7 @@ stop / restart / backup / restore-drill).
 
 | Service    | Image / build                | Role |
 |------------|------------------------------|------|
-| `postgres` | `postgres:16-alpine`         | Sole database; persistent volume; localhost-only host bind for dev/tests |
+| `postgres` | `postgres:16-alpine`         | Sole database; persistent volume; no host port published (opt-in via `docker-compose.host-postgres.yml` override for local dev) |
 | `redis`    | `redis:7-alpine`             | Celery broker only, ephemeral (not a fact source; ADR 0006) |
 | `api`      | `risk-platform-api` (built)  | FastAPI modular monolith; `uvicorn risk_platform.main:app` |
 | `worker`   | `risk-platform-api` (reused) | Celery worker (`risk_platform.worker`); shares image + storage volume |
@@ -36,6 +36,12 @@ unchanged — no scheduler logic lives in T035.
   from the proxy (and only from the proxy).
 - `project-risk-network` (existing, unpinned) is kept for `pnpm db:up` and
   standalone integration-test containers; `postgres` is attached to both.
+- `postgres` publishes **no host port** — the stack reaches it over the compose
+  network (`DATABASE_URL` → `postgres:5432`), so a host process using
+  `127.0.0.1:5432` cannot block a deployment. Local dev / integration tests opt
+  into a `127.0.0.1` bind by including `infra/docker-compose.host-postgres.yml`
+  in `COMPOSE_FILE` (as `pnpm db:up` does) and setting `POSTGRES_HOST_PORT` —
+  independent of the fixed in-container 5432.
 
 ## Secrets
 

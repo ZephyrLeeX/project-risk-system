@@ -65,9 +65,24 @@ deploy_conf_load() {
   deploy_conf_defaults
 }
 
-# Absolute path to the compose file (PROJECT_ROOT-relative COMPOSE_FILE).
+# Absolute path to the first compose file (PROJECT_ROOT-relative COMPOSE_FILE).
+# COMPOSE_FILE may be a colon-separated Compose file list, matching Docker
+# Compose's standard environment-variable syntax. The deployment wrapper passes
+# each entry as its own `-f` argument, which Docker Compose requires when its
+# files are supplied on the command line.
 compose_file_path() {
-  printf '%s/%s' "${PROJECT_ROOT}" "${COMPOSE_FILE}"
+  local first="${COMPOSE_FILE%%:*}"
+  printf '%s/%s' "${PROJECT_ROOT}" "${first}"
+}
+
+compose_file_args() {
+  local entry
+  local -a entries=()
+  IFS=':' read -r -a entries <<< "${COMPOSE_FILE}"
+  for entry in "${entries[@]}"; do
+    [[ -n "${entry}" ]] || die "COMPOSE_FILE contains an empty path: ${COMPOSE_FILE}"
+    printf '%s\0' "${PROJECT_ROOT}/${entry}"
+  done
 }
 
 # env-file absolute path. Must exist for any compose command that interpolates
@@ -79,7 +94,11 @@ env_file_path() {
 # Print the docker compose invocation prefix used by every script.
 # Usage: compose <subcommand> [args...]
 compose() {
-  docker compose --env-file "$(env_file_path)" -f "$(compose_file_path)" "$@"
+  local -a file_args=()
+  while IFS= read -r -d '' file; do
+    file_args+=( -f "${file}" )
+  done < <(compose_file_args)
+  docker compose --env-file "$(env_file_path)" "${file_args[@]}" "$@"
 }
 
 # --- logging -----------------------------------------------------------------
@@ -104,8 +123,11 @@ require_cmd() {
 
 # Verify we are running inside the deployable project root (infra/ exists).
 require_project_root() {
-  [[ -f "$(compose_file_path)" ]] \
-    || die "compose file not found: $(compose_file_path) (run from the project root that contains infra/)"
+  local file
+  while IFS= read -r -d '' file; do
+    [[ -f "${file}" ]] \
+      || die "compose file not found: ${file} (run from the project root that contains infra/)"
+  done < <(compose_file_args)
 }
 
 # Verify the env file exists and is not the unedited template.

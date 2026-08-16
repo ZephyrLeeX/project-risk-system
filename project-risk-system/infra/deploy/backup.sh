@@ -85,13 +85,16 @@ BACKUP_DIR_ABS="$(cd "${BACKUP_DIR}" && pwd)"
 [[ -f "${DOCKER_BIN}" ]] \
   || die "DOCKER_BIN not found: ${DOCKER_BIN} (set DOCKER_BIN in deploy.conf to your host docker binary, e.g. /usr/bin/docker)"
 
-# Read Postgres credentials from the env file WITHOUT printing them. Sourced in
-# a subshell so they never leak into the calling environment.
-read -r PG_USER PG_DB PG_PASS < <(
-  # shellcheck disable=SC1090
-  set -a; . "$(env_file_path)"; set +a
-  printf '%s\0%s\0%s' "${POSTGRES_USER:-project_risk}" "${POSTGRES_DB:-project_risk}" "${POSTGRES_PASSWORD:-}"
-)
+# Read Postgres credentials from the env file WITHOUT printing them. Values are
+# pulled one at a time via env_file_value (grep of the env file, not source), so
+# nothing leaks into the calling environment and nothing is echoed. The previous
+# form used `read` on a NUL-delimited stream, which bash mishandles: NUL bytes
+# are stripped (all three values merge into PG_USER) and the trailing NUL makes
+# `read` return EOF status, so under `set -Eeuo pipefail` the script exited
+# silently before ever reaching postgres.
+PG_USER="$(env_file_value POSTGRES_USER || printf '%s' project_risk)"
+PG_DB="$(env_file_value POSTGRES_DB || printf '%s' project_risk)"
+PG_PASS="$(env_file_value POSTGRES_PASSWORD || true)"
 [[ -n "${PG_PASS}" ]] || die "POSTGRES_PASSWORD is empty in ${ENV_FILE}"
 
 OUTPUT_HOST="${BACKUP_OUTPUT_ARG:-${BACKUP_DIR_ABS}/${BTYPE}-$(date -u +%Y%m%dT%H%M%SZ).rpbk}"

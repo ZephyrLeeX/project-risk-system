@@ -27,10 +27,14 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-project_risk}
       POSTGRES_USER: ${POSTGRES_USER:-project_risk}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required; run pnpm env:init and use pnpm db:up}
-    # Bound to localhost only: reachable for local dev/integration tests but
-    # never on an external interface (the proxy is the single public edge).
-    ports:
-      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    # No host port is published: postgres is reached only over the compose
+    # network (api/worker/scheduler connect to the `postgres` service on 5432 —
+    # DATABASE_URL is fixed to that in-container port). A host process squatting
+    # 127.0.0.1:5432 therefore cannot block deployment, and postgres never
+    # appears on an external interface (the proxy is the single public edge).
+    # Local dev / operator psql may opt into a localhost-only host bind by
+    # adding the docker-compose.host-postgres.yml override (sets POSTGRES_HOST_PORT
+    # — an independent *host* knob, never a reuse of the in-container port).
     volumes:
       - project-risk-postgres-data:/var/lib/postgresql/data
     healthcheck:

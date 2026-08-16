@@ -1,0 +1,21 @@
+# OPT-IN override: publish a localhost-only host port for PostgreSQL.
+#
+# The base stack (infra/docker-compose.yml) deliberately publishes NO host port
+# for postgres — api/worker/scheduler reach it over the compose network at the
+# service name `postgres:5432`, and DATABASE_URL is fixed to that in-container
+# port. This override exists for local dev / integration tests / operator psql
+# that need host access (e.g. `pnpm db:up`, pytest against localhost:5432).
+#
+# Use it by appending this file after the base file:
+#
+#   docker compose --env-file .env \
+#     -f infra/docker-compose.yml -f infra/docker-compose.host-postgres.yml \
+#     up -d postgres
+#
+# The host bind is controlled by POSTGRES_HOST_PORT (independent of the fixed
+# in-container 5432). Leave it unset or remove the override for deployments so
+# no host 5432 is ever published.
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"

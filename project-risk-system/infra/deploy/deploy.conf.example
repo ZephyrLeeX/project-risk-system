@@ -14,6 +14,10 @@
 #PROJECT_DIR=/opt/project-risk-system
 
 # Compose file (relative to PROJECT_DIR) and env file to interpolate it.
+# postgres publishes no host port by default. Add the override file only if you
+# deliberately want a localhost host bind for psql/diagnostics:
+#   COMPOSE_FILE=infra/docker-compose.yml:infra/docker-compose.host-postgres.yml
+#   POSTGRES_HOST_PORT=5432   # in the env file, only honored with the override
 COMPOSE_FILE=infra/docker-compose.yml
 ENV_FILE=.env.production
 
