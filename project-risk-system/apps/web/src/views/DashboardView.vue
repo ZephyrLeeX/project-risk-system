@@ -103,6 +103,11 @@ const agentOpen = ref(false);
 const agent = useAgentConversation();
 const agentInput = ref("");
 const agentHelp = ref<AgentHelpResponse | null>(null);
+const agentSuggestions = [
+  "当前有哪些高风险？",
+  "风险项目待回款是多少？",
+  "给出本周处理建议",
+] as const;
 const weeklyReport = ref<WeeklyReportResponse | null>(null);
 const weeklyLoading = ref(false);
 const weeklyError = ref("");
@@ -2006,17 +2011,26 @@ onUnmounted(() => {
           </RouterLink>
         </header>
 
-        <div v-if="weeklyLoading" class="weekly-report-table-wrap" role="status">
-          正在加载周报汇总…
+        <div v-if="weeklyLoading" class="weekly-report-state is-loading" role="status">
+          <span class="weekly-state-icon" aria-hidden="true">↻</span>
+          <div>
+            <strong>正在加载周报汇总</strong>
+            <p>正在整理本周已识别的项目风险。</p>
+          </div>
         </div>
 
         <div
           v-else-if="weeklyError"
-          class="weekly-report-table-wrap"
+          class="weekly-report-state is-error"
           role="alert"
         >
-          <p>{{ weeklyError }}</p>
-          <button type="button" @click="loadWeeklyReport">重试</button>
+          <span class="weekly-state-icon" aria-hidden="true">!</span>
+          <div>
+            <strong>周报汇总暂不可用</strong>
+            <p>{{ weeklyError }}</p>
+            <small>请稍后重试；同步周报操作不受影响。</small>
+          </div>
+          <button class="admin-outline-button weekly-state-button" type="button" @click="loadWeeklyReport">重试</button>
         </div>
 
         <div
@@ -2055,13 +2069,22 @@ onUnmounted(() => {
           </table>
         </div>
 
-        <div v-else class="weekly-report-table-wrap">
-          本周暂无周报风险汇总。
+        <div v-else class="weekly-report-state is-empty">
+          <span class="weekly-state-icon" aria-hidden="true">○</span>
+          <div>
+            <strong>本周暂无周报风险汇总</strong>
+            <p>同步并完成识别后，项目风险会显示在这里。</p>
+          </div>
         </div>
       </section>
     </main>
 
-    <aside v-if="agentOpen" class="agent-drawer" aria-label="Agent智能对话">
+    <aside
+      v-if="agentOpen"
+      class="agent-drawer"
+      :class="{ 'has-no-messages': !agent.state.messages.length && !agent.state.streamingText && agent.state.status === 'idle' }"
+      aria-label="Agent智能对话"
+    >
       <header>
         <div>
           <p>AGENT ASSISTANT</p>
@@ -2073,12 +2096,14 @@ onUnmounted(() => {
 
       <div v-if="agentHelp && agentHelp.tools.length" class="agent-tools">
         <small>可用能力：</small>
-        <span v-for="tool in agentHelp.tools" :key="tool.name">{{ tool.name }}</span>
+        <div class="agent-tool-list">
+          <span v-for="tool in agentHelp.tools" :key="tool.name">{{ tool.name }}</span>
+        </div>
       </div>
 
       <div v-if="!agent.state.messages.length && agent.state.status === 'idle'" class="agent-suggestions">
         <button
-          v-for="prompt in ['当前有哪些高风险？','风险项目待回款是多少？','给出本周处理建议']"
+          v-for="prompt in agentSuggestions"
           :key="prompt"
           type="button"
           @click="sendAgent(prompt)"
