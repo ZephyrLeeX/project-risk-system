@@ -331,6 +331,22 @@ curl -sk -o /dev/null -w '%{http_code}\n' https://127.0.0.1:8443/
 
 ## 10.1. 生成合成测试邮件（Demo 数据）
 
+如需完整业务 Demo，推荐严格按以下顺序执行：
+
+```bash
+./infra/deploy/deploy.sh --seed
+./infra/deploy/seed-demo-data.sh --confirm-demo-data
+./infra/deploy/generate-demo-mails.sh
+./infra/deploy/generate-demo-mails.sh --validate
+```
+
+`seed-demo-data.sh` 通过现有 Docker Compose 的一次性 API image 容器访问
+PostgreSQL，不依赖宿主 `5432`，且只在显式传入 `--confirm-demo-data` 时执行。
+它创建 10 个 `WSLDEMO` synthetic users、12 个项目、40 条风险和 72 条待办；
+使用稳定 key 重复执行是幂等的，不覆盖 initial admin、不删除业务数据、不 reset
+database、不创建真实邮箱账号。风险状态遵守正式模型的 `ACTIVE` / `RESOLVED`
+约束，open / monitoring / mitigated / closed 展示阶段记录在合成风险标题和说明中。
+
 ```bash
 ./infra/deploy/generate-demo-mails.sh            # 生成
 ./infra/deploy/generate-demo-mails.sh --validate # 校验已有目录

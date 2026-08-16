@@ -20,6 +20,7 @@ Full walkthrough: [`docs/deployment/SINGLE-SERVER-DOCKER-COMPOSE.md`](../../docs
 | `backup.sh` | Thin wrapper over the T036 backup CLI; reports backupId/status/artifact. |
 | `restore-drill.sh` | Isolated restore drill; fail-closed against the production DB. |
 | `generate-demo-mails.sh` | Generate synthetic demo mail fixtures (`artifacts/demo-mails/`, gitignored). No send, no SMTP, no DB writes. |
+| `seed-demo-data.sh --confirm-demo-data` | Load repeatable synthetic WSLDEMO users/projects/risks/todos through the Compose API image. Never deletes data or creates mail accounts. |
 | `deploy.conf.example` | Non-secret config template. Copy to `deploy.conf` (gitignored). |
 | `lib/common.sh` | Shared helpers (sourced by every script). |
 | `lib/generate_demo_mails.py` | Pure-stdlib fixture generator (called by `generate-demo-mails.sh`). |
@@ -30,8 +31,22 @@ Full walkthrough: [`docs/deployment/SINGLE-SERVER-DOCKER-COMPOSE.md`](../../docs
 cp infra/env.example .env.production        # fill real values
 bash infra/scripts/init-secrets.sh          # session key + TLS cert
 ./infra/deploy/deploy.sh --seed             # first-time deploy + admin bootstrap
+./infra/deploy/seed-demo-data.sh --confirm-demo-data
+./infra/deploy/generate-demo-mails.sh
+./infra/deploy/generate-demo-mails.sh --validate
 ./infra/deploy/healthcheck.sh
 ```
+
+推荐演示顺序是：先完成 migration 和 initial admin bootstrap，再执行上述
+`seed-demo-data.sh`。之后把 `artifacts/demo-mails/*.md` 的 Subject/Body 内容
+手工发送到真实测试邮箱（脚本不会发信、不会创建邮箱），验证链路：
+
+`IMAP -> scheduler -> worker -> parser -> Provider -> candidate/review -> Risk/Todo`。
+
+Demo seed 只接受显式的 `--confirm-demo-data`，使用稳定的 `WSLDEMO` key
+重复执行不会重复创建数据，也不会覆盖 initial admin、删除现有业务数据或 reset
+database。所有用户、项目、风险和待办均为 synthetic；正式风险状态仍遵守模型的
+`ACTIVE` / `RESOLVED` 约束，展示阶段写在合成风险标题和说明中。
 
 ## Safety properties
 
