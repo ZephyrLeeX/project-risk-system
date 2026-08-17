@@ -31,6 +31,7 @@ import {
   type WeeklyProjectSummary,
   type WeeklyReportResponse,
 } from "@/api/weekly-reports";
+import AgentMarkdown from "@/components/AgentMarkdown.vue";
 import ModalDialog from "@/components/ModalDialog.vue";
 import { useAgentConversation } from "@/composables/useAgentConversation";
 import { useAuthStore } from "@/stores/auth";
@@ -2135,20 +2136,33 @@ onUnmounted(() => {
           :class="message.role.toLowerCase()"
         >
           <b>{{ message.role === 'ASSISTANT' ? 'AI' : '我' }}</b>
-          <p>{{ message.content }}</p>
+          <AgentMarkdown
+            v-if="message.role === 'ASSISTANT'"
+            :content="message.content"
+          />
+          <p v-else>{{ message.content }}</p>
           <small v-if="message.dataAsOf">数据截至 {{ formatDateTime(message.dataAsOf) }}</small>
         </article>
 
         <article v-if="agent.state.streamingText" class="assistant">
           <b>AI</b>
-          <p>{{ agent.state.streamingText }}</p>
+          <AgentMarkdown :content="agent.state.streamingText" />
         </article>
 
-        <p v-if="agent.state.status === 'loading'" class="agent-progress" role="status">
-          正在发起对话…
-        </p>
+        <article
+          v-if="agent.state.status === 'loading' || (agent.state.status === 'streaming' && !agent.state.streamingText)"
+          class="assistant agent-thinking"
+          role="status"
+          aria-label="AI 正在思考"
+        >
+          <b>AI</b>
+          <div>
+            <span>AI 正在思考</span>
+            <i aria-hidden="true"><em></em><em></em><em></em></i>
+          </div>
+        </article>
         <p
-          v-else-if="agent.state.status === 'streaming' && agent.state.progress"
+          v-if="agent.state.status === 'streaming' && agent.state.streamingText && agent.state.progress"
           class="agent-progress"
           role="status"
         >
