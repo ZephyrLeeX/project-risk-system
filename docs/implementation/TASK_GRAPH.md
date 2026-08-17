@@ -157,7 +157,7 @@ Tasks in a wave may run concurrently only when every dependency from an earlier 
 | T041 | READY | T006 | Add the ADR 0018 durable task/outbox persistence schema. |
 | T042 | READY | T004, T013, T019 | Implement ADR 0027's approved retention configuration, hold-management API and deletion-protection policy. |
 | T048 | REVIEW_PASSED | T014, T032, T040 | AI Agent V2 Task 1: Provider V2 + DeepSeek Official Adapter. |
-| T049 | READY | T048 | AI Agent V2 Task 2: read-only Agent Core + native Tool Loop. |
+| T049 | REVIEW_PASSED | T048 | AI Agent V2 Task 2: read-only Agent Core + native Tool Loop. |
 | T050 | READY | T049 | AI Agent V2 Task 3: AgentInteraction + project disambiguation + WAITING_FOR_USER. |
 | T051 | READY | T050 | AI Agent V2 Task 4: confirmed writes + MutationDraft. |
 | T052 | READY | T051 | AI Agent V2 Task 5: frontend/Admin closeout + legacy Agent cleanup + full E2E. |

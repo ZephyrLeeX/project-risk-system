@@ -4,6 +4,8 @@
 在工程骨架、数据库迁移和真实登录基础上，实现了用户管理、角色权限、
 项目数据范围、前后端权限控制、会话安全及对应审计。
 
+AI Agent V2 Task 2（T049）已完成并通过 Independent Review：只读 Agent Core、native Tool Loop、PostgreSQL durable execution/SSE 基线和测试迁移已收口；T050 尚未开始。
+
 第一阶段的验收范围、测试结果和数据库基线见
 [`docs/第一阶段验收报告.md`](docs/第一阶段验收报告.md)。
 第二阶段第1步已经完成项目清单 Excel 的预检、确认导入、批次追踪和回滚闭环，

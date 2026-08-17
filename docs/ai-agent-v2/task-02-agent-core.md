@@ -2,7 +2,7 @@
 
 # Status
 
-`IN_PROGRESS`
+`COMPLETED` / `REVIEW_PASSED`
 
 # Goal
 

@@ -4,16 +4,16 @@
 
 ## Overall Status
 
-`IN_PROGRESS`
+`COMPLETED` / T049 `REVIEW_PASSED`
 
-Task 1 已完成并通过独立 Review；Task 2–5 尚未开始。
+Task 1–2 已完成并通过独立 Review；Task 3–5 尚未开始。
 
 ## Task Status
 
 | Task | Status | Task file |
 |---|---|---|
 | Task 1 | `COMPLETED` | [`task-01-provider-v2.md`](task-01-provider-v2.md) |
-| Task 2 | `IN_PROGRESS` | [`task-02-agent-core.md`](task-02-agent-core.md) |
+| Task 2 | `COMPLETED` / `REVIEW_PASSED` | [`task-02-agent-core.md`](task-02-agent-core.md) |
 | Task 3 | `NOT_STARTED` | [`task-03-interactions.md`](task-03-interactions.md) |
 | Task 4 | `NOT_STARTED` | [`task-04-mutations.md`](task-04-mutations.md) |
 | Task 5 | `NOT_STARTED` | [`task-05-integration-cleanup.md`](task-05-integration-cleanup.md) |
@@ -32,12 +32,20 @@ Checkpoint 核对规则：开始 Task 时，最近 checkpoint 必须等于当前
 
 ## Completed Work
 
-### Task 2 activation — 2026-08-17
+### Task 2 completion — 2026-08-17
 
-- status：`IN_PROGRESS` / mapped T049 `IN_PROGRESS`
+- status：`COMPLETED` / mapped T049 `REVIEW_PASSED`
 - ADR：新增 ADR 0035，冻结只读 Scope Policy、native Tool Loop、limits、grounding、Provider/Core、error taxonomy 与 durable/SSE 边界；没有设计 Interaction 或 mutation。
 - toolchain：已使用环境中已安装的 `uv@0.12.3` 与 `python@3.12.13` 执行 focused Ruff，结果 PASS；未下载或改变依赖。
-- implementation/tests/checkpoint：实施进行中 / focused Ruff PASS / 无 checkpoint；尚未开始后续 Task。
+- implementation/tests/checkpoint：Native worker durable lifecycle、V2 read-only boundary 与 test baseline migration 完成；code checkpoint `3813163fca3d076c08a8ec9f5b5a69c9016c9678`；未开始后续 Task。
+- summary：5 个 legacy worker/V1 失败测试迁移至 NativeAgentExecutionWorker/PostgreSQL durable task、Agent events/SSE 不变量；T030 preview/category-stale mutation 测试改为 V2 read-only boundary，mutation/category revalidation deferred to T051。
+- architecture decisions：沿用 ADR 0035 native Tool Loop、Provider/Core 解耦、scope-before-tool、PostgreSQL event/task authority；未恢复旧 PLAN/RESPOND、legacy snapshot、preview/mutation V1 orchestration。
+- DB changes：无新 migration；同步 `agent_messages.structured` 的 metadata/schema baseline，Alembic head `20260817_0011`。
+- API changes：无 breaking API change；OpenAPI/generated contract reproducibly aligned。
+- tests：focused `24 passed`；full PostgreSQL 16 + Redis 7 pytest `513 passed, 1 skipped`；Ruff/mypy/uv lock/Alembic/OpenAPI/contracts/frontend typecheck/git diff check PASS。
+- Independent Review：`REVIEW_PASSED`，无 blocking finding。
+- known limitations：真实 DeepSeek credential/live smoke 仍按 T048 标记为外部输入，不伪造 PASS；legacy implementation cleanup 留给 T052。
+- deferred work：AgentInteraction/project disambiguation→T050；confirmed mutation/category revalidation→T051；frontend/Admin cutover与legacy cleanup→T052。
 
 ### Planning — 2026-08-17
 
@@ -72,11 +80,10 @@ Checkpoint 核对规则：开始 Task 时，最近 checkpoint 必须等于当前
 
 ## Current Known Issues
 
-1. `DESIGN_DEVIATION GATE`：native Tool Loop 与 ADR 0028/0029 的固定两轮内部 JSON protocol 不一致；Task 2 功能编码前需批准替代契约。
-2. `DESIGN_DEVIATION GATE`：统一 editable `AgentInteraction` 与 ADR 0019 的 token-only empty-body confirm 不一致；Task 3/4 编码前需批准 API/persistence/安全语义。
-3. `DESIGN_DEVIATION GATE`：六类 mutation、Risk 1:N Todo 和 Project status mutation 超出 ADR 0020 的三命令；Task 4 编码前需批准领域命令 addendum。
-4. 当前缺少集中 Project Domain Service/status transition policy；Task 4 必须先审计现有 import/legacy 行为，若无法从 authority 得到合法转换规则则报告 `DESIGN_GAP`。
-5. 仓库未见现成 browser E2E harness；Task 5 必须建立或明确接入可重复执行的真实 FastAPI/PostgreSQL/Redis/Celery E2E，而不能用 unit mock 冒充全量验收。
+1. `DESIGN_DEVIATION GATE`：统一 editable `AgentInteraction` 与 ADR 0019 的 token-only empty-body confirm 不一致；Task 3/4 编码前需批准 API/persistence/安全语义。
+2. `DESIGN_DEVIATION GATE`：六类 mutation、Risk 1:N Todo 和 Project status mutation 超出 ADR 0020 的三命令；Task 4 编码前需批准领域命令 addendum。
+3. 当前缺少集中 Project Domain Service/status transition policy；Task 4 必须先审计现有 import/legacy 行为，若无法从 authority 得到合法转换规则则报告 `DESIGN_GAP`。
+4. 仓库未见现成 browser E2E harness；Task 5 必须建立或明确接入可重复执行的真实 FastAPI/PostgreSQL/Redis/Celery E2E，而不能用 unit mock 冒充全量验收。
 
 ## Decisions / Deviations
 
@@ -87,13 +94,13 @@ Checkpoint 核对规则：开始 Task 时，最近 checkpoint 必须等于当前
 
 ## Next Task
 
-下一 Task：[`task-02-agent-core.md`](task-02-agent-core.md)（当前 `NOT_STARTED`）
+下一 Task：[`task-03-interactions.md`](task-03-interactions.md)（T050，`READY`；本轮未开始）
 
 进入条件：
 
 1. T048 / Task 1 为 `REVIEW_PASSED / COMPLETED`，checkpoint 已记录。
 2. 用户明确要求开始/继续 AI Agent V2 的下一个任务。
 3. T049 被正式 assigned，且当前 branch/HEAD/worktree 已按本文件核对。
-4. Task 2 的 native Tool Loop / Scope Guard ADR gate 已批准；否则只能记录 `BLOCKED`/`DESIGN_DEVIATION`，不得编码。
+4. T050 的 Interaction/project disambiguation contract 与其前置设计门禁须由 Orchestrator 明确授权。
 
-进入后只执行 Task 2；完成、Review、更新本文件并创建 checkpoint 后停止，不自动开始 Task 3。
+T049 已完成；本轮在 T050 前停止，不自动开始下一 Task。
