@@ -19,7 +19,7 @@ from risk_platform.ai_providers.v2_adapter import (
 from risk_platform.ai_providers.v2_service import ProviderV2Runtime
 from risk_platform.auth.service import SessionIdentity
 
-from .schemas import AgentToolResult
+from .schemas import AgentToolResult, CandidateRisk
 from .scope import OUT_OF_SCOPE_MESSAGE, ScopeDecision, ScopePolicy
 from .tools import AgentToolRegistry
 
@@ -48,6 +48,7 @@ class AgentLoopLimits:
 class AgentCoreOutcome:
     text: str
     out_of_scope: bool = False
+    candidate_risks: tuple[CandidateRisk, ...] = ()
 
 
 class ReadOnlyAgentCore:

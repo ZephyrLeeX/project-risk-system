@@ -70,6 +70,10 @@ async def append_event(
     )
     session.add(event)
     await session.flush()
+    # PostgreSQL's contiguous-sequence trigger advances the conversation row;
+    # refresh the identity-map instance before the next event in this unit of
+    # work is appended.
+    await session.refresh(conversation)
     return event
 
 

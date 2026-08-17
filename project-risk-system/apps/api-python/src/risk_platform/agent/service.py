@@ -244,6 +244,7 @@ class AgentConversationService:
             sequence=value.sequence,
             role=value.role.value,
             content=value.content,
+            structured=value.structured,
             traceId=value.traceId,
             dataAsOf=value.dataAsOf,
             createdAt=value.createdAt,

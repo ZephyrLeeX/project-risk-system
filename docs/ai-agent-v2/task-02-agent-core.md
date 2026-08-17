@@ -23,7 +23,7 @@
 - 配置并测试 `max_model_rounds`、`max_tool_calls`、`max_parallel_tool_calls`、`max_total_execution_time`、`max_single_tool_result`、`max_total_tool_result`、`max_context_size` 与重复调用检测。
 - 完成 read-only Tool Registry：`project_search`、`project_detail`、`risk_category_list`、`risk_list`、`risk_detail`、`todo_list`、`todo_detail`、`dashboard_summary`、`dashboard_focus`、`weekly_report`、`weekly_report_detail`。
 - 实现自然项目识别：项目全名、简称、别名和不完整名称通过授权 Tool 解析为真实 `projectId/projectName`；模型可用地域语义辅助扩展 search terms（例如无锡→锡山/新吴/惠山/锡东），但最终候选只能来自当前用户可见的 `project_search` Tool Result。
-- 支持基于授权系统数据的总结、归纳、比较、排序和主动风险发现；主动 CandidateRisk 必须逐项给出 evidenceSummary 与 source invocation provenance，无依据时只能说明数据不足。
+- 支持基于授权系统数据的总结、归纳、比较、排序和主动风险发现；CandidateRisk 按 `SYSTEM_FACT`、`AI_ANALYSIS`、`MIXED` 区分依据。系统事实只能来自当前 execution 的授权 Tool Result；`AI_ANALYSIS` 可以没有系统异常证据，但必须明确标注为 AI 风险分析。
 - 每次 invocation 记录内部 `toolInvocationId`、`toolName`、`dataAsOf`、typed result，并携带安全 provenance。
 - 当前 identity、permission 和 data scope 每次工具调用都重取/重检；历史 conversation 不扩大范围。
 - 稳定候选模型 snapshot、单模型 retry/跨模型 failover 由 Core 按 Task 1 contract 编排；Provider 特例仍留在 adapter。
@@ -53,7 +53,7 @@
 - Core 仅依赖 `AiProviderAdapter` 和 domain-facing registry protocol。
 - Tool executor 固定顺序：registry lookup → Pydantic strict validation → tool authorization → RBAC → data scope → domain service → typed result。
 - 禁止 ad-hoc 跨模块表查询；缺少授权 domain query service 时报告 `DESIGN_GAP`，不能在 Agent 内直接 SQL。
-- AI analysis/recommendation 必须与 Tool Fact 可区分；CandidateRisk 输出必须具备 evidenceSummary 与 source invocation references，但本 Task 不生成 mutation draft。
+- AI analysis/recommendation 必须与 Tool Fact 可区分；CandidateRisk 输出必须符合冻结的最小结构化契约；本 Task 不生成 mutation draft。
 - free-text 补充继续作为新的 conversation message 持久化；上下文有明确总量上限。
 - provider response、tool arguments/results 只按最小必要持久化；遵守 retention 和 metadata-only logging。
 
@@ -88,9 +88,9 @@
 - Scope policy：系统业务、out-of-scope、边界表达；out-of-scope 零工具调用。
 - Native loop：0/1/多轮 tool calls、parallel 上限、tool message correlation、final response。
 - 全部 query tools 的 schema、typed adapters、RBAC × data scope matrix、not-found、防越权 counts。
-- grounding：无 Tool 事实时不得陈述业务事实；CandidateRisk 无 provenance fail closed。
+- grounding：无 Tool 事实时不得陈述系统业务事实；`SYSTEM_FACT`/`MIXED` 的 CandidateRisk 无有效 provenance fail closed，`AI_ANALYSIS` 必须显式说明为 AI 风险分析。
 - 实体/地域场景：全名、别名、简称、不完整名、无锡等地域表达；断言模型扩展词本身不能生成 Project，所有返回项目均属于授权 Tool Result，scope 外同地域项目不可见。
-- 分析场景：跨项目比较/排序、项目风险总结、“这个项目有什么风险值得上报”；断言结论区分 Tool Fact/AI Analysis/AI Recommendation，CandidateRisk 每项有真实系统证据和 invocation IDs，系统无异常依据时不生成候选。
+- 分析场景：跨项目比较/排序、项目风险总结、“这个项目有什么风险值得上报”；断言结论区分 Tool Fact/AI Analysis/AI Recommendation，系统事实依据逐项引用当前 execution 的有效 invocation IDs，AI_ANALYSIS 的来源为空且明确标注 AI 风险分析。
 - limits：每个 limit、总时间、result/context size、重复 call 检测。
 - provider failover 与业务/tool错误不 failover 的 integration tests。
 - durable worker：retry、lease fencing、cancel、restart/reconcile；SSE reconnect、heartbeat、backpressure、idle transport 不改业务终态。
@@ -102,9 +102,9 @@
 2. 所列 11 个 query tools 均通过 typed contract 和权限/范围负向测试。
 3. out-of-scope 在零 Tool/零业务查询条件下返回固定范围说明。
 4. 所有限制均配置化、有合理默认和边界测试；重复 loop 可确定终止。
-5. 每项业务事实可追溯至本 execution 的授权 Tool Result；无依据 CandidateRisk 被拒绝。
+5. 每项系统业务事实可追溯至本 execution 的授权 Tool Result；CandidateRisk 按 basisType 执行最小契约和 provenance 校验，AI_ANALYSIS 不因缺少系统异常证据而被拒绝，但不得伪装为系统事实。
 6. 项目全名/别名/简称/不完整名和地域语义场景均能解析；模型提出的任何候选都必须与授权 `project_search` 结果一一对应，不可凭地理常识虚构或越权。
-7. 比较、排序、风险分析和主动风险发现有客观场景测试；CandidateRisk 每项含 evidence/provenance，系统数据无依据时结果为零候选。
+7. 比较、排序、风险分析和主动风险发现有客观场景测试；CandidateRisk 的系统事实与 AI 推理可区分，AI_ANALYSIS 可在无系统异常证据时成立并明确标注。
 8. SSE disconnect/idle/reconnect 不写伪业务失败；PostgreSQL 仍是 event/task fact source。
 9. Provider 特有字段/状态判断不出现在 Agent Core。
 10. conversation `/api` contract 兼容且无 mutation/interaction/前端越界改动。

@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from enum import StrEnum
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
 from risk_platform.model_types import JSONValue
 from risk_platform.risks.schemas import RiskItem
@@ -39,6 +40,7 @@ class AgentMessageResponse(_Contract):
     sequence: int
     role: str
     content: str
+    structured: dict[str, JSONValue] | None = None
     traceId: str
     dataAsOf: datetime | None
     createdAt: datetime
@@ -108,6 +110,46 @@ class AgentToolResult(_Contract):
     dataAsOf: datetime
     traceId: str
     provenance: str
+
+
+class CandidateRiskBasisType(StrEnum):
+    SYSTEM_FACT = "SYSTEM_FACT"
+    AI_ANALYSIS = "AI_ANALYSIS"
+    MIXED = "MIXED"
+
+
+class CandidateRisk(_Contract):
+    """Structured, non-business risk analysis produced by an Agent execution.
+
+    This is deliberately not a Risk, MutationDraft, or Interaction.  The
+    provenance rules are validated at the contract boundary; the execution
+    service additionally verifies invocation ownership and authorization.
+    """
+
+    id: UUID
+    projectId: UUID
+    projectName: str = Field(min_length=1)
+    title: str = Field(min_length=1)
+    description: str = Field(min_length=1)
+    basisType: CandidateRiskBasisType
+    evidenceSummary: str = Field(min_length=1)
+    sourceInvocationIds: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_basis(self) -> CandidateRisk:
+        if self.basisType is CandidateRiskBasisType.AI_ANALYSIS:
+            if self.sourceInvocationIds:
+                raise ValueError("AI_ANALYSIS CandidateRisk cannot cite tool invocations")
+            if "AI风险分析" not in self.evidenceSummary:
+                raise ValueError("AI_ANALYSIS evidence must be explicitly labeled")
+        elif not self.sourceInvocationIds:
+            raise ValueError("system-grounded CandidateRisk requires tool provenance")
+        if self.basisType is CandidateRiskBasisType.MIXED and not {
+            "系统事实",
+            "AI分析",
+        }.issubset(self.evidenceSummary):
+            raise ValueError("MIXED evidence must distinguish system facts from AI analysis")
+        return self
 
 
 class EmptyToolArguments(StrictRequestModel):
@@ -202,6 +244,8 @@ __all__ = [
     "AgentMessageResponse",
     "AgentToolHelp",
     "AgentToolResult",
+    "CandidateRisk",
+    "CandidateRiskBasisType",
     "DashboardFocusToolResponse",
     "EmptyToolArguments",
     "ProjectDetailToolArguments",

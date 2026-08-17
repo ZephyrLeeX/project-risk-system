@@ -8,7 +8,7 @@ from uuid import uuid4
 import pytest
 
 from risk_platform.agent.core import AgentLoopError, AgentLoopLimits, ReadOnlyAgentCore
-from risk_platform.agent.schemas import AgentToolResult
+from risk_platform.agent.schemas import AgentToolResult, CandidateRisk, CandidateRiskBasisType
 from risk_platform.agent.tools import AgentToolRegistry
 from risk_platform.ai_providers.v2_adapter import (
     ProviderCandidate,
@@ -219,3 +219,41 @@ def test_next_execution_reads_a_fresh_provider_candidate_snapshot() -> None:
         )
     )
     assert runtime.snapshots == [first, second]
+
+
+def test_candidate_risk_basis_contract_distinguishes_facts_and_ai_analysis() -> None:
+    common = {
+        "id": uuid4(),
+        "projectId": uuid4(),
+        "projectName": "项目 A",
+        "title": "交付不确定性",
+        "description": "需要进一步分析",
+    }
+    ai = CandidateRisk.model_validate({
+        **common,
+        "basisType": CandidateRiskBasisType.AI_ANALYSIS,
+        "evidenceSummary": "AI风险分析: 基于问题描述推断, 需要进一步核实",
+        "sourceInvocationIds": [],
+    })
+    assert ai.sourceInvocationIds == []
+    fact = CandidateRisk.model_validate({
+        **common,
+        "basisType": CandidateRiskBasisType.SYSTEM_FACT,
+        "evidenceSummary": "系统事实: 来自当前授权查询",
+        "sourceInvocationIds": ["invocation-1"],
+    })
+    assert fact.basisType is CandidateRiskBasisType.SYSTEM_FACT
+    with pytest.raises(ValueError, match="cannot cite"):
+        CandidateRisk.model_validate({
+            **common,
+            "basisType": CandidateRiskBasisType.AI_ANALYSIS,
+            "evidenceSummary": "AI风险分析: 推断",
+            "sourceInvocationIds": ["invocation-1"],
+        })
+    with pytest.raises(ValueError, match="requires tool provenance"):
+        CandidateRisk.model_validate({
+            **common,
+            "basisType": CandidateRiskBasisType.SYSTEM_FACT,
+            "evidenceSummary": "系统事实: 无引用",
+            "sourceInvocationIds": [],
+        })

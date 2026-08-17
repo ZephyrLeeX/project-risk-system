@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from risk_platform.admin.models import User
 from risk_platform.agent.api import get_agent_service, get_confirmation_service, router
 from risk_platform.agent.confirmation import AgentConfirmationService
+from risk_platform.agent.core import AgentCoreOutcome, ReadOnlyAgentCore
 from risk_platform.agent.events import (
     append_event,
     open_event_stream,
@@ -54,7 +55,9 @@ from risk_platform.agent.models import (
 from risk_platform.agent.schemas import AgentToolResult
 from risk_platform.agent.service import AgentConversationService
 from risk_platform.agent.tools import AgentToolRegistry
+from risk_platform.agent.v2_execution import NativeAgentExecutionWorker
 from risk_platform.ai_providers.models import AiConnectionStatus, AiProviderConfig
+from risk_platform.ai_providers.v2_adapter import ProviderError, ProviderErrorClassification
 from risk_platform.app import AppComposition, create_app
 from risk_platform.audit.models import AuditLog, AuditResult
 from risk_platform.audit.service import AuditService
@@ -68,7 +71,11 @@ from risk_platform.projects.models import Project
 from risk_platform.rbac.models import DataScopeType, Role, UserRole
 from risk_platform.reliability.celery_app import create_celery_app
 from risk_platform.reliability.core import TaskHandler
-from risk_platform.reliability.dispatcher import execute_message, register_executor
+from risk_platform.reliability.dispatcher import (
+    DurableTaskFailure,
+    execute_message,
+    register_executor,
+)
 from risk_platform.reliability.models import DurableTask, DurableTaskKind, DurableTaskStatus
 from risk_platform.risks.models import ProjectRiskLevel, Risk, RiskCategory, RiskSourceType
 from risk_platform.risks.service import RisksService
@@ -121,7 +128,7 @@ class FakeProvider:
                     for _ in range(count)
                 )
             if message == "有哪些项目?":
-                actions.append({"type": "tool_call", "name": "project_list", "arguments": {}})
+                actions.append({"type": "tool_call", "name": "project_search", "arguments": {}})
             if message in {"current-high-risks", "当前有哪些高风险?"}:
                 actions.append({"type": "tool_call", "name": "dashboard_focus", "arguments": {}})
             if message == "empty-result":
@@ -186,7 +193,7 @@ class FakeProvider:
         results = cast(list[Mapping[str, object]], request["toolResults"])
         first = results[0]
         data = first["data"]
-        if first["tool"] == "project_list":
+        if first["tool"] == "project_search":
             project_data = cast(Mapping[str, object], data)
             items = cast(list[Mapping[str, object]], project_data["items"])
             names = "\n".join(
@@ -335,7 +342,7 @@ def test_grounded_respond_instruction_requires_tool_result_only_chinese_summary(
         tools=[],
         tool_results=[
             {
-                "tool": "project_list",
+                "tool": "project_search",
                 "data": {
                     "items": [{"name": "来自工具的项目"}],
                     "total": 1,
@@ -511,6 +518,15 @@ async def _created(factory: async_sessionmaker[AsyncSession], message: str) -> t
         return result.conversation.id, config.taskId
 
 
+async def _execution_config_id(factory: async_sessionmaker[AsyncSession], task_id: UUID) -> UUID:
+    async with factory() as session:
+        config = await session.scalar(
+            select(AgentExecutionConfig).where(AgentExecutionConfig.taskId == task_id)
+        )
+        assert config is not None
+        return config.id
+
+
 async def _wait(
     factory: async_sessionmaker[AsyncSession], task_id: UUID, statuses: set[DurableTaskStatus]
 ) -> DurableTask:
@@ -591,10 +607,10 @@ def test_grounding_policy_fails_closed_without_tool_call_or_business_results() -
         AgentExecutionWorker._validate_grounded_plan(plan)
     assert not AgentExecutionWorker._tool_results_have_business_data([])
     assert not AgentExecutionWorker._tool_results_have_business_data(
-        [{"tool": "project_list", "data": {"items": []}}]
+        [{"tool": "project_search", "data": {"items": []}}]
     )
     assert AgentExecutionWorker._tool_results_have_business_data(
-        [{"tool": "project_list", "data": {"items": [{"name": "Project"}]}}]
+        [{"tool": "project_search", "data": {"items": [{"name": "Project"}]}}]
     )
     grounded_without_text = AgentExecutionWorker._validate_response(
         {
@@ -813,7 +829,7 @@ def test_postgresql_runtime_context_and_project_tool_respect_scope(
         context = worker._business_context(scoped_identity)
         assert set(context) == {"dataAsOf", "dataScope", "availableTools"}
         assert "projects" not in context
-        result = await registry.invoke(scoped_identity, "project_list", {}, trace_id="trace")
+        result = await registry.invoke(scoped_identity, "project_search", {}, trace_id="trace")
         assert result.data == {
             "items": [{"id": str(PROJECT), "name": "T029 Project", "status": "DELIVERY"}],
             "page": 1,
@@ -835,7 +851,7 @@ def test_postgresql_runtime_context_and_project_tool_respect_scope(
     asyncio.run(run())
 
 
-def test_project_list_supports_scope_filtered_pagination_beyond_fifty_items(
+def test_project_search_supports_scope_filtered_pagination_beyond_fifty_items(
     database: async_sessionmaker[AsyncSession],
 ) -> None:
     async def run() -> None:
@@ -852,10 +868,10 @@ def test_project_list_supports_scope_filtered_pagination_beyond_fifty_items(
             )
         registry = tools(database)
         first = await registry.invoke(
-            identity("OWNED"), "project_list", {"page": 1, "pageSize": 50}, trace_id="page-1"
+            identity("OWNED"), "project_search", {"page": 1, "pageSize": 50}, trace_id="page-1"
         )
         second = await registry.invoke(
-            identity("OWNED"), "project_list", {"page": 2, "pageSize": 50}, trace_id="page-2"
+            identity("OWNED"), "project_search", {"page": 2, "pageSize": 50}, trace_id="page-2"
         )
         first_data = cast(dict[str, object], first.data)
         second_data = cast(dict[str, object], second.data)
@@ -867,7 +883,7 @@ def test_project_list_supports_scope_filtered_pagination_beyond_fifty_items(
     asyncio.run(run())
 
 
-def test_postgresql_agent_selects_only_healthy_provider_and_freezes_snapshot(
+def test_postgresql_agent_does_not_recreate_legacy_provider_snapshot(
     database: async_sessionmaker[AsyncSession],
 ) -> None:
     async def config_for(message: str) -> AgentExecutionConfig:
@@ -899,20 +915,9 @@ def test_postgresql_agent_selects_only_healthy_provider_and_freezes_snapshot(
             assert provider is not None
             provider.lastTestStatus = AiConnectionStatus.HEALTHY
         snapshot = await config_for("healthy-provider")
-        assert snapshot.providerConfigId is not None
-        assert snapshot.endpointSnapshot == "https://provider.example.test/v1"
-
-        async with transaction(database) as session:
-            provider = await session.scalar(select(AiProviderConfig))
-            assert provider is not None
-            provider.endpoint = "https://provider.example.test/v2"
-            provider.model = "new-model"
-            provider.lastTestStatus = AiConnectionStatus.UNTESTED
-        async with database() as session:
-            persisted = await session.get(AgentExecutionConfig, snapshot.id)
-            assert persisted is not None
-            assert persisted.endpointSnapshot == "https://provider.example.test/v1"
-            assert persisted.modelSnapshot == "fake-model"
+        assert snapshot.providerConfigId is None
+        assert snapshot.endpointSnapshot is None
+        assert snapshot.modelSnapshot is None
         async with transaction(database) as session:
             provider = await session.scalar(select(AiProviderConfig))
             assert provider is not None
@@ -1052,7 +1057,7 @@ def test_real_module_local_worker_success_preview_invalid_timeout_and_cancellati
             assert project_answer is not None
             assert "当前你有权限查看" in project_answer
             assert "T029 Project" in project_answer
-            assert "project_list:" not in project_answer
+            assert "project_search:" not in project_answer
             assert '{"items"' not in project_answer
             high_risk_answer = await session.scalar(
                 select(AgentMessage.content)
@@ -1087,12 +1092,108 @@ def test_real_module_local_worker_success_preview_invalid_timeout_and_cancellati
     ]
     assert projects_requests[0]["phase"] == "PLAN"
     project_results = cast(list[Mapping[str, object]], projects_requests[1]["toolResults"])
-    assert project_results[0]["tool"] == "project_list"
+    assert project_results[0]["tool"] == "project_search"
     high_risks_requests = [
         request for request in provider.requests if request.get("message") == "当前有哪些高风险?"
     ]
     high_risk_results = cast(list[Mapping[str, object]], high_risks_requests[1]["toolResults"])
     assert high_risk_results[0]["tool"] == "dashboard_focus"
+
+
+def test_postgresql_native_worker_direct_facts_are_fenced_and_monotonic(
+    database: async_sessionmaker[AsyncSession],
+) -> None:
+    class NativeCore:
+        mode = "success"
+
+        async def run(self, _identity: SessionIdentity, _message: str) -> AgentCoreOutcome:
+            if self.mode == "transient":
+                raise ProviderError(
+                    ProviderErrorClassification.NETWORK,
+                    retryable=True,
+                    failover_allowed=False,
+                )
+            if self.mode == "terminal":
+                raise ProviderError(
+                    ProviderErrorClassification.AUTHENTICATION,
+                    retryable=False,
+                    failover_allowed=False,
+                )
+            return AgentCoreOutcome("native answer")
+
+    async def run() -> None:
+        core = NativeCore()
+        worker = NativeAgentExecutionWorker(database, cast(ReadOnlyAgentCore, core))
+        handlers = {DurableTaskKind.AGENT_EXECUTION.value: cast(TaskHandler, worker)}
+        celery = create_celery_app()
+        conversation, task_id = await _created(database, "native-success")
+        await execute_message(database, celery, task_id, 1, owner="native", handlers=handlers)
+        async with database() as session:
+            task = await session.get(DurableTask, task_id)
+            assert task is not None and task.status is DurableTaskStatus.SUCCEEDED, (
+                None if task is None else (task.failureCode, task.failureSummary)
+            )
+            events = list(
+                await session.scalars(select(AgentEvent).where(AgentEvent.taskId == task_id))
+            )
+            assert [event.type for event in events] == [
+                AgentEventType.MESSAGE_DELTA,
+                AgentEventType.COMPLETED,
+            ]
+            assert int(await session.scalar(select(func.count(AgentMessage.id)).where(
+                AgentMessage.conversationId == conversation,
+                AgentMessage.role == AgentMessageRole.ASSISTANT,
+            )) or 0) == 1
+
+        core.mode = "transient"
+        _retry_conversation, retry_id = await _created(database, "native-retry")
+        await execute_message(database, celery, retry_id, 1, owner="native", handlers=handlers)
+        async with database() as session:
+            retry = await session.get(DurableTask, retry_id)
+            assert retry is not None and retry.status is DurableTaskStatus.RETRY_WAIT, (
+                None
+                if retry is None
+                else (retry.failureCode, retry.failureSummary, retry.attemptCount)
+            )
+            assert not await session.scalar(select(AgentEvent.id).where(
+                AgentEvent.taskId == retry_id, AgentEvent.type == AgentEventType.ERROR
+            ))
+            retry.status = DurableTaskStatus.QUEUED
+            retry.nextRetryAt = None
+            retry.dispatchGeneration += 1
+        core.mode = "success"
+        await execute_message(database, celery, retry_id, 2, owner="restart", handlers=handlers)
+
+        core.mode = "terminal"
+        _terminal_conversation, terminal_id = await _created(database, "native-terminal")
+        await execute_message(database, celery, terminal_id, 1, owner="native", handlers=handlers)
+        async with database() as session:
+            terminal = await session.get(DurableTask, terminal_id)
+            assert terminal is not None and terminal.status is DurableTaskStatus.FAILED
+            assert terminal.failureCode == "AGENT_PROVIDER_UNAVAILABLE"
+            assert int(await session.scalar(select(func.count(AgentEvent.id)).where(
+                AgentEvent.taskId == terminal_id, AgentEvent.type == AgentEventType.ERROR
+            )) or 0) == 1
+
+        cancel_conversation, cancel_id = await _created(database, "native-cancel")
+        assert await request_cancellation(database, cancel_conversation)
+        core.mode = "success"
+        await execute_message(database, celery, cancel_id, 1, owner="native", handlers=handlers)
+        async with database() as session:
+            cancelled = await session.get(DurableTask, cancel_id)
+            assert cancelled is not None and cancelled.status is DurableTaskStatus.CANCELLED, (
+                None if cancelled is None else (cancelled.failureCode, cancelled.failureSummary)
+            )
+
+        _stale_conversation, stale_id = await _created(database, "native-stale")
+        with pytest.raises(DurableTaskFailure, match="AGENT_EXECUTION_CONFIG_INVALID"):
+            await worker(
+                {"execution_configuration_id": str(await _execution_config_id(database, stale_id))},
+                task_id=stale_id,
+                lease_token=uuid.uuid4(),
+            )
+
+    asyncio.run(run())
 
 
 def test_grounding_execution_fails_without_a_tool_and_uses_fixed_empty_result_answer(

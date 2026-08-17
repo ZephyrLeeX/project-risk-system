@@ -78,7 +78,7 @@ Confirmed AgentInteraction
 7. 所有写操作必须由真实用户显式确认；`NO CONFIRMATION = NO MUTATION`。
 8. `WAITING_FOR_USER` 是 Agent execution 业务状态，不是 `DurableTask.RETRY_WAIT`；等待时不占 Worker、不调用 Provider、不累计 execution timeout。
 9. SSE 只是 delivery channel；连接 idle、断开或重连不改变 Agent execution 的业务成败。
-10. CandidateRisk 必须有系统数据证据和 tool provenance；无依据不得进入确认或创建。
+10. CandidateRisk 是 Agent 分析产物，`basisType` 可为 `SYSTEM_FACT`、`AI_ANALYSIS` 或 `MIXED`。系统事实只能来自当前用户授权 Tool Result；`AI_ANALYSIS` 不要求系统已有异常证据，但必须明确标注为 AI 风险分析，不能伪装为系统事实。它不是 Risk、MutationDraft 或 Interaction。
 11. Risk 支持 1:N Todo；Risk 创建继续产生一个默认 Todo，且一个 Risk 最多一个系统默认 Todo。
 12. Agent 创建 Risk 的 `sourceType=AGENT`；reporter 是点击确认的真实用户。
 13. 批量 Risk 创建采用 partial success；每个单独 Risk 的 Risk + 默认 Todo + timeline + audit 仍是原子事务。

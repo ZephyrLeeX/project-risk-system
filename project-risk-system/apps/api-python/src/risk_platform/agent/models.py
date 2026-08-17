@@ -105,6 +105,7 @@ class AgentMessage(Base):
         Enum(AgentMessageRole, name="AgentMessageRole", native_enum=True), nullable=False
     )
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    structured: Mapped[dict[str, JSONValue] | None] = mapped_column(JSONB, nullable=True)
     traceId: Mapped[str] = mapped_column(String(128), nullable=False)
     dataAsOf: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True, precision=3))
     createdAt: Mapped[datetime] = mapped_column(

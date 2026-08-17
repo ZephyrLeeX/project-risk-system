@@ -494,6 +494,20 @@
             "title": "Sequence",
             "type": "integer"
           },
+          "structured": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JSONValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Structured"
+          },
           "traceId": {
             "title": "Traceid",
             "type": "string"

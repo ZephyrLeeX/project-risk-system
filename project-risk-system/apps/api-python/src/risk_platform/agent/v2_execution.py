@@ -15,7 +15,7 @@ from risk_platform.auth.repository import AuthRepository
 from risk_platform.auth.service import AuthService, SessionIdentity
 from risk_platform.model_types import JSONValue
 from risk_platform.reliability.core import TaskHandler
-from risk_platform.reliability.dispatcher import DurableTaskFailure
+from risk_platform.reliability.dispatcher import DurableTaskCancelled, DurableTaskFailure
 from risk_platform.reliability.models import DurableTask, DurableTaskStatus
 
 from .core import AgentLoopError, ReadOnlyAgentCore
@@ -27,6 +27,7 @@ from .models import (
     AgentMessage,
     AgentMessageRole,
 )
+from .schemas import CandidateRisk
 
 
 class NativeAgentExecutionWorker:
@@ -44,7 +45,9 @@ class NativeAgentExecutionWorker:
         try:
             config, message, identity = await self._load(payload, task_id, lease_token)
             outcome = await self._core.run(identity, message.content)
-            await self._complete(config, message, task_id, lease_token, outcome.text)
+            await self._complete(
+                config, message, task_id, lease_token, outcome.text, outcome.candidate_risks
+            )
         except AgentLoopError as error:
             await self._error(payload, task_id, lease_token, error.code, retryable=False)
             raise DurableTaskFailure(
@@ -68,6 +71,8 @@ class NativeAgentExecutionWorker:
                 summary="provider candidates unavailable",
             ) from None
         except DurableTaskFailure:
+            raise
+        except DurableTaskCancelled:
             raise
         except Exception:
             await self._error(
@@ -99,6 +104,8 @@ class NativeAgentExecutionWorker:
                 or task.leaseToken != lease_token
                 or config.cancellationRequestedAt is not None
             ):
+                if config is not None and config.cancellationRequestedAt is not None:
+                    raise DurableTaskCancelled
                 raise DurableTaskFailure(
                     "AGENT_EXECUTION_CONFIG_INVALID",
                     retryable=False,
@@ -127,6 +134,7 @@ class NativeAgentExecutionWorker:
         task_id: UUID,
         lease_token: UUID,
         text: str,
+        candidate_risks: tuple[CandidateRisk, ...] = (),
     ) -> None:
         async with self._sessions.begin() as session:
             await self._assert_fence(session, config.id, task_id, lease_token)
@@ -146,6 +154,11 @@ class NativeAgentExecutionWorker:
                 sequence=conversation.lastMessageSequence + 1,
                 role=AgentMessageRole.ASSISTANT,
                 content=text,
+                structured=(
+                    {"candidateRisks": [risk.model_dump(mode="json") for risk in candidate_risks]}
+                    if candidate_risks
+                    else None
+                ),
                 traceId=user_message.traceId,
                 dataAsOf=datetime.now(UTC),
             )

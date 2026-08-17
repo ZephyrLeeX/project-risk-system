@@ -22,7 +22,7 @@
 - proposal tools 只验证并持久化 `MutationDraft`，创建 `WRITE_CONFIRMATION` interaction；真正 commit handler 永不进入 model catalogue。
 - respond API 支持 `CONFIRM`/`CANCEL`，确认可提交用户编辑后的最终批准字段；服务端 strict validation 后重新计算绑定。
 - Risk create/update/resolve；Todo create/update；Project status update 全部复用/扩展 Domain Service/Policy，不在 Agent 复制规则。
-- CandidateRisk 每项包含 title、description、level、category、evidenceSummary、source/tool provenance；无系统依据不能确认。
+- CandidateRisk 是 Agent 分析产物，不是 Risk 或 MutationDraft；每项至少包含冻结契约字段 `id`、`projectId`、`projectName`、`title`、`description`、`basisType`、`evidenceSummary`、`sourceInvocationIds`。系统事实依据必须来自当前 execution 的有效授权 Tool Result；AI_ANALYSIS 可无系统异常证据，但必须明确标注 AI 风险分析。
 - 批量候选可编辑、取消部分项目并一次确认；commit 采用 per-item partial success，每个 Risk 自身事务原子。
 - Agent Risk `sourceType=AGENT`，reporter 为确认用户。
 - Risk 创建保留一个系统默认 Todo；Risk 改为 1:N Todo，并由 DB/domain invariant 保证最多一个 default Todo。
@@ -98,7 +98,7 @@
 - Risk 1:N：多个 Todo 可建，第二个 default 被 DB 拒绝；并发 default create 只有一个。
 - Risk update immutable fields；resolve 联动开放 todos；Todo create 仅 risk-bound；Todo update allowlist。
 - Project status transition matrix来自批准 policy；不允许新 enum/跳过 policy。
-- CandidateRisk 无 provenance/跨 execution/stale provenance fail closed；UI summary不需原始 JSON。
+- 系统事实类 CandidateRisk 无 provenance、跨 execution 或 stale provenance 时 fail closed；AI_ANALYSIS 的 sourceInvocationIds 必须为空；UI summary 不需原始 JSON。
 - Batch 0/1/N、选择取消、A成功-B业务失败-C成功、每项事务原子、重复 confirm 不重复创建。
 - audit typed metadata/append-only、secret/content leakage negative。
 - fresh PostgreSQL migration/constraints、OpenAPI/contracts regressions。
@@ -110,7 +110,7 @@
 3. 所有六类 mutation 经 editable `WRITE_CONFIRMATION` 成功，并在 commit 时通过 current RBAC/scope/domain revalidation。
 4. Risk create 的 source/reporter/default Todo 正确；同 Risk 可拥有多个 Todo但最多一个 default，由 PostgreSQL 与 domain 双重保证。
 5. 批量 Risk 严格 partial success；单项 Risk transaction 原子且 replay 不重复。
-6. CandidateRisk 缺少真实 Tool provenance 时不可进入 commit。
+6. 只有需要系统事实依据的 CandidateRisk 在缺少真实 Tool provenance 时不可进入 commit；AI_ANALYSIS 不因没有系统异常证据而被误判为无效，但任何 AI 推理都不得当作系统事实。
 7. Project status 只走批准 Domain Policy；若 policy authority 缺失，该 capability 保持 blocked，不以猜测通过。
 8. audit、OpenAPI、migration、existing non-Agent Risk/Todo behavior 全部回归通过。
 

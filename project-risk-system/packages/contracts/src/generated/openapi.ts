@@ -1975,6 +1975,8 @@ export interface components {
             role: string;
             /** Sequence */
             sequence: number;
+            /** Structured */
+            structured?: Record<string, components["schemas"]["JSONValue"]> | null;
             /** Traceid */
             traceId: string;
         };
@@ -9604,4 +9606,3 @@ export interface operations {
         };
     };
 }
-
