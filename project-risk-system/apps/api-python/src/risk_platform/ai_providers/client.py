@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
+import math
+import random
 import time
 import urllib.error
 import urllib.request
@@ -19,6 +22,9 @@ from risk_platform.shared.outbound import (
 )
 
 _ANTHROPIC_VERSION = "2023-06-01"
+MAX_RETRY_AFTER_SECONDS = 10.0
+AGENT_RESPONSE_TRANSPORT_RETRY_COUNT = 2
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +49,15 @@ class ProviderResponseResult:
     value: dict[str, object]
     usage: dict[str, int]
     latency_ms: int
+
+
+@dataclass(frozen=True, slots=True)
+class HttpResult:
+    """The narrowly-scoped upstream metadata needed for retry decisions."""
+
+    status_code: int
+    body: str
+    retry_after_seconds: float | None = None
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -70,15 +85,17 @@ class AiProviderClient:
             if protocol is AiProviderProtocol.OPENAI_CHAT_COMPLETIONS:
                 resolved = await self._guard.resolve_provider(endpoint)
                 await self._guard.revalidate(resolved)
-                status, _ = await asyncio.to_thread(
-                    self._request,
-                    provider_subresource_url(resolved, "models"),
-                    self._headers(protocol, api_key),
-                    None,
-                    timeout_seconds,
+                response = self._coerce_http_result(
+                    await asyncio.to_thread(
+                        self._request,
+                        provider_subresource_url(resolved, "models"),
+                        self._headers(protocol, api_key),
+                        None,
+                        timeout_seconds,
+                    )
                 )
-                if not 200 <= status < 300:
-                    raise self._http_error(status)
+                if not 200 <= response.status_code < 300:
+                    raise self._http_error(response.status_code, response.retry_after_seconds)
             elif protocol is AiProviderProtocol.OPENAI_RESPONSES:
                 await self._test_completion_endpoint(
                     endpoint, protocol, model, api_key, timeout_seconds, retry_count
@@ -130,6 +147,8 @@ class AiProviderClient:
         retry_count: int,
         *,
         test_mode: bool = False,
+        phase: str | None = None,
+        backoff: bool = False,
     ) -> ProviderCompletionResult:
         resolved = await self._guard.resolve_provider(endpoint)
         url = provider_subresource_url(resolved, self._operation(protocol))
@@ -137,17 +156,19 @@ class AiProviderClient:
         for attempt in range(retry_count + 1):
             try:
                 await self._guard.revalidate(resolved)
-                status, body = await asyncio.to_thread(
-                    self._request,
-                    url,
-                    self._headers(protocol, api_key),
-                    self._payload(protocol, model, payload, test_mode),
-                    timeout_seconds,
+                response = self._coerce_http_result(
+                    await asyncio.to_thread(
+                        self._request,
+                        url,
+                        self._headers(protocol, api_key),
+                        self._payload(protocol, model, payload, test_mode),
+                        timeout_seconds,
+                    )
                 )
-                if not 200 <= status < 300:
-                    raise self._http_error(status)
+                if not 200 <= response.status_code < 300:
+                    raise self._http_error(response.status_code, response.retry_after_seconds)
                 return ProviderCompletionResult(
-                    *self._parse(protocol, body), self._elapsed(started)
+                    *self._parse(protocol, response.body), self._elapsed(started)
                 )
             except TimeoutError:
                 last = ProviderRequestError("UPSTREAM_TIMEOUT", retryable=True)
@@ -159,6 +180,9 @@ class AiProviderClient:
                 last = error
             if last is not None and (not last.retryable or attempt == retry_count):
                 raise last
+            if backoff:
+                assert last is not None
+                await self._backoff(last, attempt + 1, phase)
         raise AssertionError("unreachable")
 
     async def complete_response(
@@ -168,6 +192,9 @@ class AiProviderClient:
         api_key: str,
         payload: Mapping[str, object],
         timeout_seconds: int,
+        *,
+        retry_count: int = AGENT_RESPONSE_TRANSPORT_RETRY_COUNT,
+        phase: str | None = None,
     ) -> ProviderResponseResult:
         """Call a Responses endpoint without assuming its output is text.
 
@@ -175,43 +202,63 @@ class AiProviderClient:
         function calls must inspect the transport item types before normalizing them.
         """
         resolved = await self._guard.resolve_provider(endpoint)
-        await self._guard.revalidate(resolved)
         started = time.monotonic()
-        try:
-            status, body = await asyncio.to_thread(
-                self._request,
-                provider_subresource_url(
-                    resolved, self._operation(AiProviderProtocol.OPENAI_RESPONSES)
-                ),
-                self._headers(AiProviderProtocol.OPENAI_RESPONSES, api_key),
-                self._payload(AiProviderProtocol.OPENAI_RESPONSES, model, payload, False),
-                timeout_seconds,
-            )
-            if not 200 <= status < 300:
-                raise self._http_error(status)
-            value: Any = json.loads(body)
-            if not isinstance(value, dict) or not isinstance(value.get("output"), list):
-                raise ProviderRequestError("PROVIDER_INVALID_OUTPUT", retryable=False)
-            usage = value.get("usage", {})
-            if not isinstance(usage, dict):
-                usage = {}
-            return ProviderResponseResult(
-                value,
-                {
-                    "input": int(usage.get("input_tokens", 0)),
-                    "output": int(usage.get("output_tokens", 0)),
-                    "total": int(usage.get("total_tokens", 0)),
-                },
-                self._elapsed(started),
-            )
-        except TimeoutError:
-            raise ProviderRequestError("UPSTREAM_TIMEOUT", retryable=True) from None
-        except urllib.error.URLError:
-            raise ProviderRequestError("UPSTREAM_UNREACHABLE", retryable=True) from None
-        except OSError:
-            raise ProviderRequestError("UPSTREAM_UNREACHABLE", retryable=True) from None
-        except (TypeError, ValueError, json.JSONDecodeError):
-            raise ProviderRequestError("PROVIDER_INVALID_OUTPUT", retryable=False) from None
+        url = provider_subresource_url(
+            resolved, self._operation(AiProviderProtocol.OPENAI_RESPONSES)
+        )
+        last: ProviderRequestError | None = None
+        for attempt in range(retry_count + 1):
+            try:
+                await self._guard.revalidate(resolved)
+                result = self._coerce_http_result(
+                    await asyncio.to_thread(
+                        self._request,
+                        url,
+                        self._headers(AiProviderProtocol.OPENAI_RESPONSES, api_key),
+                        self._payload(AiProviderProtocol.OPENAI_RESPONSES, model, payload, False),
+                        timeout_seconds,
+                    )
+                )
+                if not 200 <= result.status_code < 300:
+                    if self._has_native_tools(payload) and self._native_tools_unsupported(
+                        result.status_code, result.body
+                    ):
+                        raise ProviderRequestError(
+                            "NATIVE_TOOLS_UNSUPPORTED",
+                            retryable=False,
+                            status_code=result.status_code,
+                        )
+                    raise self._http_error(result.status_code, result.retry_after_seconds)
+                value: Any = json.loads(result.body)
+                if not isinstance(value, dict) or not isinstance(value.get("output"), list):
+                    raise ProviderRequestError("PROVIDER_INVALID_OUTPUT", retryable=False)
+                usage = value.get("usage", {})
+                if not isinstance(usage, dict):
+                    usage = {}
+                return ProviderResponseResult(
+                    value,
+                    {
+                        "input": int(usage.get("input_tokens", 0)),
+                        "output": int(usage.get("output_tokens", 0)),
+                        "total": int(usage.get("total_tokens", 0)),
+                    },
+                    self._elapsed(started),
+                )
+            except TimeoutError:
+                last = ProviderRequestError("UPSTREAM_TIMEOUT", retryable=True)
+            except urllib.error.URLError:
+                last = ProviderRequestError("UPSTREAM_UNREACHABLE", retryable=True)
+            except OSError:
+                last = ProviderRequestError("UPSTREAM_UNREACHABLE", retryable=True)
+            except ProviderRequestError as error:
+                last = error
+            except (TypeError, ValueError, json.JSONDecodeError):
+                last = ProviderRequestError("PROVIDER_INVALID_OUTPUT", retryable=False)
+            if last is not None and (not last.retryable or attempt == retry_count):
+                raise last
+            assert last is not None
+            await self._backoff(last, attempt + 1, phase)
+        raise AssertionError("unreachable")
 
     async def _test_completion_endpoint(
         self,
@@ -232,19 +279,21 @@ class AiProviderClient:
         for attempt in range(retry_count + 1):
             try:
                 await self._guard.revalidate(resolved)
-                status, body = await asyncio.to_thread(
-                    self._request,
-                    url,
-                    self._headers(protocol, api_key),
-                    self._payload(protocol, model, {"connection_test": True}, True),
-                    timeout_seconds,
+                response = self._coerce_http_result(
+                    await asyncio.to_thread(
+                        self._request,
+                        url,
+                        self._headers(protocol, api_key),
+                        self._payload(protocol, model, {"connection_test": True}, True),
+                        timeout_seconds,
+                    )
                 )
-                if not 200 <= status < 300:
-                    raise self._http_error(status)
+                if not 200 <= response.status_code < 300:
+                    raise self._http_error(response.status_code, response.retry_after_seconds)
                 if protocol is AiProviderProtocol.OPENAI_RESPONSES:
-                    self._validate_responses_connection_response(body)
+                    self._validate_responses_connection_response(response.body)
                 else:
-                    self._parse(protocol, body)
+                    self._parse(protocol, response.body)
                 return
             except TimeoutError:
                 last = ProviderRequestError("UPSTREAM_TIMEOUT", retryable=True)
@@ -382,7 +431,7 @@ class AiProviderClient:
     @staticmethod
     def _request(
         url: str, headers: dict[str, str], payload: dict[str, object] | None, timeout_seconds: int
-    ) -> tuple[int, str]:
+    ) -> HttpResult:
         request = urllib.request.Request(
             url,
             data=json.dumps(payload, ensure_ascii=False).encode() if payload is not None else None,
@@ -393,12 +442,22 @@ class AiProviderClient:
             with urllib.request.build_opener(_NoRedirect()).open(
                 request, timeout=timeout_seconds
             ) as response:
-                return int(response.status), response.read(128 * 1024).decode("utf-8")
+                return HttpResult(
+                    int(response.status),
+                    response.read(128 * 1024).decode("utf-8"),
+                    AiProviderClient._retry_after_seconds(response.headers.get("Retry-After")),
+                )
         except urllib.error.HTTPError as error:
-            return error.code, error.read(64 * 1024).decode("utf-8", errors="replace")
+            return HttpResult(
+                error.code,
+                error.read(64 * 1024).decode("utf-8", errors="replace"),
+                AiProviderClient._retry_after_seconds(error.headers.get("Retry-After")),
+            )
 
     @staticmethod
-    def _http_error(status: int) -> ProviderRequestError:
+    def _http_error(
+        status: int, retry_after_seconds: float | None = None
+    ) -> ProviderRequestError:
         if status in {401, 403}:
             return ProviderRequestError(
                 "AUTHENTICATION_FAILED", retryable=False, status_code=status
@@ -406,14 +465,88 @@ class AiProviderClient:
         if status == 404:
             return ProviderRequestError("MODEL_NOT_FOUND", retryable=False, status_code=status)
         if status == 429:
-            return ProviderRequestError("RATE_LIMITED", retryable=True, status_code=status)
+            return ProviderRequestError(
+                "RATE_LIMITED",
+                retryable=True,
+                status_code=status,
+                retry_after_seconds=retry_after_seconds,
+            )
         if status == 408:
             return ProviderRequestError("UPSTREAM_TIMEOUT", retryable=True, status_code=status)
         if status >= 500:
-            return ProviderRequestError("HTTP_5XX", retryable=True, status_code=status)
+            return ProviderRequestError(
+                "HTTP_5XX",
+                retryable=True,
+                status_code=status,
+                retry_after_seconds=retry_after_seconds,
+            )
         if 400 <= status < 500:
             return ProviderRequestError("INVALID_REQUEST", retryable=False, status_code=status)
         return ProviderRequestError("UPSTREAM_UNREACHABLE", retryable=True)
+
+    @staticmethod
+    def _coerce_http_result(value: HttpResult | tuple[int, str]) -> HttpResult:
+        if isinstance(value, HttpResult):
+            return value
+        return HttpResult(*value)
+
+    @staticmethod
+    def _retry_after_seconds(value: str | None) -> float | None:
+        if value is None:
+            return None
+        try:
+            seconds = float(value.strip())
+        except ValueError:
+            return None
+        if not math.isfinite(seconds) or seconds < 0:
+            return None
+        return min(seconds, MAX_RETRY_AFTER_SECONDS)
+
+    @staticmethod
+    def _has_native_tools(payload: Mapping[str, object]) -> bool:
+        return isinstance(payload.get("_responsesNativeTools"), list) and bool(
+            payload["_responsesNativeTools"]
+        )
+
+    @staticmethod
+    def _native_tools_unsupported(status: int, body: str) -> bool:
+        """Recognize only explicit, request-scoped tool-capability failures."""
+        if status not in {400, 500}:
+            return False
+        message = body
+        try:
+            value = json.loads(body)
+            if isinstance(value, dict):
+                error = value.get("error", value)
+                if isinstance(error, dict):
+                    message = " ".join(
+                        str(error.get(key, "")) for key in ("code", "type", "message")
+                    )
+        except (TypeError, ValueError, json.JSONDecodeError):
+            pass
+        normalized = message.casefold()
+        unsupported = ("unsupported", "not supported", "not implemented", "unimplemented")
+        return "not implemented" in normalized or (
+            any(marker in normalized for marker in unsupported)
+            and any(marker in normalized for marker in ("tool", "function", "capability"))
+        )
+
+    async def _backoff(self, error: ProviderRequestError, attempt: int, phase: str | None) -> None:
+        delay = error.retry_after_seconds
+        if delay is None:
+            delay = min(
+                float(2 ** (attempt - 1)) + random.uniform(0, 0.25),
+                MAX_RETRY_AFTER_SECONDS,
+            )
+        logger.info(
+            "agent provider retry phase=%s reason=%s attempt=%s backoff_ms=%s status_code=%s",
+            phase or "UNKNOWN",
+            error.code,
+            attempt,
+            int(delay * 1000),
+            error.status_code,
+        )
+        await asyncio.sleep(delay)
 
     @staticmethod
     def _elapsed(started: float) -> int:
@@ -432,14 +565,24 @@ class AiProviderClient:
 
 
 class ProviderRequestError(RuntimeError):
-    def __init__(self, code: str, *, retryable: bool, status_code: int | None = None) -> None:
+    def __init__(
+        self,
+        code: str,
+        *,
+        retryable: bool,
+        status_code: int | None = None,
+        retry_after_seconds: float | None = None,
+    ) -> None:
         super().__init__(code)
         self.code, self.retryable, self.status_code = code, retryable, status_code
+        self.retry_after_seconds = retry_after_seconds
 
 
 __all__ = [
+    "AGENT_RESPONSE_TRANSPORT_RETRY_COUNT",
     "AiProviderClient",
     "ConnectionOutcome",
+    "HttpResult",
     "ProviderCompletionResult",
     "ProviderRequestError",
     "ProviderResponseResult",

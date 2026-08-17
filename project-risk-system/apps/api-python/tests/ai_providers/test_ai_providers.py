@@ -14,6 +14,7 @@ from risk_platform.agent.models import AgentExecutionConfig
 from risk_platform.ai_providers.client import (
     AiProviderClient,
     ConnectionOutcome,
+    HttpResult,
     ProviderCompletionResult,
     ProviderRequestError,
     ProviderResponseResult,
@@ -113,6 +114,199 @@ def test_provider_http_errors_do_not_collapse_to_unreachable() -> None:
     assert AiProviderClient._http_error(500).code == "HTTP_5XX"
     with pytest.raises(ProviderRequestError, match="PROVIDER_INVALID_OUTPUT"):
         AiProviderClient._parse(AiProviderProtocol.OPENAI_RESPONSES, "{}")
+
+
+def test_responses_transport_retries_429_using_retry_after() -> None:
+    async def resolver(_host: str, _port: int) -> tuple[str, ...]:
+        return ("93.184.216.34",)
+
+    async def scenario() -> tuple[ProviderResponseResult, int]:
+        client = AiProviderClient(OutboundEndpointGuard(resolver=resolver))
+        calls = 0
+
+        def request(*_args: object) -> HttpResult:
+            nonlocal calls
+            calls += 1
+            if calls < 3:
+                return HttpResult(429, '{"error":{"message":"rate limited"}}', 0)
+            return HttpResult(200, '{"output":[],"usage":{}}')
+
+        client._request = request  # type: ignore[assignment]
+        return (
+            await client.complete_response(
+                "https://provider.example.test/v1",
+                "model",
+                "secret",
+                {"_responsesNativeTools": [{"type": "function"}]},
+                60,
+            ),
+            calls,
+        )
+
+    result, calls = asyncio.run(scenario())
+    assert result.value["output"] == []
+    assert calls == 3
+
+
+def test_responses_transport_retries_generic_5xx_without_capability_fallback() -> None:
+    async def resolver(_host: str, _port: int) -> tuple[str, ...]:
+        return ("93.184.216.34",)
+
+    async def scenario() -> int:
+        client = AiProviderClient(OutboundEndpointGuard(resolver=resolver))
+        calls = 0
+
+        def request(*_args: object) -> HttpResult:
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                return HttpResult(500, "internal server error", 0)
+            return HttpResult(200, '{"output":[],"usage":{}}')
+
+        client._request = request  # type: ignore[assignment]
+        await client.complete_response(
+            "https://provider.example.test/v1",
+            "model",
+            "secret",
+            {"_responsesNativeTools": [{"type": "function"}]},
+            60,
+        )
+        return calls
+
+    assert asyncio.run(scenario()) == 2
+
+
+def test_text_json_fallback_transport_retries_rate_limit_in_compatibility_mode() -> None:
+    async def resolver(_host: str, _port: int) -> tuple[str, ...]:
+        return ("93.184.216.34",)
+
+    async def scenario() -> tuple[int, list[dict[str, object]]]:
+        client = AiProviderClient(OutboundEndpointGuard(resolver=resolver))
+        calls = 0
+        sent: list[dict[str, object]] = []
+
+        def request(
+            _url: str,
+            _headers: dict[str, str],
+            payload: dict[str, object] | None,
+            _timeout_seconds: int,
+        ) -> HttpResult:
+            nonlocal calls
+            assert payload is not None
+            sent.append(payload)
+            calls += 1
+            if calls == 1:
+                return HttpResult(429, "rate limited", 0)
+            return HttpResult(
+                200,
+                '{"output":[{"type":"message","content":['
+                '{"type":"output_text","text":"{}"}]}],"usage":{}}',
+            )
+
+        client._request = request  # type: ignore[assignment]
+        await client.complete(
+            "https://provider.example.test/v1",
+            AiProviderProtocol.OPENAI_RESPONSES,
+            "model",
+            "secret",
+            {"protocol": "AGENT_PROVIDER_EXECUTION_V2"},
+            60,
+            2,
+            phase="PLAN",
+            backoff=True,
+        )
+        return calls, sent
+
+    calls, sent = asyncio.run(scenario())
+    assert calls == 2
+    assert all("tools" not in payload for payload in sent)
+
+
+def test_responses_transport_surfaces_rate_limit_after_its_bounded_budget() -> None:
+    async def resolver(_host: str, _port: int) -> tuple[str, ...]:
+        return ("93.184.216.34",)
+
+    async def scenario() -> int:
+        client = AiProviderClient(OutboundEndpointGuard(resolver=resolver))
+        calls = 0
+
+        def request(*_args: object) -> HttpResult:
+            nonlocal calls
+            calls += 1
+            return HttpResult(429, "rate limited", 0)
+
+        client._request = request  # type: ignore[assignment]
+        with pytest.raises(ProviderRequestError) as error:
+            await client.complete_response(
+                "https://provider.example.test/v1",
+                "model",
+                "secret",
+                {"_responsesNativeTools": [{"type": "function"}]},
+                60,
+            )
+        assert error.value.code == "RATE_LIMITED"
+        assert error.value.retryable
+        return calls
+
+    assert asyncio.run(scenario()) == 3
+
+
+@pytest.mark.parametrize(
+    ("status", "body", "expected"),
+    [
+        (500, "not implemented", True),
+        (400, '{"error":{"message":"function calling unsupported"}}', True),
+        (500, "internal server error", False),
+        (429, "not implemented", False),
+    ],
+)
+def test_native_tools_capability_classification_is_explicit(
+    status: int, body: str, expected: bool
+) -> None:
+    assert AiProviderClient._native_tools_unsupported(status, body) is expected
+
+
+@pytest.mark.parametrize(
+    ("header", "expected"),
+    [("2", 2.0), ("1000", 10.0), ("NaN", None), ("-1", None), ("tomorrow", None)],
+)
+def test_retry_after_accepts_only_bounded_finite_seconds(
+    header: str, expected: float | None
+) -> None:
+    assert AiProviderClient._retry_after_seconds(header) == expected
+
+
+def test_response_retry_backoff_is_cancellable() -> None:
+    async def resolver(_host: str, _port: int) -> tuple[str, ...]:
+        return ("93.184.216.34",)
+
+    async def scenario() -> int:
+        client = AiProviderClient(OutboundEndpointGuard(resolver=resolver))
+        calls = 0
+
+        def request(*_args: object) -> HttpResult:
+            nonlocal calls
+            calls += 1
+            return HttpResult(429, "rate limited", 10)
+
+        client._request = request  # type: ignore[assignment]
+        task = asyncio.create_task(
+            client.complete_response(
+                "https://provider.example.test/v1",
+                "model",
+                "secret",
+                {"_responsesNativeTools": [{"type": "function"}]},
+                60,
+                phase="PLAN",
+            )
+        )
+        await asyncio.sleep(0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        return calls
+
+    assert asyncio.run(scenario()) == 1
 
 
 @pytest.mark.parametrize(
@@ -372,6 +566,62 @@ def test_responses_agent_adapter_normalizes_message_text_after_tools() -> None:
         return json.loads(result.body)
 
     assert asyncio.run(run())["actions"] == [{"type": "text_delta", "text": "有 1 个项目。"}]
+
+
+def test_responses_agent_adapter_falls_back_only_for_explicit_tool_capability_failure() -> None:
+    cipher = SecretCipher(KeyRing(active_version="v1", keys={"v1": b"0" * 32}))
+    adapter = AgentProviderAdapter(cipher)
+    config = _agent_responses_config(cipher)
+    native_calls = 0
+    fallback_calls = 0
+
+    async def native(*_args: object, **_kwargs: object) -> ProviderResponseResult:
+        nonlocal native_calls
+        native_calls += 1
+        raise ProviderRequestError(
+            "NATIVE_TOOLS_UNSUPPORTED", retryable=False, status_code=500
+        )
+
+    async def fallback(*_args: object, **kwargs: object) -> ProviderCompletionResult:
+        nonlocal fallback_calls
+        fallback_calls += 1
+        assert kwargs["phase"] == "PLAN"
+        assert kwargs["backoff"] is True
+        assert _args[6] == 2
+        return ProviderCompletionResult(
+            '{"protocol":"AGENT_PROVIDER_EXECUTION_V2","phase":"PLAN",'
+            '"grounded":true,"actions":[{"type":"tool_call",'
+            '"name":"project_list","arguments":{}}]}',
+            {"input": 1, "output": 1, "total": 2},
+            1,
+        )
+
+    async def run() -> dict[str, object]:
+        adapter._client.complete_response = native  # type: ignore[method-assign]
+        adapter._client.complete = fallback  # type: ignore[method-assign]
+        result = await adapter(config, _agent_request("PLAN"))
+        return json.loads(result.body)
+
+    assert asyncio.run(run())["actions"][0]["name"] == "project_list"
+    assert (native_calls, fallback_calls) == (1, 1)
+
+
+def test_responses_agent_adapter_keeps_generic_5xx_retryable() -> None:
+    cipher = SecretCipher(KeyRing(active_version="v1", keys={"v1": b"0" * 32}))
+    adapter = AgentProviderAdapter(cipher)
+    config = _agent_responses_config(cipher)
+
+    async def generic_failure(*_args: object, **_kwargs: object) -> ProviderResponseResult:
+        raise ProviderRequestError("HTTP_5XX", retryable=True, status_code=500)
+
+    async def run() -> None:
+        adapter._client.complete_response = generic_failure  # type: ignore[method-assign]
+        with pytest.raises(AgentProviderError) as failure:
+            await adapter(config, _agent_request("PLAN"))
+        assert failure.value.retryable
+        assert failure.value.code is None
+
+    asyncio.run(run())
 
 
 def _agent_responses_config(cipher: SecretCipher) -> AgentExecutionConfig:

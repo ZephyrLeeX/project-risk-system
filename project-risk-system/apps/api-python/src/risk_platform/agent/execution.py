@@ -250,7 +250,7 @@ class AgentExecutionWorker:
         started = asyncio.get_running_loop().time()
         try:
             ids = self._payload_ids(payload)
-            config, _task, message, identity, history = await self._load_initial(
+            config, task, message, identity, history = await self._load_initial(
                 ids, task_id, lease_token
             )
             existing = await self._existing_outcome(task_id)
@@ -390,22 +390,24 @@ class AgentExecutionWorker:
             code = exc.code or (
                 "AGENT_PROVIDER_UNAVAILABLE" if exc.retryable else "AGENT_PROVIDER_REQUEST_REJECTED"
             )
-            await self._terminal_event(
-                ids[3], task_id, lease_token, code, exc.retryable, force=True
-            )
+            if not self._durable_retry_pending(task, exc.retryable):
+                await self._terminal_event(
+                    ids[3], task_id, lease_token, code, exc.retryable, force=True
+                )
             raise DurableTaskFailure(
                 code, retryable=exc.retryable, summary="provider request failed"
             ) from None
         except TimeoutError:
             assert ids is not None
-            await self._terminal_event(
-                ids[3],
-                task_id,
-                lease_token,
-                "AGENT_PROVIDER_UNAVAILABLE",
-                True,
-                force=True,
-            )
+            if not self._durable_retry_pending(task, True):
+                await self._terminal_event(
+                    ids[3],
+                    task_id,
+                    lease_token,
+                    "AGENT_PROVIDER_UNAVAILABLE",
+                    True,
+                    force=True,
+                )
             raise DurableTaskFailure(
                 "AGENT_PROVIDER_UNAVAILABLE", retryable=True, summary="provider timeout"
             ) from None
@@ -1012,6 +1014,11 @@ class AgentExecutionWorker:
                 },
                 force=force,
             )
+
+    @staticmethod
+    def _durable_retry_pending(task: DurableTask, retryable: bool) -> bool:
+        """Never publish a terminal SSE error while the dispatcher will retry."""
+        return retryable and task.attemptCount < task.maxAttempts
 
     async def _try_config_invalid_event(
         self, config_id: UUID, task_id: UUID, lease_token: UUID

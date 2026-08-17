@@ -33,7 +33,11 @@ from risk_platform.agent.execution import (
 from risk_platform.agent.models import AgentExecutionConfig
 from risk_platform.agent.service import AgentConversationService
 from risk_platform.agent.tools import AgentToolRegistry
-from risk_platform.ai_providers.client import AiProviderClient, ProviderRequestError
+from risk_platform.ai_providers.client import (
+    AGENT_RESPONSE_TRANSPORT_RETRY_COUNT,
+    AiProviderClient,
+    ProviderRequestError,
+)
 from risk_platform.ai_providers.models import AiProviderProtocol
 from risk_platform.ai_providers.service import AiProvidersService
 from risk_platform.audit.http import AuditQueryService
@@ -162,15 +166,17 @@ class AgentProviderAdapter:
                 api_key,
                 native_request,
                 config.timeoutSeconds,
+                phase=phase,
             )
             normalized = self._normalize_responses(result.value, phase)
             return ProviderTransportResponse(
                 200, json.dumps(normalized, ensure_ascii=False).encode()
             )
         except ProviderRequestError as error:
-            # A 400 to a request containing native tools is an explicit capability
-            # signal for compatible gateways.  The fallback remains strict V2 JSON.
-            if error.code == "INVALID_REQUEST" and error.status_code == 400:
+            # Native fallback is permitted only after the transport positively
+            # classified this request's tool capability as unsupported.  A generic
+            # 5xx stays retryable upstream failure and cannot change protocols.
+            if error.code == "NATIVE_TOOLS_UNSUPPORTED":
                 fallback = dict(request)
                 fallback["systemInstruction"] = (
                     str(request.get("systemInstruction", ""))
@@ -184,9 +190,16 @@ class AgentProviderAdapter:
                     api_key,
                     fallback,
                     config.timeoutSeconds,
-                    0,
+                    AGENT_RESPONSE_TRANSPORT_RETRY_COUNT,
+                    phase=phase,
+                    backoff=True,
                 )
-                self._diagnostic(phase, "text_json_fallback", ())
+                logging.getLogger(__name__).info(
+                    "agent provider capability phase=%s native_tools=unsupported "
+                    "fallback=text_json upstream_status=%s",
+                    phase,
+                    error.status_code,
+                )
                 return ProviderTransportResponse(200, text.text.encode())
             raise
 

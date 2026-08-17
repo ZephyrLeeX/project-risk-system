@@ -971,6 +971,17 @@ def test_real_module_local_worker_success_preview_invalid_timeout_and_cancellati
         timeout = await _wait(database, timeout_task, {DurableTaskStatus.RETRY_WAIT})
         assert timeout.failureCode == "AGENT_PROVIDER_UNAVAILABLE"
         assert timeout.nextRetryAt is not None
+        async with database() as session:
+            retry_errors = int(
+                await session.scalar(
+                    select(func.count(AgentEvent.id)).where(
+                        AgentEvent.conversationId == _timeout_conversation,
+                        AgentEvent.type == AgentEventType.ERROR,
+                    )
+                )
+                or 0
+            )
+        assert retry_errors == 0
 
         cancelled_conversation, cancelled_task = await _created(database, "cancel")
         assert await request_cancellation(database, cancelled_conversation)
