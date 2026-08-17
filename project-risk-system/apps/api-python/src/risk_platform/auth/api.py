@@ -31,10 +31,12 @@ def get_auth_service(request: Request) -> AuthService:
 
 
 def validate_request_origin(request: Request) -> None:
+    settings: Settings = request.app.state.settings
+    if not settings.request_origin_validation_enabled:
+        return
     if request.method in {"GET", "HEAD", "OPTIONS"}:
         return
     origin = request.headers.get("origin")
-    settings: Settings = request.app.state.settings
     if origin is not None and origin not in settings.cors_origins:
         raise ApiError(403, "FORBIDDEN", "请求来源校验失败")
 

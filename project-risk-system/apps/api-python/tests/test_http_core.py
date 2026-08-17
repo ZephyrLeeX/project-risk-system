@@ -12,6 +12,7 @@ import pytest
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 
 from risk_platform.app import AppComposition, create_app
+from risk_platform.auth.api import validate_request_origin
 from risk_platform.config import Settings, SettingsError
 from risk_platform.shared.errors import ApiError
 from risk_platform.shared.http import ApiResponse, StrictRequestModel, ok
@@ -249,8 +250,15 @@ def test_catch_all_does_not_consume_base_exception_control_flow() -> None:
         request(app, "GET", "/api/contract/base-exception", raise_app_exceptions=True)
 
 
-def test_cors_allows_only_configured_origin_with_credentials() -> None:
-    app = create_app(Settings(environment="test", cors_origins=("https://web.internal",)))
+def test_cors_allows_only_configured_origin_with_credentials_when_origin_validation_disabled(
+) -> None:
+    app = create_app(
+        Settings(
+            environment="test",
+            cors_origins=("https://web.internal",),
+            request_origin_validation_enabled=False,
+        )
+    )
 
     allowed = request(
         app,
@@ -386,6 +394,7 @@ def test_settings_are_validated_without_exposing_values() -> None:
             "NODE_ENV": "production",
             "API_PORT": "8443",
             "CORS_ORIGIN": "https://one.internal,https://two.internal",
+            "REQUEST_ORIGIN_VALIDATION_ENABLED": "false",
             "TRUSTED_PROXY_CIDRS": "10.0.0.5/24,fd00::/64",
             "SESSION_SECRET_FILE": "/run/secrets/project_risk_session_key",
         }
@@ -393,6 +402,7 @@ def test_settings_are_validated_without_exposing_values() -> None:
 
     assert settings.api_port == 8443
     assert settings.cors_origins == ("https://one.internal", "https://two.internal")
+    assert settings.request_origin_validation_enabled is False
     assert settings.trusted_proxy_cidrs == (
         ip_network("10.0.0.0/24"),
         ip_network("fd00::/64"),
@@ -403,6 +413,85 @@ def test_settings_are_validated_without_exposing_values() -> None:
         Settings.from_env({"TRUSTED_PROXY_CIDRS": "secret-invalid-value"})
     assert "TRUSTED_PROXY_CIDRS" in str(captured.value)
     assert "secret-invalid-value" not in str(captured.value)
+
+    with pytest.raises(SettingsError) as captured:
+        Settings.from_env({"REQUEST_ORIGIN_VALIDATION_ENABLED": "not-a-boolean"})
+    assert "request_origin_validation_enabled" in str(captured.value)
+    assert "not-a-boolean" not in str(captured.value)
+
+
+def test_request_origin_validation_defaults_to_enabled_and_warns_when_disabled(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    assert Settings.from_env({}).request_origin_validation_enabled is True
+
+    caplog.set_level("WARNING", logger="risk_platform.app")
+    create_app(Settings(environment="test", request_origin_validation_enabled=False))
+
+    assert caplog.messages == [
+        "REQUEST_ORIGIN_VALIDATION_ENABLED=false: request origin validation is disabled"
+    ]
+
+
+def test_disabled_origin_validation_delegates_to_authentication_and_authorization() -> None:
+    router = APIRouter(prefix="/origin-validation")
+
+    async def require_authentication() -> None:
+        raise ApiError(401, "UNAUTHORIZED", "authentication still required")
+
+    async def require_authorization() -> None:
+        raise ApiError(403, "FORBIDDEN", "authorization still required")
+
+    @router.post(
+        "/authentication",
+        dependencies=[Depends(validate_request_origin), Depends(require_authentication)],
+    )
+    async def authentication_endpoint() -> None:
+        return None
+
+    @router.post(
+        "/authorization",
+        dependencies=[Depends(validate_request_origin), Depends(require_authorization)],
+    )
+    async def authorization_endpoint() -> None:
+        return None
+
+    enabled = create_app(
+        Settings(
+            environment="test",
+            cors_origins=("https://web.internal",),
+            request_origin_validation_enabled=True,
+        ),
+        AppComposition(routers=(router,)),
+    )
+    disabled = create_app(
+        Settings(
+            environment="test",
+            cors_origins=("https://web.internal",),
+            request_origin_validation_enabled=False,
+        ),
+        AppComposition(routers=(router,)),
+    )
+    headers = {"origin": "https://evil.invalid"}
+
+    rejected = request(enabled, "POST", "/api/origin-validation/authentication", headers=headers)
+    assert (rejected.status_code, rejected.json()["message"]) == (403, "请求来源校验失败")
+
+    unauthenticated = request(
+        disabled, "POST", "/api/origin-validation/authentication", headers=headers
+    )
+    assert (unauthenticated.status_code, unauthenticated.json()["message"]) == (
+        401,
+        "authentication still required",
+    )
+
+    unauthorized = request(
+        disabled, "POST", "/api/origin-validation/authorization", headers=headers
+    )
+    assert (unauthorized.status_code, unauthorized.json()["message"]) == (
+        403,
+        "authorization still required",
+    )
 
 
 def test_ai_outbound_allowlists_are_normalized_and_validate_without_leaks() -> None:

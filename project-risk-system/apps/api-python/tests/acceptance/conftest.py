@@ -133,7 +133,11 @@ class AcceptanceHarness:
     env: AcceptanceEnv
 
     def build_app(
-        self, *, identity: SessionIdentity | None = None, production: bool = False
+        self,
+        *,
+        identity: SessionIdentity | None = None,
+        production: bool = False,
+        request_origin_validation_enabled: bool = True,
     ) -> FastAPI:
         """Compose the full production app against the seeded schema.
 
@@ -150,6 +154,7 @@ class AcceptanceHarness:
                 environment="production",
                 cors_origins=env.settings.cors_origins,
                 session_secret_file=env.settings.session_secret_file,
+                request_origin_validation_enabled=request_origin_validation_enabled,
             )
             if production
             else env.settings

@@ -154,6 +154,7 @@ chmod 600 .env.production
 | 变量 | 是否必填 | 说明 |
 |------|----------|------|
 | `CORS_ORIGIN` | 必填 | 浏览器访问的完整 origin，含协议与端口，如 `https://risk.example.internal:8443` |
+| `REQUEST_ORIGIN_VALIDATION_ENABLED` | 可选 | 默认 `true`。仅受控测试/排障环境可显式设为 `false`；正式生产必须保持 `true`。该开关只跳过当前变更请求的 Origin 来源校验；现有实现未单独校验 Referer。它不会关闭登录认证、session/cookie、RBAC、CORS 或其他安全检查。 |
 | `PROXY_HTTPS_PORT` | 可选 | proxy 对外 HTTPS 端口，默认 `8443` |
 | `POSTGRES_DB` | 可选 | 数据库名，默认 `project_risk` |
 | `POSTGRES_USER` | 可选 | 数据库用户，默认 `project_risk` |

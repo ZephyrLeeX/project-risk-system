@@ -80,6 +80,7 @@ services:
       <<: *backend-env
       NODE_ENV: production
       CORS_ORIGIN: ${CORS_ORIGIN:?CORS_ORIGIN is required (e.g. https://host:8443)}
+      REQUEST_ORIGIN_VALIDATION_ENABLED: ${REQUEST_ORIGIN_VALIDATION_ENABLED:-true}
       TRUSTED_PROXY_CIDRS: 10.30.0.0/24
       SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-project_risk_session}
       SESSION_SECRET_FILE: /run/secrets/project_risk_session_key

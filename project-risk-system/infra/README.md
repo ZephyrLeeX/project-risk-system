@@ -27,6 +27,15 @@ The API, worker and scheduler share one production image (`risk-platform-api`);
 only the per-service `command` differs. The scheduler uses the T046 entrypoint
 unchanged — no scheduler logic lives in T035.
 
+## Request origin validation
+
+`REQUEST_ORIGIN_VALIDATION_ENABLED=true` is the production default. It protects
+mutating requests by rejecting an untrusted supplied Origin at the API boundary
+(the current implementation has no separate Referer check). Set it to `false` only in a controlled test or troubleshooting
+environment; this narrowly skips that request-origin check and does not disable
+authentication, session/cookie validation, RBAC, CORS, or other security controls.
+Production deployments must keep it set to `true`.
+
 ## AI Provider internal endpoint allowlist
 
 Public HTTPS AI APIs work with the default empty allowlists. An internal

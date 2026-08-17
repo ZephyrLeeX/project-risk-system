@@ -33,7 +33,7 @@ from .conftest import ACCEPTANCE_PASSWORD, AcceptanceHarness
 
 def test_csrf_origin_validation_rejects_untrusted_origin(acceptance: AcceptanceHarness) -> None:
     async def scenario() -> None:
-        app = acceptance.build_app(production=True)
+        app = acceptance.build_app(production=True, request_origin_validation_enabled=True)
         async for client in acceptance.client(app):
             login = await acceptance.login(client, "PROJECT_MANAGER")
             assert login.status_code == 200
@@ -77,6 +77,51 @@ def test_csrf_origin_validation_guards_password_change(acceptance: AcceptanceHar
                 403,
                 "请求来源校验失败",
             )
+
+    asyncio.run(scenario())
+
+
+def test_disabled_origin_validation_preserves_authentication_and_rbac(
+    acceptance: AcceptanceHarness,
+) -> None:
+    async def scenario() -> None:
+        app = acceptance.build_app(
+            production=True, request_origin_validation_enabled=False
+        )
+        async for client in acceptance.client(app):
+            unauthenticated = await client.post(
+                "/api/auth/logout", headers={"origin": "https://evil.invalid"}
+            )
+            assert (unauthenticated.status_code, unauthenticated.json()["message"]) == (
+                401,
+                "登录状态已失效，请重新登录",  # noqa: RUF001
+            )
+
+            login = await acceptance.login(client, "PROJECT_MANAGER")
+            assert login.status_code == 200
+            accepted = await client.post(
+                "/api/auth/logout", headers={"origin": "https://evil.invalid"}
+            )
+            assert accepted.status_code == 200
+
+        rbac_app = acceptance.build_app(
+            identity=acceptance.identity_for("PROJECT_MANAGER"),
+            production=True,
+            request_origin_validation_enabled=False,
+        )
+        async for client in acceptance.client(rbac_app):
+            forbidden = await client.post(
+                "/api/admin/roles",
+                headers={"origin": "https://evil.invalid"},
+                json={
+                    "code": "TEST_ROLE",
+                    "name": "测试角色",
+                    "permissionCodes": [],
+                    "defaultDataScope": "NONE",
+                },
+            )
+            assert forbidden.status_code == 403
+            assert forbidden.json()["message"] != "请求来源校验失败"
 
     asyncio.run(scenario())
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass, field
@@ -20,6 +21,8 @@ from risk_platform.shared.tracing import TraceMiddleware
 
 type Dependency = Callable[..., Any]
 type Lifespan = Callable[[FastAPI], AbstractAsyncContextManager[None]]
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,6 +73,10 @@ def create_app(
         lifespan=resolved_composition.lifespan or _empty_lifespan,
     )
     app.state.settings = resolved_settings
+    if not resolved_settings.request_origin_validation_enabled:
+        logger.warning(
+            "REQUEST_ORIGIN_VALIDATION_ENABLED=false: request origin validation is disabled"
+        )
 
     api_router = APIRouter(prefix="/api")
     api_router.include_router(_health_router())

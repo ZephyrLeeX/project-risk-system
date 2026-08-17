@@ -70,6 +70,7 @@ class Settings(BaseModel):
     environment: Environment = "development"
     api_port: int = Field(default=3000, ge=1, le=65_535)
     cors_origins: tuple[str, ...] = ("http://localhost:5173",)
+    request_origin_validation_enabled: bool = True
     trusted_proxy_cidrs: tuple[IpNetwork, ...] = ()
     ai_outbound_allowed_hostnames: frozenset[str] = frozenset()
     ai_outbound_allowed_cidrs: tuple[IpNetwork, ...] = ()
@@ -131,6 +132,7 @@ class Settings(BaseModel):
         scalar_names = {
             "NODE_ENV": "environment",
             "API_PORT": "api_port",
+            "REQUEST_ORIGIN_VALIDATION_ENABLED": "request_origin_validation_enabled",
             "SESSION_COOKIE_NAME": "session_cookie_name",
             "SESSION_SECRET_FILE": "session_secret_file",
         }
