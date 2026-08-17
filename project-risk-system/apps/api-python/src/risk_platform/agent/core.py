@@ -18,6 +18,7 @@ from risk_platform.ai_providers.v2_adapter import (
 )
 from risk_platform.ai_providers.v2_service import ProviderV2Runtime
 from risk_platform.auth.service import SessionIdentity
+from risk_platform.model_types import JSONValue
 
 from .schemas import AgentToolResult, CandidateRisk
 from .scope import OUT_OF_SCOPE_MESSAGE, ScopeDecision, ScopePolicy
@@ -30,6 +31,14 @@ class AgentLoopError(RuntimeError):
     def __init__(self, code: str) -> None:
         super().__init__(code)
         self.code = code
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectSelectionRequired(Exception):
+    candidates: tuple[dict[str, JSONValue], ...]
+
+    def __str__(self) -> str:
+        return "project selection required"
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,7 +77,9 @@ class ReadOnlyAgentCore:
         self._limits = limits or AgentLoopLimits()
         self._identity_loader = identity_loader
 
-    async def run(self, identity: SessionIdentity, message: str) -> AgentCoreOutcome:
+    async def run(
+        self, identity: SessionIdentity, message: str, resume_context: str | None = None
+    ) -> AgentCoreOutcome:
         if self._scope.decide(message) is ScopeDecision.OUT_OF_SCOPE:
             return AgentCoreOutcome(OUT_OF_SCOPE_MESSAGE, out_of_scope=True)
         started, calls, total = monotonic(), 0, 0
@@ -78,7 +89,10 @@ class ReadOnlyAgentCore:
                 ProviderRole.SYSTEM,
                 "你是只读项目风险管理助手。业务事实只能来自 tool 结果, 不得提出写操作。",
             ),
-            ProviderMessage(ProviderRole.USER, message),
+            ProviderMessage(
+                ProviderRole.USER,
+                message if resume_context is None else f"{message}\n\n{resume_context}",
+            ),
         ]
         definitions = tuple(
             ProviderToolDefinition(item["name"], item["description"], item["argumentsSchema"])  # type: ignore[arg-type]
@@ -113,6 +127,17 @@ class ReadOnlyAgentCore:
             results = await asyncio.gather(
                 *[self._invoke_current(identity, call) for call in response.tool_calls]
             )
+            for call, result in zip(response.tool_calls, results, strict=True):
+                if call.name == "project_search" and isinstance(result.data, dict):
+                    raw_total = result.data.get("total", 0)
+                    total_matches = (
+                        int(raw_total) if isinstance(raw_total, (str, int, float)) else 0
+                    )
+                    items = result.data.get("items", [])
+                    if total_matches > 1 and isinstance(items, list):
+                        raise ProjectSelectionRequired(
+                            tuple(item for item in items if isinstance(item, dict))
+                        )
             for call, result in zip(response.tool_calls, results, strict=True):
                 encoded = self._canonical(result.model_dump(mode="json")).encode()
                 if len(encoded) > self._limits.max_single_tool_result:
@@ -149,4 +174,10 @@ class ReadOnlyAgentCore:
         )
 
 
-__all__ = ["AgentCoreOutcome", "AgentLoopError", "AgentLoopLimits", "ReadOnlyAgentCore"]
+__all__ = [
+    "AgentCoreOutcome",
+    "AgentLoopError",
+    "AgentLoopLimits",
+    "ProjectSelectionRequired",
+    "ReadOnlyAgentCore",
+]

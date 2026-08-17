@@ -66,6 +66,39 @@ class AgentMessageEnvelope(_Contract):
     streamUrl: str
 
 
+class AgentInteractionResponse(_Contract):
+    id: UUID
+    type: str
+    status: str
+    conversationId: UUID
+    executionId: UUID
+    candidates: list[dict[str, JSONValue]]
+    expiresAt: datetime
+
+
+class AgentInteractionRespondRequest(StrictRequestModel):
+    action: str = Field(pattern=r"^(SELECT|MANUAL_INPUT|CANCEL)$")
+    projectId: UUID | None = None
+    projectName: str | None = Field(default=None, min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def strict_action_payload(self) -> AgentInteractionRespondRequest:
+        if self.action == "SELECT" and (self.projectId is None or self.projectName is not None):
+            raise ValueError("SELECT requires only projectId")
+        if self.action == "MANUAL_INPUT" and (
+            self.projectName is None or self.projectId is not None
+        ):
+            raise ValueError("MANUAL_INPUT requires only projectName")
+        if self.action == "CANCEL" and (self.projectId is not None or self.projectName is not None):
+            raise ValueError("CANCEL does not accept a project")
+        return self
+
+
+class AgentInteractionRespondResponse(_Contract):
+    interaction: AgentInteractionResponse
+    streamUrl: str | None
+
+
 class AgentMessageRequest(StrictRequestModel):
     message: str = Field(min_length=1, max_length=4000)
 

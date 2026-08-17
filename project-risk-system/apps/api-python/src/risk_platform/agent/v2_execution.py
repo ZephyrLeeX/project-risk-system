@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Mapping
 from contextlib import suppress
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import cast
 from uuid import UUID
 
@@ -20,12 +20,17 @@ from risk_platform.reliability.core import TaskHandler, heartbeat
 from risk_platform.reliability.dispatcher import DurableTaskCancelled, DurableTaskFailure
 from risk_platform.reliability.models import DurableTask, DurableTaskStatus
 
-from .core import AgentCoreOutcome, AgentLoopError, ReadOnlyAgentCore
+from .core import AgentCoreOutcome, AgentLoopError, ProjectSelectionRequired, ReadOnlyAgentCore
 from .events import append_event, event_capacity_available
 from .models import (
     AgentConversation,
     AgentEventType,
+    AgentExecution,
     AgentExecutionConfig,
+    AgentExecutionStatus,
+    AgentInteraction,
+    AgentInteractionStatus,
+    AgentInteractionType,
     AgentMessage,
     AgentMessageRole,
 )
@@ -54,13 +59,37 @@ class NativeAgentExecutionWorker:
         self, payload: Mapping[str, JSONValue], *, task_id: UUID, lease_token: UUID
     ) -> None:
         try:
-            config, message, identity = await self._load(payload, task_id, lease_token)
+            config, execution, message, identity = await self._load(payload, task_id, lease_token)
+            if execution is not None and execution.status is not AgentExecutionStatus.RUNNING:
+                raise DurableTaskFailure(
+                    "AGENT_EXECUTION_CONFIG_INVALID",
+                    retryable=False,
+                    summary="execution is not running",
+                )
+            pending_candidates = (
+                None if execution is None else execution.resumeContext.get("selectionCandidates")
+            )
+            if isinstance(pending_candidates, list) and all(
+                isinstance(item, dict) for item in pending_candidates
+            ):
+                await self._wait_for_project_selection(
+                    payload,
+                    task_id,
+                    lease_token,
+                    tuple(cast(dict[str, JSONValue], item) for item in pending_candidates),
+                )
+                return
             outcome = await self._run_with_heartbeat(
-                config, message, identity, task_id, lease_token
+                config, execution, message, identity, task_id, lease_token
             )
             await self._complete(
                 config, message, task_id, lease_token, outcome.text, outcome.candidate_risks
             )
+        except ProjectSelectionRequired as required:
+            await self._wait_for_project_selection(
+                payload, task_id, lease_token, required.candidates
+            )
+            return
         except AgentLoopError as error:
             await self._error(payload, task_id, lease_token, error.code, retryable=False)
             raise DurableTaskFailure(
@@ -94,6 +123,9 @@ class NativeAgentExecutionWorker:
                 )
             raise
         except DurableTaskCancelled:
+            await self._mark_execution_terminal(
+                payload, task_id, AgentExecutionStatus.CANCELLED
+            )
             raise
         except Exception:
             await self._error(
@@ -106,6 +138,7 @@ class NativeAgentExecutionWorker:
     async def _run_with_heartbeat(
         self,
         config: AgentExecutionConfig,
+        execution: AgentExecution | None,
         message: AgentMessage,
         identity: SessionIdentity,
         task_id: UUID,
@@ -113,7 +146,17 @@ class NativeAgentExecutionWorker:
     ) -> AgentCoreOutcome:
         """Run the native loop with durable liveness and cancellation boundaries."""
 
-        call = asyncio.create_task(self._core.run(identity, message.content))
+        selected = None if execution is None else execution.resumeContext.get("selectedProject")
+        context = None
+        if isinstance(selected, dict):
+            context = (
+                f"用户已选择项目: {selected.get('name')} "
+                f"(项目状态: {selected.get('status')})。请继续回答原问题。"
+            )
+        if context is None:
+            call = asyncio.create_task(self._core.run(identity, message.content))
+        else:
+            call = asyncio.create_task(self._core.run(identity, message.content, context))
         started = asyncio.get_running_loop().time()
         try:
             while not call.done():
@@ -153,8 +196,7 @@ class NativeAgentExecutionWorker:
                     )
                 if (
                     self._attempt_timeout_seconds is not None
-                    and asyncio.get_running_loop().time() - started
-                    >= self._attempt_timeout_seconds
+                    and asyncio.get_running_loop().time() - started >= self._attempt_timeout_seconds
                 ):
                     call.cancel()
                     raise ProviderError(
@@ -171,9 +213,12 @@ class NativeAgentExecutionWorker:
 
     async def _load(
         self, payload: Mapping[str, JSONValue], task_id: UUID, lease_token: UUID
-    ) -> tuple[AgentExecutionConfig, AgentMessage, SessionIdentity]:
+    ) -> tuple[AgentExecutionConfig, AgentExecution | None, AgentMessage, SessionIdentity]:
         try:
-            config_id = UUID(str(payload["execution_configuration_id"]))
+            config_id_value = payload.get("execution_configuration_id")
+            execution_id_value = payload.get("execution_id")
+            config_id = UUID(str(config_id_value)) if config_id_value else None
+            execution_id = UUID(str(execution_id_value)) if execution_id_value else None
         except (KeyError, TypeError, ValueError):
             raise DurableTaskFailure(
                 "AGENT_EXECUTION_CONFIG_INVALID",
@@ -181,10 +226,22 @@ class NativeAgentExecutionWorker:
                 summary="invalid execution payload",
             ) from None
         async with self._sessions() as session:
-            config = await session.get(AgentExecutionConfig, config_id)
+            config = (
+                await session.get(AgentExecutionConfig, config_id)
+                if config_id is not None
+                else await session.scalar(
+                    select(AgentExecutionConfig).where(AgentExecutionConfig.taskId == task_id)
+                )
+            )
+            execution = await session.scalar(
+                select(AgentExecution).where(AgentExecution.taskId == task_id)
+            )
+            if execution is None and execution_id is not None:
+                execution = await session.get(AgentExecution, execution_id)
             task = await session.get(DurableTask, task_id)
             if (
                 config is None
+                or execution is None
                 or task is None
                 or config.taskId != task_id
                 or task.status is not DurableTaskStatus.RUNNING
@@ -212,7 +269,73 @@ class NativeAgentExecutionWorker:
                 expires_at=datetime.max.replace(tzinfo=UTC),
                 user=AuthService._authenticated_user(user, await repository.user_access(user.id)),
             )
-            return config, message, identity
+            return config, execution, message, identity
+
+    async def _wait_for_project_selection(
+        self,
+        payload: Mapping[str, JSONValue],
+        task_id: UUID,
+        lease_token: UUID,
+        candidates: tuple[dict[str, JSONValue], ...],
+    ) -> None:
+        execution_id = payload.get("execution_id")
+        if execution_id is None:
+            async with self._sessions() as read_session:
+                config = await read_session.scalar(
+                    select(AgentExecutionConfig).where(AgentExecutionConfig.taskId == task_id)
+                )
+                execution_row = await read_session.scalar(
+                    select(AgentExecution).where(AgentExecution.taskId == task_id)
+                )
+                execution_id = (
+                    None if config is None or execution_row is None else str(execution_row.id)
+                )
+        if execution_id is None:
+            raise DurableTaskFailure(
+                "AGENT_EXECUTION_CONFIG_INVALID", retryable=False, summary="missing execution"
+            )
+        async with self._sessions.begin() as session:
+            execution = await session.scalar(
+                select(AgentExecution)
+                .where(AgentExecution.id == UUID(str(execution_id)))
+                .with_for_update()
+            )
+            if execution is None or execution.taskId != task_id:
+                raise DurableTaskFailure(
+                    "AGENT_EXECUTION_CONFIG_INVALID", retryable=False, summary="stale execution"
+                )
+            message = await session.get(AgentMessage, execution.userMessageId)
+            if message is None:
+                raise DurableTaskFailure(
+                    "AGENT_EXECUTION_CONFIG_INVALID", retryable=False, summary="missing message"
+                )
+            interaction = AgentInteraction(
+                executionId=execution.id,
+                conversationId=execution.conversationId,
+                ownerUserId=execution.requestedByUserId,
+                type=AgentInteractionType.PROJECT_SELECTION,
+                status=AgentInteractionStatus.OPEN,
+                candidateOptions=[cast(JSONValue, item) for item in candidates],
+                resumeContext=execution.resumeContext,
+                expiresAt=datetime.now(UTC) + timedelta(minutes=30),
+            )
+            session.add(interaction)
+            await session.flush()
+            execution.status = AgentExecutionStatus.WAITING_FOR_USER
+            execution.updatedAt = datetime.now(UTC)
+            await self._append(
+                session,
+                execution,
+                message,
+                task_id,
+                AgentEventType.INTERACTION_REQUIRED,
+                {
+                    "interactionId": str(interaction.id),
+                    "type": interaction.type.value,
+                    "candidates": [cast(object, item) for item in candidates],
+                },
+                message.id,
+            )
 
     async def _complete(
         self,
@@ -236,6 +359,12 @@ class NativeAgentExecutionWorker:
                     retryable=False,
                     summary="missing conversation",
                 )
+            execution = await session.scalar(
+                select(AgentExecution).where(AgentExecution.taskId == task_id).with_for_update()
+            )
+            if execution is not None:
+                execution.status = AgentExecutionStatus.COMPLETED
+                execution.completedAt = datetime.now(UTC)
             assistant = AgentMessage(
                 conversationId=conversation.id,
                 sequence=conversation.lastMessageSequence + 1,
@@ -279,16 +408,29 @@ class NativeAgentExecutionWorker:
         *,
         retryable: bool,
     ) -> None:
-        try:
-            config_id = UUID(str(payload["execution_configuration_id"]))
-        except (KeyError, TypeError, ValueError):
-            return
         async with self._sessions.begin() as session:
+            config_id_value = payload.get("execution_configuration_id")
+            config_id = (
+                UUID(str(config_id_value)) if config_id_value is not None else None
+            )
+            if config_id is None:
+                config_row = await session.scalar(
+                    select(AgentExecutionConfig).where(AgentExecutionConfig.taskId == task_id)
+                )
+                config_id = None if config_row is None else config_row.id
+            if config_id is None:
+                return
             config = await self._assert_fence(
                 session, config_id, task_id, lease_token, optional=True
             )
             if config is None:
                 return
+            execution = await session.scalar(
+                select(AgentExecution).where(AgentExecution.taskId == task_id).with_for_update()
+            )
+            if execution is not None:
+                execution.status = AgentExecutionStatus.FAILED
+                execution.completedAt = datetime.now(UTC)
             message = await session.get(AgentMessage, config.userMessageId)
             if message is not None:
                 await self._append(
@@ -301,10 +443,29 @@ class NativeAgentExecutionWorker:
                     message.id,
                 )
 
+    async def _mark_execution_terminal(
+        self,
+        payload: Mapping[str, JSONValue],
+        task_id: UUID,
+        status: AgentExecutionStatus,
+    ) -> None:
+        execution_id = payload.get("execution_id")
+        async with self._sessions.begin() as session:
+            execution = (
+                await session.get(AgentExecution, UUID(str(execution_id)))
+                if execution_id is not None
+                else await session.scalar(
+                    select(AgentExecution).where(AgentExecution.taskId == task_id)
+                )
+            )
+            if execution is not None:
+                execution.status = status
+                execution.completedAt = datetime.now(UTC)
+
     async def _append(
         self,
         session: AsyncSession,
-        config: AgentExecutionConfig,
+        config: AgentExecutionConfig | AgentExecution,
         message: AgentMessage,
         task_id: UUID,
         kind: AgentEventType,

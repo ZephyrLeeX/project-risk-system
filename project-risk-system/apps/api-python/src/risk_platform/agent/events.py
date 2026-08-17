@@ -32,6 +32,11 @@ ACTIVE_STATUSES = (
     DurableTaskStatus.RETRY_WAIT,
 )
 TERMINAL_EVENT_TYPES = {AgentEventType.COMPLETED, AgentEventType.ERROR}
+STREAM_CLOSE_EVENT_TYPES = {
+    AgentEventType.COMPLETED,
+    AgentEventType.ERROR,
+    AgentEventType.INTERACTION_REQUIRED,
+}
 
 
 async def append_event(
@@ -94,8 +99,7 @@ async def event_capacity_available(
     # Reserve one final event slot for the required backpressure error.
     return (
         int(count) < MAX_PENDING_EVENTS - 1
-        and int(payload_bytes) + len(encoded)
-        <= MAX_PENDING_BYTES - TERMINAL_EVENT_RESERVE_BYTES
+        and int(payload_bytes) + len(encoded) <= MAX_PENDING_BYTES - TERMINAL_EVENT_RESERVE_BYTES
     )
 
 
@@ -192,7 +196,7 @@ async def _stream(
             if rows:
                 for row in rows:
                     after_sequence = row.sequence
-                    terminal_seen = row.type in TERMINAL_EVENT_TYPES
+                    terminal_seen = row.type in STREAM_CLOSE_EVENT_TYPES
                     yield wire_event(row)
                 last_fact_at = loop.time()
                 if terminal_seen:

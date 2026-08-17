@@ -1002,6 +1002,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agent/interactions/{interactionId}/respond": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Respond Interaction */
+        post: operations["respond_interaction_api_agent_interactions__interactionId__respond_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/change-password": {
         parameters: {
             query?: never;
@@ -1937,6 +1954,52 @@ export interface components {
             /** Tools */
             tools: components["schemas"]["AgentToolHelp"][];
         };
+        /** AgentInteractionRespondRequest */
+        AgentInteractionRespondRequest: {
+            /** Action */
+            action: string;
+            /** Projectid */
+            projectId?: string | null;
+            /** Projectname */
+            projectName?: string | null;
+        };
+        /** AgentInteractionRespondResponse */
+        AgentInteractionRespondResponse: {
+            interaction: components["schemas"]["AgentInteractionResponse"];
+            /** Streamurl */
+            streamUrl: string | null;
+        };
+        /** AgentInteractionResponse */
+        AgentInteractionResponse: {
+            /** Candidates */
+            candidates: {
+                [key: string]: components["schemas"]["JSONValue"];
+            }[];
+            /**
+             * Conversationid
+             * Format: uuid
+             */
+            conversationId: string;
+            /**
+             * Executionid
+             * Format: uuid
+             */
+            executionId: string;
+            /**
+             * Expiresat
+             * Format: date-time
+             */
+            expiresAt: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Status */
+            status: string;
+            /** Type */
+            type: string;
+        };
         /** AgentMessageEnvelope */
         AgentMessageEnvelope: {
             /** Streamurl */
@@ -2048,6 +2111,16 @@ export interface components {
             /** Code */
             code: string;
             data: components["schemas"]["AgentHelpResponse"];
+            /** Message */
+            message: string;
+            /** Traceid */
+            traceId: string;
+        };
+        /** ApiResponse[AgentInteractionRespondResponse] */
+        ApiResponse_AgentInteractionRespondResponse_: {
+            /** Code */
+            code: string;
+            data: components["schemas"]["AgentInteractionRespondResponse"];
             /** Message */
             message: string;
             /** Traceid */
@@ -8161,6 +8234,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_AgentHelpResponse_"];
+                };
+            };
+        };
+    };
+    respond_interaction_api_agent_interactions__interactionId__respond_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                interactionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentInteractionRespondRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_AgentInteractionRespondResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

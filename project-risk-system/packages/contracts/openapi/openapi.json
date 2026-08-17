@@ -401,6 +401,125 @@
         "title": "AgentHelpResponse",
         "type": "object"
       },
+      "AgentInteractionRespondRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "pattern": "^(SELECT|MANUAL_INPUT|CANCEL)$",
+            "title": "Action",
+            "type": "string"
+          },
+          "projectId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Projectid"
+          },
+          "projectName": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Projectname"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "title": "AgentInteractionRespondRequest",
+        "type": "object"
+      },
+      "AgentInteractionRespondResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "interaction": {
+            "$ref": "#/components/schemas/AgentInteractionResponse"
+          },
+          "streamUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Streamurl"
+          }
+        },
+        "required": [
+          "interaction",
+          "streamUrl"
+        ],
+        "title": "AgentInteractionRespondResponse",
+        "type": "object"
+      },
+      "AgentInteractionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "candidates": {
+            "items": {
+              "additionalProperties": {
+                "$ref": "#/components/schemas/JSONValue"
+              },
+              "type": "object"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "conversationId": {
+            "format": "uuid",
+            "title": "Conversationid",
+            "type": "string"
+          },
+          "executionId": {
+            "format": "uuid",
+            "title": "Executionid",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "title": "Expiresat",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "status",
+          "conversationId",
+          "executionId",
+          "candidates",
+          "expiresAt"
+        ],
+        "title": "AgentInteractionResponse",
+        "type": "object"
+      },
       "AgentMessageEnvelope": {
         "additionalProperties": false,
         "properties": {
@@ -723,6 +842,34 @@
           "traceId"
         ],
         "title": "ApiResponse[AgentHelpResponse]",
+        "type": "object"
+      },
+      "ApiResponse_AgentInteractionRespondResponse_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/AgentInteractionRespondResponse"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "traceId": {
+            "title": "Traceid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ],
+        "title": "ApiResponse[AgentInteractionRespondResponse]",
         "type": "object"
       },
       "ApiResponse_AgentMessageEnvelope_": {
@@ -15939,6 +16086,59 @@
           }
         },
         "summary": "Help",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/interactions/{interactionId}/respond": {
+      "post": {
+        "operationId": "respond_interaction_api_agent_interactions__interactionId__respond_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "interactionId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Interactionid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentInteractionRespondRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AgentInteractionRespondResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Respond Interaction",
         "tags": [
           "agent"
         ]

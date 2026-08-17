@@ -17,7 +17,14 @@ from risk_platform.retention.service import RetentionConfigurationRepository
 from risk_platform.shared.errors import ApiError
 
 from .events import open_event_stream
-from .models import AgentConversation, AgentExecutionConfig, AgentMessage, AgentMessageRole
+from .models import (
+    AgentConversation,
+    AgentExecution,
+    AgentExecutionConfig,
+    AgentExecutionStatus,
+    AgentMessage,
+    AgentMessageRole,
+)
 from .repository import AgentConversationRepository
 from .schemas import (
     AgentConversationEnvelope,
@@ -98,22 +105,32 @@ class AgentConversationService:
                     raise ApiError(
                         404, "AGENT_CONVERSATION_NOT_FOUND", "Agent 会话不存在或不属于当前用户"
                     )
-            active = await session.scalar(
-                select(DurableTask).where(
-                    DurableTask.kind == DurableTaskKind.AGENT_EXECUTION,
-                    DurableTask.status.in_(
-                        (
-                            DurableTaskStatus.QUEUED,
-                            DurableTaskStatus.RUNNING,
-                            DurableTaskStatus.RETRY_WAIT,
+            active_execution = await session.scalar(
+                select(AgentExecution)
+                .join(DurableTask, DurableTask.id == AgentExecution.taskId)
+                .where(
+                    AgentExecution.conversationId == conversation.id,
+                    (
+                        AgentExecution.status == AgentExecutionStatus.WAITING_FOR_USER
+                    )
+                    | (
+                        (AgentExecution.status == AgentExecutionStatus.RUNNING)
+                        & DurableTask.status.in_(
+                            (
+                                DurableTaskStatus.QUEUED,
+                                DurableTaskStatus.RUNNING,
+                                DurableTaskStatus.RETRY_WAIT,
+                            )
                         )
                     ),
-                    DurableTask.payload["conversation_id"].as_string() == str(conversation.id),
                 )
+                .with_for_update()
             )
-            if active is not None:
+            if active_execution is not None:
                 active_config = await session.scalar(
-                    select(AgentExecutionConfig).where(AgentExecutionConfig.taskId == active.id)
+                    select(AgentExecutionConfig).where(
+                        AgentExecutionConfig.taskId == active_execution.taskId
+                    )
                 )
                 active_message = (
                     None
@@ -149,6 +166,14 @@ class AgentConversationService:
                     "execution_configuration_id": str(config_id),
                 },
             )
+            execution = AgentExecution(
+                conversationId=conversation.id,
+                taskId=task.id,
+                userMessageId=user_message.id,
+                requestedByUserId=owner_id,
+                status=AgentExecutionStatus.RUNNING,
+            )
+            session.add(execution)
             session.add(
                 AgentExecutionConfig(
                     id=config_id,

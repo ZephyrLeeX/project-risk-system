@@ -14,12 +14,15 @@ from risk_platform.shared.http import ApiResponse, ok
 from risk_platform.shared.tracing import get_trace_id
 
 from .confirmation import AgentConfirmationService
+from .interaction import AgentInteractionService
 from .schemas import (
     AgentConfirmationRequest,
     AgentConfirmationResponse,
     AgentConversationEnvelope,
     AgentConversationHistory,
     AgentHelpResponse,
+    AgentInteractionRespondRequest,
+    AgentInteractionRespondResponse,
     AgentMessageEnvelope,
     AgentMessagePage,
     AgentMessageRequest,
@@ -46,6 +49,10 @@ def get_agent_tools(request: Request) -> AgentToolRegistry:
 
 def get_confirmation_service(request: Request) -> AgentConfirmationService:
     return AgentConfirmationService(get_agent_service(request).session_factory)
+
+
+def get_interaction_service(request: Request) -> AgentInteractionService:
+    return AgentInteractionService(get_agent_service(request).session_factory)
 
 
 @router.get("/help", response_model=ApiResponse[AgentHelpResponse])
@@ -139,6 +146,22 @@ async def events(
         event_stream,
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.post(
+    "/interactions/{interactionId}/respond",
+    response_model=ApiResponse[AgentInteractionRespondResponse],
+)
+async def respond_interaction(
+    request: Request,
+    interactionId: UUID,
+    payload: AgentInteractionRespondRequest,
+    identity: Annotated[SessionIdentity, Depends(require_permissions("agent.use"))],
+    service: Annotated[AgentInteractionService, Depends(get_interaction_service)],
+) -> ApiResponse[AgentInteractionRespondResponse]:
+    return ok(
+        request, await service.respond(identity, interactionId, payload, get_trace_id(request))
     )
 
 

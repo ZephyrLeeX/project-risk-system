@@ -39,6 +39,33 @@ class AgentEventType(StrEnum):
     COMPLETED = "completed"
     ERROR = "error"
     HEARTBEAT = "heartbeat"
+    INTERACTION_REQUIRED = "interaction.required"
+    INTERACTION_RESOLVED = "interaction.resolved"
+
+
+class AgentExecutionStatus(StrEnum):
+    RUNNING = "RUNNING"
+    WAITING_FOR_USER = "WAITING_FOR_USER"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+
+
+class AgentInteractionType(StrEnum):
+    PROJECT_SELECTION = "PROJECT_SELECTION"
+
+
+class AgentInteractionStatus(StrEnum):
+    OPEN = "OPEN"
+    RESOLVED = "RESOLVED"
+    CANCELLED = "CANCELLED"
+    EXPIRED = "EXPIRED"
+
+
+class AgentInteractionAction(StrEnum):
+    SELECT = "SELECT"
+    MANUAL_INPUT = "MANUAL_INPUT"
+    CANCEL = "CANCEL"
 
 
 class AgentConfirmationOperation(StrEnum):
@@ -82,6 +109,101 @@ class AgentConversation(Base):
     lastEventSequence: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("0")
     )
+
+
+class AgentExecution(Base):
+    __tablename__ = "agent_executions"
+    __table_args__ = (
+        Index("agent_executions_conversationId_status_idx", "conversationId", "status"),
+        Index("agent_executions_taskId_key", "taskId", unique=True),
+        CheckConstraint("jsonb_typeof(resumeContext) = 'object'", name="resume_context_object"),
+    )
+
+    id: Mapped[UUID] = mapped_column(UUIDType(as_uuid=True), primary_key=True, default=new_uuid)
+    conversationId: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True),
+        ForeignKey("agent_conversations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    taskId: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True), ForeignKey("durable_tasks.id", ondelete="RESTRICT"), nullable=False
+    )
+    userMessageId: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True), ForeignKey("agent_messages.id", ondelete="RESTRICT"), nullable=False
+    )
+    requestedByUserId: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    status: Mapped[AgentExecutionStatus] = mapped_column(
+        Enum(AgentExecutionStatus, name="AgentExecutionStatus", native_enum=True),
+        nullable=False,
+        server_default="RUNNING",
+    )
+    resumeContext: Mapped[dict[str, JSONValue]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    createdAt: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True, precision=3),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updatedAt: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True, precision=3), nullable=False, default=utc_now, onupdate=utc_now
+    )
+    completedAt: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True, precision=3))
+
+
+class AgentInteraction(Base):
+    __tablename__ = "agent_interactions"
+    __table_args__ = (
+        Index("agent_interactions_ownerUserId_status_idx", "ownerUserId", "status"),
+        Index("agent_interactions_conversationId_status_idx", "conversationId", "status"),
+        Index("agent_interactions_executionId_idx", "executionId"),
+        CheckConstraint("jsonb_typeof(candidateOptions) = 'array'", name="candidate_options_array"),
+        CheckConstraint(
+            "jsonb_typeof(resumeContext) = 'object'", name="interaction_context_object"
+        ),
+    )
+
+    id: Mapped[UUID] = mapped_column(UUIDType(as_uuid=True), primary_key=True, default=new_uuid)
+    executionId: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True),
+        ForeignKey("agent_executions.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    conversationId: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True),
+        ForeignKey("agent_conversations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    ownerUserId: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    type: Mapped[AgentInteractionType] = mapped_column(
+        Enum(AgentInteractionType, name="AgentInteractionType", native_enum=True), nullable=False
+    )
+    status: Mapped[AgentInteractionStatus] = mapped_column(
+        Enum(AgentInteractionStatus, name="AgentInteractionStatus", native_enum=True),
+        nullable=False,
+        server_default="OPEN",
+    )
+    candidateOptions: Mapped[list[JSONValue]] = mapped_column(JSONB, nullable=False)
+    resumeContext: Mapped[dict[str, JSONValue]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    responseAction: Mapped[AgentInteractionAction | None] = mapped_column(
+        Enum(AgentInteractionAction, name="AgentInteractionAction", native_enum=True)
+    )
+    responsePayload: Mapped[dict[str, JSONValue] | None] = mapped_column(JSONB)
+    createdAt: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True, precision=3),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    expiresAt: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True, precision=3), nullable=False
+    )
+    resolvedAt: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True, precision=3))
 
 
 class AgentMessage(Base):
@@ -166,7 +288,7 @@ class AgentExecutionConfig(Base):
     __tablename__ = "agent_execution_configs"
     __table_args__ = (
         Index("agent_execution_configs_taskId_key", "taskId", unique=True),
-        Index("agent_execution_configs_userMessageId_key", "userMessageId", unique=True),
+        Index("agent_execution_configs_userMessageId_idx", "userMessageId"),
         CheckConstraint(
             '("providerConfigId" IS NULL AND "providerNameSnapshot" IS NULL '
             'AND "endpointSnapshot" IS NULL AND "modelSnapshot" IS NULL '
