@@ -13,6 +13,7 @@ from risk_platform.agent.execution import AgentProviderError
 from risk_platform.agent.models import AgentExecutionConfig
 from risk_platform.ai_providers.client import (
     AiProviderClient,
+    ConnectionOutcome,
     ProviderCompletionResult,
     ProviderRequestError,
 )
@@ -25,6 +26,7 @@ from risk_platform.ai_providers.schemas import CreateProviderRequest, DraftTestR
 from risk_platform.ai_providers.service import AiProvidersService
 from risk_platform.composition import AgentProviderAdapter
 from risk_platform.shared.crypto import KeyRing, SecretCipher
+from risk_platform.shared.outbound import OutboundEndpointGuard
 
 
 def test_provider_contract_rejects_plain_http_and_short_key() -> None:
@@ -110,6 +112,98 @@ def test_provider_http_errors_do_not_collapse_to_unreachable() -> None:
     assert AiProviderClient._http_error(500).code == "HTTP_5XX"
     with pytest.raises(ProviderRequestError, match="PROVIDER_INVALID_OUTPUT"):
         AiProviderClient._parse(AiProviderProtocol.OPENAI_RESPONSES, "{}")
+
+
+@pytest.mark.parametrize(
+    ("body", "expected_success", "expected_code"),
+    [
+        (
+            '{"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"pong"}]}]}',
+            True,
+            None,
+        ),
+        (
+            '{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[{"type":"reasoning","summary":[]}]}',
+            True,
+            None,
+        ),
+        ("not-json", False, "PROVIDER_INVALID_OUTPUT"),
+        ('{"status":"completed"}', False, "PROVIDER_INVALID_OUTPUT"),
+    ],
+)
+def test_responses_connection_test_validates_protocol_not_output_text(
+    body: str, expected_success: bool, expected_code: str | None
+) -> None:
+    async def resolver(_host: str, _port: int) -> tuple[str, ...]:
+        return ("93.184.216.34",)
+
+    async def scenario() -> tuple[ConnectionOutcome, dict[str, object]]:
+        client = AiProviderClient(OutboundEndpointGuard(resolver=resolver))
+        sent: dict[str, object] = {}
+
+        def request(
+            _url: str,
+            _headers: dict[str, str],
+            payload: dict[str, object] | None,
+            _timeout_seconds: int,
+        ) -> tuple[int, str]:
+            assert payload is not None
+            sent.update(payload)
+            return 200, body
+
+        client._request = request  # type: ignore[assignment]
+        outcome = await client.test(
+            "https://provider.example.test/v1",
+            "model",
+            "secret",
+            60,
+            0,
+            AiProviderProtocol.OPENAI_RESPONSES,
+        )
+        return outcome, sent
+
+    outcome, sent = asyncio.run(scenario())
+    assert outcome.success is expected_success
+    assert outcome.error_code == expected_code
+    assert sent["max_output_tokens"] == 256
+
+
+def test_responses_complete_rejects_reasoning_only_output() -> None:
+    async def resolver(_host: str, _port: int) -> tuple[str, ...]:
+        return ("93.184.216.34",)
+
+    async def scenario() -> dict[str, object]:
+        client = AiProviderClient(OutboundEndpointGuard(resolver=resolver))
+        sent: dict[str, object] = {}
+
+        def request(
+            _url: str,
+            _headers: dict[str, str],
+            payload: dict[str, object] | None,
+            _timeout_seconds: int,
+        ) -> tuple[int, str]:
+            assert payload is not None
+            sent.update(payload)
+            return (
+                200,
+                '{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[{"type":"reasoning","summary":[]}]}',
+            )
+
+        client._request = request  # type: ignore[assignment]
+        with pytest.raises(ProviderRequestError, match="PROVIDER_INVALID_OUTPUT"):
+            await client.complete(
+                "https://provider.example.test/v1",
+                AiProviderProtocol.OPENAI_RESPONSES,
+                "model",
+                "secret",
+                {"business": "payload"},
+                60,
+                0,
+            )
+        return sent
+
+    sent = asyncio.run(scenario())
+    assert sent["max_output_tokens"] == 1024
 
 
 @pytest.mark.parametrize(

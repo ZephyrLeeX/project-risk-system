@@ -70,6 +70,10 @@ class AiProviderClient:
                 )
                 if not 200 <= status < 300:
                     raise self._http_error(status)
+            elif protocol is AiProviderProtocol.OPENAI_RESPONSES:
+                await self._test_completion_endpoint(
+                    endpoint, protocol, model, api_key, timeout_seconds, retry_count
+                )
             else:
                 await self.complete(
                     endpoint,
@@ -148,6 +152,51 @@ class AiProviderClient:
                 raise last
         raise AssertionError("unreachable")
 
+    async def _test_completion_endpoint(
+        self,
+        endpoint: str,
+        protocol: AiProviderProtocol,
+        model: str,
+        api_key: str,
+        timeout_seconds: int,
+        retry_count: int,
+    ) -> None:
+        """Verify a completion endpoint without requiring a business-ready response.
+
+        Normal completions must yield usable text and continue through ``_parse``.
+        A connection test only establishes that the endpoint accepted a valid request.
+        """
+        resolved = await self._guard.resolve_provider(endpoint)
+        url, last = provider_subresource_url(resolved, self._operation(protocol)), None
+        for attempt in range(retry_count + 1):
+            try:
+                await self._guard.revalidate(resolved)
+                status, body = await asyncio.to_thread(
+                    self._request,
+                    url,
+                    self._headers(protocol, api_key),
+                    self._payload(protocol, model, {"connection_test": True}, True),
+                    timeout_seconds,
+                )
+                if not 200 <= status < 300:
+                    raise self._http_error(status)
+                if protocol is AiProviderProtocol.OPENAI_RESPONSES:
+                    self._validate_responses_connection_response(body)
+                else:
+                    self._parse(protocol, body)
+                return
+            except TimeoutError:
+                last = ProviderRequestError("UPSTREAM_TIMEOUT", retryable=True)
+            except urllib.error.URLError:
+                last = ProviderRequestError("UPSTREAM_UNREACHABLE", retryable=True)
+            except (OSError, ValueError):
+                last = ProviderRequestError("UPSTREAM_UNREACHABLE", retryable=True)
+            except ProviderRequestError as error:
+                last = error
+            if last is not None and (not last.retryable or attempt == retry_count):
+                raise last
+        raise AssertionError("unreachable")
+
     @staticmethod
     def _operation(protocol: AiProviderProtocol) -> str:
         return {
@@ -184,7 +233,7 @@ class AiProviderClient:
             request: dict[str, object] = {
                 "model": model,
                 "input": content,
-                "max_output_tokens": 16 if test_mode else 1024,
+                "max_output_tokens": 256 if test_mode else 1024,
                 "store": False,
             }
             if system_instruction is not None and not test_mode:
@@ -249,6 +298,20 @@ class AiProviderClient:
                 raise ValueError
             return text, tokens
         except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError):
+            raise ProviderRequestError("PROVIDER_INVALID_OUTPUT", retryable=False) from None
+
+    @staticmethod
+    def _validate_responses_connection_response(body: str) -> None:
+        """Accept the minimum successful Responses API envelope for a connection test."""
+        try:
+            value: Any = json.loads(body)
+            if (
+                not isinstance(value, dict)
+                or not isinstance(value.get("status"), str)
+                or not isinstance(value.get("output"), list)
+            ):
+                raise ValueError
+        except (TypeError, ValueError, json.JSONDecodeError):
             raise ProviderRequestError("PROVIDER_INVALID_OUTPUT", retryable=False) from None
 
     @staticmethod
