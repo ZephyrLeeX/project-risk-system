@@ -26,7 +26,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from risk_platform.admin.models import User
 from risk_platform.agent.api import get_agent_service, get_confirmation_service, router
 from risk_platform.agent.confirmation import AgentConfirmationService
-from risk_platform.agent.events import append_event, open_event_stream, request_cancellation
+from risk_platform.agent.events import (
+    append_event,
+    open_event_stream,
+    request_cancellation,
+    wire_event,
+)
 from risk_platform.agent.execution import (
     AgentExecutionWorker,
     AgentGroundingRequired,
@@ -1394,42 +1399,118 @@ def test_postgresql_sse_resume_cursor_and_asgi_framing(
             await open_event_stream(database, conversation_id, OWNER, uuid.uuid4())
         assert error.value.code == "AGENT_EVENT_CURSOR_UNRECOVERABLE"
 
-        idle_conversation, idle_task = await _created(database, "idle")
-        idle_stream = await open_event_stream(
+        retry_conversation, retry_task = await _created(database, "retry-wait")
+        async with database.begin() as session:
+            retry_task_row = await session.get(DurableTask, retry_task)
+            assert retry_task_row is not None
+            retry_task_row.status = DurableTaskStatus.RETRY_WAIT
+            retry_task_row.nextRetryAt = datetime.now(UTC) + timedelta(seconds=60)
+        retry_stream = await open_event_stream(
             database,
-            idle_conversation,
+            retry_conversation,
             OWNER,
             None,
             poll_interval=0.005,
             idle_seconds=0.02,
+            keepalive_seconds=0.005,
         )
-        idle_chunks = [chunk async for chunk in idle_stream]
-        assert len(idle_chunks) == 1
-        assert b"AGENT_STREAM_IDLE_TIMEOUT" in idle_chunks[0]
-        repeated_idle_stream = await open_event_stream(
-            database,
-            idle_conversation,
-            OWNER,
-            None,
-            poll_interval=0.005,
-            idle_seconds=0.02,
-        )
-        assert [chunk async for chunk in repeated_idle_stream] == []
+        assert await anext(retry_stream) == b": keepalive\n\n"
         async with database() as session:
-            idle_config = await session.scalar(
-                select(AgentExecutionConfig).where(AgentExecutionConfig.taskId == idle_task)
-            )
-            assert idle_config is not None
-            assert idle_config.cancellationRequestedAt is None
             assert int(
                 await session.scalar(
                     select(func.count(AgentEvent.id)).where(
-                        AgentEvent.conversationId == idle_conversation,
+                        AgentEvent.conversationId == retry_conversation
+                    )
+                )
+                or 0
+            ) == 0
+            assert int(
+                await session.scalar(
+                    select(func.count(AgentEvent.id)).where(
+                        AgentEvent.conversationId == retry_conversation,
                         AgentEvent.payload["code"].as_string() == "AGENT_STREAM_IDLE_TIMEOUT",
                     )
                 )
                 or 0
-            ) == 1
+            ) == 0
+
+        # The second durable backoff is 60 seconds in production. It uses the
+        # same read-side semantics and cannot race the old 60-second watchdog.
+        async with database.begin() as session:
+            retry_task_row = await session.get(DurableTask, retry_task)
+            assert retry_task_row is not None
+            retry_task_row.nextRetryAt = datetime.now(UTC) + timedelta(seconds=60)
+            now = datetime.now(UTC)
+            retry_task_row.status = DurableTaskStatus.RUNNING
+            retry_task_row.leaseToken = uuid.uuid4()
+            retry_task_row.leaseOwner = "retry-completion-test"
+            retry_task_row.heartbeatAt = now
+            retry_task_row.leaseExpiresAt = now + timedelta(seconds=90)
+        async with database.begin() as session:
+            retry_task_row = await session.get(DurableTask, retry_task)
+            assert retry_task_row is not None
+            config = await session.scalar(
+                select(AgentExecutionConfig).where(AgentExecutionConfig.taskId == retry_task)
+            )
+            assert config is not None
+            retry_message_id = config.userMessageId
+            retry_task_row.status = DurableTaskStatus.SUCCEEDED
+            retry_task_row.nextRetryAt = None
+            retry_task_row.leaseToken = None
+            retry_task_row.leaseOwner = None
+            retry_task_row.heartbeatAt = None
+            retry_task_row.leaseExpiresAt = None
+            retry_task_row.completedAt = datetime.now(UTC)
+            completed = await append_event(
+                session,
+                conversation_id=retry_conversation,
+                message_id=retry_message_id,
+                task_id=retry_task,
+                event_type=AgentEventType.COMPLETED,
+                payload={"dataAsOf": datetime.now(UTC).isoformat(), "traceId": "t029-trace"},
+            )
+        assert await anext(retry_stream) == wire_event(completed)
+        with pytest.raises(RuntimeError, match="AGENT_EVENT_AFTER_TERMINAL"):
+            async with database.begin() as session:
+                await append_event(
+                    session,
+                    conversation_id=retry_conversation,
+                    message_id=retry_message_id,
+                    task_id=retry_task,
+                    event_type=AgentEventType.MESSAGE_DELTA,
+                    payload={"text": "must not follow completed", "traceId": "t029-trace"},
+                )
+        assert [chunk async for chunk in retry_stream] == []
+
+        running_conversation, running_task = await _created(database, "running-idle")
+        async with database.begin() as session:
+            running_task_row = await session.get(DurableTask, running_task)
+            assert running_task_row is not None
+            now = datetime.now(UTC)
+            running_task_row.status = DurableTaskStatus.RUNNING
+            running_task_row.leaseToken = uuid.uuid4()
+            running_task_row.leaseOwner = "sse-watchdog-test"
+            running_task_row.heartbeatAt = now
+            running_task_row.leaseExpiresAt = now + timedelta(seconds=90)
+        running_stream = await open_event_stream(
+            database,
+            running_conversation,
+            OWNER,
+            None,
+            poll_interval=0.005,
+            idle_seconds=0.02,
+            keepalive_seconds=0.005,
+        )
+        assert [chunk async for chunk in running_stream] == []
+        async with database() as session:
+            assert int(
+                await session.scalar(
+                    select(func.count(AgentEvent.id)).where(
+                        AgentEvent.conversationId == running_conversation
+                    )
+                )
+                or 0
+            ) == 0
 
         disconnect_conversation, disconnect_task = await _created(database, "disconnect")
         disconnect_stream = await open_event_stream(

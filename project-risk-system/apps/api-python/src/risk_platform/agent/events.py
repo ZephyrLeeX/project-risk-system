@@ -21,7 +21,6 @@ from .models import (
     AgentEvent,
     AgentEventType,
     AgentExecutionConfig,
-    AgentMessage,
 )
 
 MAX_PENDING_EVENTS = 256
@@ -51,6 +50,16 @@ async def append_event(
     )
     if conversation is None:
         raise RuntimeError("AGENT_EXECUTION_CONFIG_INVALID")
+    terminal_event = await session.scalar(
+        select(AgentEvent.id)
+        .where(
+            AgentEvent.taskId == task_id,
+            AgentEvent.type.in_(TERMINAL_EVENT_TYPES),
+        )
+        .limit(1)
+    )
+    if terminal_event is not None:
+        raise RuntimeError("AGENT_EVENT_AFTER_TERMINAL")
     event = AgentEvent(
         conversationId=conversation_id,
         messageId=message_id,
@@ -109,6 +118,7 @@ async def open_event_stream(
     *,
     poll_interval: float = 1.0,
     idle_seconds: float = 60.0,
+    keepalive_seconds: float = 15.0,
 ) -> AsyncIterator[bytes]:
     """Validate before headers are sent, then return a PostgreSQL-backed stream."""
 
@@ -141,6 +151,7 @@ async def open_event_stream(
         after_sequence,
         poll_interval=poll_interval,
         idle_seconds=idle_seconds,
+        keepalive_seconds=keepalive_seconds,
     )
 
 
@@ -151,11 +162,13 @@ async def _stream(
     *,
     poll_interval: float,
     idle_seconds: float,
+    keepalive_seconds: float,
 ) -> AsyncIterator[bytes]:
     terminal_seen = False
     normal_close = False
     loop = asyncio.get_running_loop()
     last_fact_at = loop.time()
+    last_keepalive_at = last_fact_at
     try:
         while True:
             async with sessions() as session:
@@ -182,10 +195,22 @@ async def _stream(
                     normal_close = True
                     return
                 continue
-            if loop.time() - last_fact_at >= idle_seconds:
-                idle_event = await _append_idle_timeout(sessions, conversation_id)
-                if idle_event is not None:
-                    yield wire_event(idle_event)
+            status = await _latest_task_status(sessions, conversation_id)
+            now = loop.time()
+            if status in (DurableTaskStatus.QUEUED, DurableTaskStatus.RETRY_WAIT):
+                # Queueing and durable retry backoff are expected periods without
+                # AgentEvent facts. Keep the HTTP transport alive without changing
+                # the execution's durable outcome or resume cursor.
+                if now - last_keepalive_at >= keepalive_seconds:
+                    yield b": keepalive\n\n"
+                    last_keepalive_at = now
+            elif status == DurableTaskStatus.RUNNING and now - last_fact_at >= idle_seconds:
+                # A RUNNING execution should write durable heartbeats. This is a
+                # delivery watchdog only: closing lets EventSource reconnect while
+                # leaving task lifecycle ownership with the fenced worker.
+                normal_close = True
+                return
+            elif status not in ACTIVE_STATUSES:
                 normal_close = True
                 return
             await asyncio.sleep(poll_interval)
@@ -214,54 +239,21 @@ async def request_cancellation(
         return bool(type_cast(CursorResult[object], result).rowcount)
 
 
-async def _append_idle_timeout(
+async def _latest_task_status(
     sessions: async_sessionmaker[AsyncSession], conversation_id: UUID
-) -> AgentEvent | None:
-    async with sessions.begin() as session:
-        row = await session.execute(
-            select(AgentExecutionConfig, DurableTask)
-            .join(DurableTask, DurableTask.id == AgentExecutionConfig.taskId)
-            .where(
-                AgentExecutionConfig.conversationId == conversation_id,
-                DurableTask.status.in_(ACTIVE_STATUSES),
-            )
-            .order_by(AgentExecutionConfig.createdAt.desc())
-            .with_for_update(of=DurableTask)
-            .limit(1)
-        )
-        pair = row.one_or_none()
-        if pair is None:
-            return None
-        config, task = pair
-        existing = await session.scalar(
-            select(AgentEvent.id).where(
-                AgentEvent.taskId == task.id,
-                AgentEvent.type == AgentEventType.ERROR,
-                AgentEvent.payload["code"].as_string() == "AGENT_STREAM_IDLE_TIMEOUT",
-            )
-        )
-        if existing is not None:
-            return None
-        trace_id = await session.scalar(
-            select(AgentMessage.traceId).where(AgentMessage.id == config.userMessageId)
-        )
-        if trace_id is None:
-            return None
-        payload = {
-            "code": "AGENT_STREAM_IDLE_TIMEOUT",
-            "message": "Agent事件流空闲超时; 请使用会话记录恢复",
-            "retryable": True,
-            "traceId": trace_id,
-        }
-        if not await event_capacity_available(session, conversation_id, payload):
-            return None
-        return await append_event(
-            session,
-            conversation_id=conversation_id,
-            message_id=config.userMessageId,
-            task_id=task.id,
-            event_type=AgentEventType.ERROR,
-            payload=payload,
+) -> DurableTaskStatus | None:
+    """Return the current execution state without treating transport as business state."""
+
+    async with sessions() as session:
+        return type_cast(
+            DurableTaskStatus | None,
+            await session.scalar(
+                select(DurableTask.status)
+                .join(AgentExecutionConfig, AgentExecutionConfig.taskId == DurableTask.id)
+                .where(AgentExecutionConfig.conversationId == conversation_id)
+                .order_by(AgentExecutionConfig.createdAt.desc())
+                .limit(1)
+            ),
         )
 
 
