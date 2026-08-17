@@ -33,6 +33,27 @@ describe("live UI layout regressions", () => {
     expect(prototypePageStyles).toContain(".agent-drawer{display:flex");
   });
 
+  it("offers a disabled new-conversation control that resets locally", () => {
+    expect(dashboardView).toContain('class="agent-header-actions"');
+    expect(dashboardView).toContain("＋ 新建对话");
+    expect(dashboardView).toContain(':disabled="agent.sending.value"');
+    expect(dashboardView).toContain("function startNewAgentConversation(): void");
+    expect(dashboardView).toContain("agent.reset();");
+    expect(dashboardView).toContain('agentInput.value = "";');
+    expect(dashboardView).toContain(
+      "v-if=\"!agent.state.messages.length && agent.state.status === 'idle'\"",
+    );
+    expect(prototypePageStyles).toContain(".agent-header-actions{display:flex");
+  });
+
+  it("offers a new conversation only for the stale execution configuration", () => {
+    expect(dashboardView).toContain(
+      "agent.state.error.code === 'AGENT_EXECUTION_CONFIG_INVALID'",
+    );
+    expect(dashboardView).toContain("v-else-if=\"agent.state.error.code");
+    expect(dashboardView).toContain("@click=\"startNewAgentConversation\"");
+  });
+
   it("uses a styled retry control for weekly-report errors", () => {
     expect(dashboardView).toContain('class="weekly-report-state is-error"');
     expect(dashboardView).toContain('class="admin-outline-button weekly-state-button"');

@@ -394,6 +394,13 @@ function closeAgent(): void {
   agentOpen.value = false;
 }
 
+/** Start fresh locally; the first subsequent send lazily creates the new conversation. */
+function startNewAgentConversation(): void {
+  if (agent.sending.value) return;
+  agent.reset();
+  agentInput.value = "";
+}
+
 async function loadAgentHelp(): Promise<void> {
   if (agentHelp.value) return;
   try {
@@ -2091,7 +2098,16 @@ onUnmounted(() => {
           <h2>Agent 智能对话</h2>
           <span>仅使用您有权访问的数据</span>
         </div>
-        <button type="button" aria-label="关闭" @click="closeAgent">×</button>
+        <div class="agent-header-actions">
+          <button
+            type="button"
+            :disabled="agent.sending.value"
+            @click="startNewAgentConversation"
+          >
+            ＋ 新建对话
+          </button>
+          <button type="button" aria-label="关闭" @click="closeAgent">×</button>
+        </div>
       </header>
 
       <div v-if="agentHelp && agentHelp.tools.length" class="agent-tools">
@@ -2189,6 +2205,13 @@ onUnmounted(() => {
         {{ agentErrorLabel(agent.state.error.code, agent.state.error.message) }}
         <button v-if="agent.state.error.retryable" type="button" @click="agent.retry()">
           重试
+        </button>
+        <button
+          v-else-if="agent.state.error.code === 'AGENT_EXECUTION_CONFIG_INVALID'"
+          type="button"
+          @click="startNewAgentConversation"
+        >
+          新建对话
         </button>
       </p>
 
