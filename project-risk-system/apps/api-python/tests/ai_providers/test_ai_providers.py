@@ -16,6 +16,7 @@ from risk_platform.ai_providers.client import (
     ConnectionOutcome,
     ProviderCompletionResult,
     ProviderRequestError,
+    ProviderResponseResult,
 )
 from risk_platform.ai_providers.models import (
     AiConnectionStatus,
@@ -286,7 +287,7 @@ def test_agent_adapter_keeps_invalid_2xx_output_distinct_from_upstream_rejection
         providerConfigId=uuid4(),
         providerNameSnapshot="provider",
         endpointSnapshot="https://provider.example.test/v1",
-        protocolSnapshot=AiProviderProtocol.OPENAI_RESPONSES.value,
+        protocolSnapshot=AiProviderProtocol.OPENAI_CHAT_COMPLETIONS.value,
         modelSnapshot="model",
         encryptedApiKeySnapshot=cipher.encrypt("secret-key").envelope,
         timeoutSeconds=90,
@@ -313,6 +314,95 @@ def test_agent_adapter_keeps_invalid_2xx_output_distinct_from_upstream_rejection
         assert not upstream.value.retryable
 
     asyncio.run(run())
+
+
+def test_responses_agent_adapter_normalizes_reasoning_then_native_tool_call() -> None:
+    cipher = SecretCipher(KeyRing(active_version="v1", keys={"v1": b"0" * 32}))
+    adapter = AgentProviderAdapter(cipher)
+    config = _agent_responses_config(cipher)
+
+    async def native(*_args: object, **_kwargs: object) -> ProviderResponseResult:
+        return ProviderResponseResult(
+            {
+                "output": [
+                    {"type": "reasoning", "summary": []},
+                    {"type": "function_call", "name": "project_list", "arguments": "{}"},
+                ]
+            },
+            {"input": 1, "output": 1, "total": 2},
+            1,
+        )
+
+    async def run() -> dict[str, object]:
+        adapter._client.complete_response = native  # type: ignore[method-assign]
+        result = await adapter(config, _agent_request("PLAN"))
+        return json.loads(result.body)
+
+    assert asyncio.run(run()) == {
+        "protocol": "AGENT_PROVIDER_EXECUTION_V2",
+        "phase": "PLAN",
+        "grounded": True,
+        "actions": [{"type": "tool_call", "name": "project_list", "arguments": {}}],
+    }
+
+
+def test_responses_agent_adapter_normalizes_message_text_after_tools() -> None:
+    cipher = SecretCipher(KeyRing(active_version="v1", keys={"v1": b"0" * 32}))
+    adapter = AgentProviderAdapter(cipher)
+    config = _agent_responses_config(cipher)
+
+    async def native(*_args: object, **_kwargs: object) -> ProviderResponseResult:
+        return ProviderResponseResult(
+            {
+                "output": [
+                    {"type": "reasoning", "summary": []},
+                    {
+                        "type": "message",
+                        "content": [{"type": "output_text", "text": "有 1 个项目。"}],
+                    },
+                ]
+            },
+            {"input": 1, "output": 1, "total": 2},
+            1,
+        )
+
+    async def run() -> dict[str, object]:
+        adapter._client.complete_response = native  # type: ignore[method-assign]
+        result = await adapter(config, _agent_request("RESPOND"))
+        return json.loads(result.body)
+
+    assert asyncio.run(run())["actions"] == [{"type": "text_delta", "text": "有 1 个项目。"}]
+
+
+def _agent_responses_config(cipher: SecretCipher) -> AgentExecutionConfig:
+    return AgentExecutionConfig(
+        taskId=uuid4(),
+        conversationId=uuid4(),
+        userMessageId=uuid4(),
+        requestedByUserId=uuid4(),
+        providerConfigId=uuid4(),
+        providerNameSnapshot="provider",
+        endpointSnapshot="https://provider.example.test/v1",
+        protocolSnapshot=AiProviderProtocol.OPENAI_RESPONSES.value,
+        modelSnapshot="model",
+        encryptedApiKeySnapshot=cipher.encrypt("secret-key").envelope,
+        timeoutSeconds=90,
+    )
+
+
+def _agent_request(phase: str) -> dict[str, object]:
+    return {
+        "protocol": "AGENT_PROVIDER_EXECUTION_V2",
+        "phase": phase,
+        "systemInstruction": "policy",
+        "tools": [
+            {
+                "name": "project_list",
+                "description": "list",
+                "argumentsSchema": {"type": "object", "properties": {}},
+            }
+        ],
+    }
 
 
 def _healthy_provider() -> AiProviderConfig:

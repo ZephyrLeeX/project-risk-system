@@ -36,6 +36,15 @@ class ProviderCompletionResult:
     latency_ms: int
 
 
+@dataclass(frozen=True, slots=True)
+class ProviderResponseResult:
+    """Decoded Responses transport envelope, before application normalization."""
+
+    value: dict[str, object]
+    usage: dict[str, int]
+    latency_ms: int
+
+
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(
         self, request: object, fp: object, code: int, msg: str, headers: object, newurl: str
@@ -152,6 +161,58 @@ class AiProviderClient:
                 raise last
         raise AssertionError("unreachable")
 
+    async def complete_response(
+        self,
+        endpoint: str,
+        model: str,
+        api_key: str,
+        payload: Mapping[str, object],
+        timeout_seconds: int,
+    ) -> ProviderResponseResult:
+        """Call a Responses endpoint without assuming its output is text.
+
+        This is intentionally separate from ``complete``: callers that need native
+        function calls must inspect the transport item types before normalizing them.
+        """
+        resolved = await self._guard.resolve_provider(endpoint)
+        await self._guard.revalidate(resolved)
+        started = time.monotonic()
+        try:
+            status, body = await asyncio.to_thread(
+                self._request,
+                provider_subresource_url(
+                    resolved, self._operation(AiProviderProtocol.OPENAI_RESPONSES)
+                ),
+                self._headers(AiProviderProtocol.OPENAI_RESPONSES, api_key),
+                self._payload(AiProviderProtocol.OPENAI_RESPONSES, model, payload, False),
+                timeout_seconds,
+            )
+            if not 200 <= status < 300:
+                raise self._http_error(status)
+            value: Any = json.loads(body)
+            if not isinstance(value, dict) or not isinstance(value.get("output"), list):
+                raise ProviderRequestError("PROVIDER_INVALID_OUTPUT", retryable=False)
+            usage = value.get("usage", {})
+            if not isinstance(usage, dict):
+                usage = {}
+            return ProviderResponseResult(
+                value,
+                {
+                    "input": int(usage.get("input_tokens", 0)),
+                    "output": int(usage.get("output_tokens", 0)),
+                    "total": int(usage.get("total_tokens", 0)),
+                },
+                self._elapsed(started),
+            )
+        except TimeoutError:
+            raise ProviderRequestError("UPSTREAM_TIMEOUT", retryable=True) from None
+        except urllib.error.URLError:
+            raise ProviderRequestError("UPSTREAM_UNREACHABLE", retryable=True) from None
+        except OSError:
+            raise ProviderRequestError("UPSTREAM_UNREACHABLE", retryable=True) from None
+        except (TypeError, ValueError, json.JSONDecodeError):
+            raise ProviderRequestError("PROVIDER_INVALID_OUTPUT", retryable=False) from None
+
     async def _test_completion_endpoint(
         self,
         endpoint: str,
@@ -238,6 +299,10 @@ class AiProviderClient:
             }
             if system_instruction is not None and not test_mode:
                 request["instructions"] = system_instruction
+            native_tools = data_payload.pop("_responsesNativeTools", None)
+            if native_tools is not None and not test_mode:
+                request["input"] = json.dumps(data_payload, ensure_ascii=False)
+                request["tools"] = native_tools
             return request
         messages = [{"role": "user", "content": content}]
         request = {
@@ -377,4 +442,5 @@ __all__ = [
     "ConnectionOutcome",
     "ProviderCompletionResult",
     "ProviderRequestError",
+    "ProviderResponseResult",
 ]
