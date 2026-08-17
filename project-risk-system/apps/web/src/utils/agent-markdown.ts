@@ -19,6 +19,7 @@ const renderer = new MarkdownIt({
 renderer.validateLink = isAllowedLink;
 renderer.renderer.rules.link_open = (tokens, index, options, _env, self) => {
   const token = tokens[index];
+  if (!token) return "";
   token.attrSet("target", "_blank");
   token.attrSet("rel", "noopener noreferrer");
   return self.renderToken(tokens, index, options);
