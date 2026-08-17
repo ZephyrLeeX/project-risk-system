@@ -17,7 +17,11 @@ from sqlalchemy import create_engine, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from risk_platform.admin.models import User
-from risk_platform.agent.schemas import ProjectListToolResponse
+from risk_platform.agent.schemas import (
+    ProjectDetailToolResponse,
+    ProjectListToolResponse,
+    RiskCategoryListToolResponse,
+)
 from risk_platform.agent.service import AgentConversationService
 from risk_platform.agent.tools import AgentToolRegistry, AgentToolResultTypeError
 from risk_platform.auth.schemas import AuthenticatedUser
@@ -118,7 +122,9 @@ def test_tool_registry_is_closed_and_help_is_permission_filtered() -> None:
         WeeklyReportService(None),  # type: ignore[arg-type]
     )
     assert {item.name for item in registry.help(identity())} == {
-        "project_list",
+        "project_search",
+        "project_detail",
+        "risk_category_list",
         "dashboard_summary",
         "dashboard_focus",
         "risk_list",
@@ -143,14 +149,14 @@ def test_tool_registry_fails_closed_when_a_tool_returns_none() -> None:
         TodosService(None),  # type: ignore[arg-type]
         WeeklyReportService(None),  # type: ignore[arg-type]
     )
-    original = registry._by_name["project_list"]
+    original = registry._by_name["project_search"]
 
     async def returns_none(*_args: object, **_kwargs: object) -> None:
         return None
 
-    registry._by_name["project_list"] = replace(original, call=returns_none)
+    registry._by_name["project_search"] = replace(original, call=returns_none)
     with pytest.raises(AgentToolResultTypeError):
-        asyncio.run(registry.invoke(identity(), "project_list", {}, trace_id="trace"))
+        asyncio.run(registry.invoke(identity(), "project_search", {}, trace_id="trace"))
 
 
 def test_all_agent_tools_adapt_their_declared_runtime_result_to_agent_tool_result() -> None:
@@ -162,7 +168,11 @@ def test_all_agent_tools_adapt_their_declared_runtime_result_to_agent_tool_resul
         WeeklyReportService(None),  # type: ignore[arg-type]
     )
     values: dict[str, object] = {
-        "project_list": ProjectListToolResponse(items=[], page=1, pageSize=20, total=0),
+        "project_search": ProjectListToolResponse(items=[], page=1, pageSize=20, total=0),
+        "project_detail": ProjectDetailToolResponse(
+            id=uuid.uuid4(), name="项目", alias=None, status="DELIVERY"
+        ),
+        "risk_category_list": RiskCategoryListToolResponse(items=[]),
         "dashboard_summary": DashboardSummary.model_construct(),
         "dashboard_focus": [],
         "risk_list": RiskPage.model_construct(),
@@ -173,7 +183,9 @@ def test_all_agent_tools_adapt_their_declared_runtime_result_to_agent_tool_resul
         "weekly_report_detail": WeeklyProjectDetail.model_construct(),
     }
     arguments = {
-        "project_list": {},
+        "project_search": {},
+        "project_detail": {"projectId": str(uuid.uuid4())},
+        "risk_category_list": {},
         "dashboard_summary": {},
         "dashboard_focus": {},
         "risk_list": {},

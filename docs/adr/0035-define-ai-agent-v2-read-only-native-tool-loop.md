@@ -43,9 +43,12 @@ preview/mutation 语义。AI Agent V2 V1 要以 ADR 0034 的 provider-neutral
 - 每个成功 Tool Result 是 typed、有限大小的事实，具有内部 `toolInvocationId`、`toolName`、
   `dataAsOf` 和安全 provenance；只有本 execution、当前用户授权的 Result 可作为业务事实依据。
   Core 持久化仅保存恢复/grounding 所需的有界数据及 provenance，遵守 retention 与 metadata-only logging。
-- 模型可基于事实分析、比较、排序、总结和建议，但须区分 Tool Fact、AI Analysis 与 AI
-  Recommendation。CandidateRisk 必须逐项包含 `evidenceSummary` 和 source invocation provenance；
-  缺任一真实 evidence/provenance 时 fail closed，输出零 candidate。
+- 项目及系统业务事实只能来自当前用户授权的 Tool Result。模型可基于这些事实进行分析、比较、
+  排序、总结和建议，并须区分 Tool Fact、AI Analysis 与 AI Recommendation。CandidateRisk 必须逐项
+  保存和展示 `basisType`（`SYSTEM_FACT`、`AI_ANALYSIS` 或 `MIXED`）与 `evidenceSummary`。
+  `SYSTEM_FACT`/`MIXED` 的 `sourceInvocationIds` 只关联实际使用的当前 execution 授权 Tool facts；
+  纯 `AI_ANALYSIS` 不伪造 invocation id。AI 的一般风险分析可以提出潜在风险，不能伪装成
+  `SYSTEM_FACT`，也不得虚构 Project、系统记录、金额、状态等系统事实。
 - 项目全名、简称、别名、不完整名以及地域辅助词只用于构造 `project_search`；最终项目候选必须逐一
   来自当前授权 result。多个候选且尚无 Interaction 时安全回答“需要进一步指定项目”，不得自行选择。
 - 错误层级固定为 Provider、scope/loop/grounding、Tool validation/auth/execution、business 与

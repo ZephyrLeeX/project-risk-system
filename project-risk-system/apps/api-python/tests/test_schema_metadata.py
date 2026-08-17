@@ -70,6 +70,50 @@ def test_metadata_has_final_prisma_tables_with_approved_audit_override() -> None
     )
     expected["mail_messages"].update({"uidValidity", "receivedAt", "receivedAtSource"})
     expected["ai_provider_configs"].add("protocol")
+    expected["ai_provider_accounts"] = {
+        "id",
+        "name",
+        "providerType",
+        "encryptedApiKey",
+        "keyLast4",
+        "enabled",
+        "health",
+        "lastHealthAt",
+        "lastHealthErrorCode",
+        "createdById",
+        "updatedById",
+        "createdAt",
+        "updatedAt",
+    }
+    expected["ai_model_configs"] = {
+        "id",
+        "accountId",
+        "modelName",
+        "enabled",
+        "isDefault",
+        "priority",
+        "timeoutSeconds",
+        "health",
+        "lastHealthAt",
+        "lastHealthErrorCode",
+        "createdAt",
+        "updatedAt",
+    }
+    expected["ai_provider_v2_call_logs"] = {
+        "id",
+        "accountId",
+        "modelConfigId",
+        "accountNameSnapshot",
+        "modelNameSnapshot",
+        "httpStatus",
+        "durationMs",
+        "inputTokens",
+        "outputTokens",
+        "totalTokens",
+        "result",
+        "errorClassification",
+        "createdAt",
+    }
     expected["durable_tasks"] = {
         "id",
         "kind",
@@ -218,15 +262,15 @@ def test_metadata_has_final_prisma_tables_with_approved_audit_override() -> None
         "requestedByUserId",
         "providerConfigId",
         "providerNameSnapshot",
-            "endpointSnapshot",
-            "protocolSnapshot",
+        "endpointSnapshot",
+        "protocolSnapshot",
         "modelSnapshot",
         "encryptedApiKeySnapshot",
         "timeoutSeconds",
         "cancellationRequestedAt",
         "createdAt",
     }
-    assert len(expected) == 39
+    assert len(expected) == 42
     assert set(metadata.tables) == set(expected)
     for table_name, columns in expected.items():
         assert set(metadata.tables[table_name].columns.keys()) == columns
@@ -264,14 +308,14 @@ def test_prisma_python_side_defaults_are_complete_without_ddl_drift() -> None:
         for table in metadata.tables.values()
         if "id" in table.c and len(table.primary_key.columns) == 1
     ]
-    assert len(uuid_default_columns) == 36
+    assert len(uuid_default_columns) == 39
     assert all(column.default is not None for column in uuid_default_columns)
     assert all(column.server_default is None for column in uuid_default_columns)
 
     updated_at_columns = [
         table.c.updatedAt for table in metadata.tables.values() if "updatedAt" in table.c
     ]
-    assert len(updated_at_columns) == 21
+    assert len(updated_at_columns) == 23
     assert all(column.default is not None for column in updated_at_columns)
     assert all(column.onupdate is not None for column in updated_at_columns)
     assert all(column.server_default is None for column in updated_at_columns)

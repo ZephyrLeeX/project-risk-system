@@ -7,12 +7,10 @@ import json
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from time import monotonic
-from typing import cast
 from uuid import uuid4
 
 from risk_platform.ai_providers.v2_adapter import (
     ProviderChatRequest,
-    ProviderChatResponse,
     ProviderMessage,
     ProviderRole,
     ProviderToolCall,
@@ -85,12 +83,15 @@ class ReadOnlyAgentCore:
             ProviderToolDefinition(item["name"], item["description"], item["argumentsSchema"])  # type: ignore[arg-type]
             for item in self._tools.catalogue(identity)
         )
-        snapshot = await self._candidate_snapshot()
+        # The candidate tuple is deliberately captured once per execution.
+        # Provider-admin changes made while this loop is running must only
+        # affect the next execution, never a later model round in this one.
+        snapshot = await self._runtime.candidate_snapshot()
         for _ in range(self._limits.max_model_rounds):
             self._within_time(started)
             self._within_context(messages)
             request = ProviderChatRequest(tuple(messages), definitions)
-            response = await self._chat(snapshot, request)
+            response = await self._runtime.chat_snapshot(snapshot, request)
             messages.append(
                 ProviderMessage(
                     ProviderRole.ASSISTANT, response.content, tool_calls=response.tool_calls
@@ -130,18 +131,6 @@ class ReadOnlyAgentCore:
             await self._identity_loader(original) if self._identity_loader is not None else original
         )
         return await self._tools.invoke(identity, call.name, call.arguments, trace_id=str(uuid4()))
-
-    async def _candidate_snapshot(self) -> object | None:
-        snapshot = getattr(self._runtime, "candidate_snapshot", None)
-        return await snapshot() if snapshot is not None else None
-
-    async def _chat(
-        self, snapshot: object | None, request: ProviderChatRequest
-    ) -> ProviderChatResponse:
-        chat_snapshot = getattr(self._runtime, "chat_snapshot", None)
-        if snapshot is not None and chat_snapshot is not None:
-            return cast(ProviderChatResponse, await chat_snapshot(snapshot, request))
-        return await self._runtime.chat(request)
 
     def _within_time(self, started: float) -> None:
         if monotonic() - started > self._limits.max_total_execution_time:

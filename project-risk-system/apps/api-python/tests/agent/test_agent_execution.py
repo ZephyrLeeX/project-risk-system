@@ -195,8 +195,10 @@ class FakeProvider:
             text = f"当前你有权限查看 {project_data['total']} 个项目, 包括:\n{names}"
         elif first["tool"] in {"dashboard_focus", "risk_list"}:
             risk_data = cast(list[Mapping[str, object]], data)
-            items = risk_data if first["tool"] == "dashboard_focus" else cast(
-                list[Mapping[str, object]], cast(Mapping[str, object], data)["items"]
+            items = (
+                risk_data
+                if first["tool"] == "dashboard_focus"
+                else cast(list[Mapping[str, object]], cast(Mapping[str, object], data)["items"])
             )
             titles = "\n".join(
                 f"{index}. {item['title']}" for index, item in enumerate(items, start=1)
@@ -267,7 +269,7 @@ class CategoryStaleProvider(FakeProvider):
                             "assigneeUserId": None,
                             "categoryOptionId": "C1",
                         },
-                    }
+                    },
                 ],
             }
         )
@@ -295,7 +297,12 @@ class SlowTools:
         del value, name, arguments
         await asyncio.sleep(self._delay)
         return AgentToolResult(
-            tool="risk_list", data={}, dataAsOf=datetime.now(UTC), traceId=trace_id
+            toolInvocationId=trace_id,
+            tool="risk_list",
+            data={},
+            dataAsOf=datetime.now(UTC),
+            traceId=trace_id,
+            provenance="test",
         )
 
 
@@ -490,9 +497,7 @@ def real_worker(
         yield celery
 
 
-async def _created(
-    factory: async_sessionmaker[AsyncSession], message: str
-) -> tuple[UUID, UUID]:
+async def _created(factory: async_sessionmaker[AsyncSession], message: str) -> tuple[UUID, UUID]:
     result = await AgentConversationService(factory, trace_id=lambda: "t029-trace").create(
         identity(), message
     )
@@ -962,9 +967,7 @@ def test_real_module_local_worker_success_preview_invalid_timeout_and_cancellati
         celery.send_task("risk_platform.reliability.execute", args=[str(projects_task), 1])
         await _wait(database, projects_task, {DurableTaskStatus.SUCCEEDED})
 
-        high_risks_conversation, high_risks_task = await _created(
-            database, "当前有哪些高风险?"
-        )
+        high_risks_conversation, high_risks_task = await _created(database, "当前有哪些高风险?")
         celery.send_task("risk_platform.reliability.execute", args=[str(high_risks_task), 1])
         await _wait(database, high_risks_task, {DurableTaskStatus.SUCCEEDED})
 
@@ -1010,9 +1013,9 @@ def test_real_module_local_worker_success_preview_invalid_timeout_and_cancellati
         async with database() as session:
             assert int(await session.scalar(select(func.count(Risk.id))) or 0) == before_risks
             assert int(await session.scalar(select(func.count(ActionItem.id))) or 0) == 0
-            assert int(
-                await session.scalar(select(func.count(AgentConfirmationToken.id))) or 0
-            ) == 1
+            assert (
+                int(await session.scalar(select(func.count(AgentConfirmationToken.id))) or 0) == 1
+            )
             preview_types = list(
                 await session.scalars(
                     select(AgentEvent.type)
@@ -1182,9 +1185,7 @@ def test_real_worker_heartbeat_and_backpressure_are_persisted_and_fail_closed(
         backpressure_conversation, backpressure_task = await _created(database, "success")
         async with database.begin() as session:
             config = await session.scalar(
-                select(AgentExecutionConfig).where(
-                    AgentExecutionConfig.taskId == backpressure_task
-                )
+                select(AgentExecutionConfig).where(AgentExecutionConfig.taskId == backpressure_task)
             )
             assert config is not None
             await append_event(
@@ -1223,15 +1224,18 @@ def test_slow_tool_obeys_attempt_deadline_heartbeat_and_cancellation(
         task = await _wait(database, task_id, {DurableTaskStatus.RETRY_WAIT})
         assert task.failureCode == "AGENT_PROVIDER_UNAVAILABLE"
         async with database() as session:
-            assert int(
-                await session.scalar(
-                    select(func.count(AgentEvent.id)).where(
-                        AgentEvent.conversationId == conversation_id,
-                        AgentEvent.type == AgentEventType.HEARTBEAT,
+            assert (
+                int(
+                    await session.scalar(
+                        select(func.count(AgentEvent.id)).where(
+                            AgentEvent.conversationId == conversation_id,
+                            AgentEvent.type == AgentEventType.HEARTBEAT,
+                        )
                     )
+                    or 0
                 )
-                or 0
-            ) >= 2
+                >= 2
+            )
 
     provider = FakeProvider()
     slow = cast(AgentToolRegistry, SlowTools())
@@ -1269,15 +1273,18 @@ def test_slow_tool_obeys_attempt_deadline_heartbeat_and_cancellation(
         celery.send_task("risk_platform.reliability.execute", args=[str(task_id), 1])
         await _wait(database, task_id, {DurableTaskStatus.SUCCEEDED})
         async with database() as session:
-            assert int(
-                await session.scalar(
-                    select(func.count(AgentEvent.id)).where(
-                        AgentEvent.conversationId == conversation_id,
-                        AgentEvent.type == AgentEventType.HEARTBEAT,
+            assert (
+                int(
+                    await session.scalar(
+                        select(func.count(AgentEvent.id)).where(
+                            AgentEvent.conversationId == conversation_id,
+                            AgentEvent.type == AgentEventType.HEARTBEAT,
+                        )
                     )
+                    or 0
                 )
-                or 0
-            ) >= 3
+                >= 3
+            )
 
     cadence_tools = cast(AgentToolRegistry, SlowTools(delay=0.015))
     with real_worker(
@@ -1416,23 +1423,29 @@ def test_postgresql_sse_resume_cursor_and_asgi_framing(
         )
         assert await anext(retry_stream) == b": keepalive\n\n"
         async with database() as session:
-            assert int(
-                await session.scalar(
-                    select(func.count(AgentEvent.id)).where(
-                        AgentEvent.conversationId == retry_conversation
+            assert (
+                int(
+                    await session.scalar(
+                        select(func.count(AgentEvent.id)).where(
+                            AgentEvent.conversationId == retry_conversation
+                        )
                     )
+                    or 0
                 )
-                or 0
-            ) == 0
-            assert int(
-                await session.scalar(
-                    select(func.count(AgentEvent.id)).where(
-                        AgentEvent.conversationId == retry_conversation,
-                        AgentEvent.payload["code"].as_string() == "AGENT_STREAM_IDLE_TIMEOUT",
+                == 0
+            )
+            assert (
+                int(
+                    await session.scalar(
+                        select(func.count(AgentEvent.id)).where(
+                            AgentEvent.conversationId == retry_conversation,
+                            AgentEvent.payload["code"].as_string() == "AGENT_STREAM_IDLE_TIMEOUT",
+                        )
                     )
+                    or 0
                 )
-                or 0
-            ) == 0
+                == 0
+            )
 
         # The second durable backoff is 60 seconds in production. It uses the
         # same read-side semantics and cannot race the old 60-second watchdog.
@@ -1503,14 +1516,17 @@ def test_postgresql_sse_resume_cursor_and_asgi_framing(
         )
         assert [chunk async for chunk in running_stream] == []
         async with database() as session:
-            assert int(
-                await session.scalar(
-                    select(func.count(AgentEvent.id)).where(
-                        AgentEvent.conversationId == running_conversation
+            assert (
+                int(
+                    await session.scalar(
+                        select(func.count(AgentEvent.id)).where(
+                            AgentEvent.conversationId == running_conversation
+                        )
                     )
+                    or 0
                 )
-                or 0
-            ) == 0
+                == 0
+            )
 
         disconnect_conversation, disconnect_task = await _created(database, "disconnect")
         disconnect_stream = await open_event_stream(
@@ -1521,6 +1537,7 @@ def test_postgresql_sse_resume_cursor_and_asgi_framing(
             poll_interval=0.005,
             idle_seconds=60,
         )
+
         async def next_disconnect_chunk() -> bytes:
             return await anext(disconnect_stream)
 
@@ -1552,9 +1569,7 @@ def test_postgresql_category_stale_uses_durable_retry_budget_and_rebuilds_option
             task.dispatchGeneration += 1
             return task.dispatchGeneration
 
-    async def execute(
-        task_id: UUID, generation: int, provider: CategoryStaleProvider
-    ) -> None:
+    async def execute(task_id: UUID, generation: int, provider: CategoryStaleProvider) -> None:
         await execute_message(
             database,
             create_celery_app(),
@@ -1577,48 +1592,44 @@ def test_postgresql_category_stale_uses_durable_retry_budget_and_rebuilds_option
         assert len(provider.respond_options) == 2
         assert provider.respond_options[0] != provider.respond_options[1]
         async with database() as session:
-            assert int(
-                await session.scalar(
+            assert (
+                int(
+                    await session.scalar(
                         select(func.count(AgentConfirmationToken.id)).where(
-                        AgentConfirmationToken.idempotencyKey.like(
-                            f"agent-preview:{task_id}:%"
+                            AgentConfirmationToken.idempotencyKey.like(f"agent-preview:{task_id}:%")
                         )
                     )
+                    or 0
                 )
-                or 0
-            ) == 1
+                == 1
+            )
 
     for mutation in ("missing", "disabled", "revision"):
         provider = CategoryStaleProvider(database, stale_attempts=1, mutation=mutation)
         asyncio.run(one_retry(provider))
 
-    exhausted_provider = CategoryStaleProvider(
-        database, stale_attempts=3, mutation="missing"
-    )
+    exhausted_provider = CategoryStaleProvider(database, stale_attempts=3, mutation="missing")
 
     async def exhausted() -> None:
         _conversation, task_id = await _created(database, "preview")
         generation = 1
         for attempt in range(1, 4):
             await execute(task_id, generation, exhausted_provider)
-            expected = (
-                DurableTaskStatus.FAILED
-                if attempt == 3
-                else DurableTaskStatus.RETRY_WAIT
-            )
+            expected = DurableTaskStatus.FAILED if attempt == 3 else DurableTaskStatus.RETRY_WAIT
             task = await _wait(database, task_id, {expected})
             assert task.failureCode == "AGENT_REPORT_CATEGORY_STALE"
             assert task.attemptCount == attempt
             if expected is DurableTaskStatus.RETRY_WAIT:
                 generation = await redispatch(task_id)
         async with database() as session:
-            assert await session.scalar(
-                select(AgentConfirmationToken.id).where(
-                    AgentConfirmationToken.idempotencyKey.like(
-                        f"agent-preview:{task_id}:%"
+            assert (
+                await session.scalar(
+                    select(AgentConfirmationToken.id).where(
+                        AgentConfirmationToken.idempotencyKey.like(f"agent-preview:{task_id}:%")
                     )
                 )
-            ) is None
+                is None
+            )
 
     asyncio.run(exhausted())
 
@@ -1682,9 +1693,7 @@ async def _confirmation_token(
             operation=AgentConfirmationOperation.REPORT,
             canonicalContent=canonical,
             contentDigest=hashlib.sha256(canonical.encode()).hexdigest(),
-            scopeDigest=hashlib.sha256(
-                AgentExecutionWorker._canonical(scope).encode()
-            ).hexdigest(),
+            scopeDigest=hashlib.sha256(AgentExecutionWorker._canonical(scope).encode()).hexdigest(),
             idempotencyKey=f"agent-confirmation:{uuid.uuid4()}",
             issuedAt=now - timedelta(minutes=20) if expired else now,
             expiresAt=now - timedelta(minutes=1) if expired else now + timedelta(minutes=10),
@@ -1957,9 +1966,7 @@ def test_postgresql_t030_confirmation_one_use_binding_audit_and_atomicity(
         async with transaction(database) as session:
             conversation_token = await session.get(AgentConfirmationToken, conversation_id)
             assert conversation_token is not None
-            conversation = await session.get(
-                AgentConversation, conversation_token.conversationId
-            )
+            conversation = await session.get(AgentConversation, conversation_token.conversationId)
             assert conversation is not None
             conversation.ownerUserId = other_id
         with pytest.raises(ApiError) as conversation_error:
@@ -2003,9 +2010,7 @@ def test_postgresql_t030_confirmation_one_use_binding_audit_and_atomicity(
         async with transaction(database) as session:
             session.add(missing_category)
             await session.flush()
-        missing_raw, missing_id = await _confirmation_token(
-            database, identity(), missing_category
-        )
+        missing_raw, missing_id = await _confirmation_token(database, identity(), missing_category)
         async with transaction(database) as session:
             persisted = await session.get(RiskCategory, missing_category.id)
             assert persisted is not None
@@ -2042,9 +2047,12 @@ def test_postgresql_t030_confirmation_one_use_binding_audit_and_atomicity(
         async with database() as session:
             rollback_token = await session.get(AgentConfirmationToken, rollback_id)
             assert rollback_token is not None and rollback_token.usedAt is None
-            assert await session.scalar(
-                select(Risk.id).where(Risk.dedupeFingerprint == rollback_token.idempotencyKey)
-            ) is None
+            assert (
+                await session.scalar(
+                    select(Risk.id).where(Risk.dedupeFingerprint == rollback_token.idempotencyKey)
+                )
+                is None
+            )
             failures = list(
                 await session.scalars(
                     select(AuditLog).where(
@@ -2081,8 +2089,7 @@ def test_postgresql_t030_confirmation_one_use_binding_audit_and_atomicity(
             )
             assert len(bound_failures) == 4
             assert all(
-                item.failureCode == "AGENT_CONFIRMATION_CONTENT_MISMATCH"
-                for item in bound_failures
+                item.failureCode == "AGENT_CONFIRMATION_CONTENT_MISMATCH" for item in bound_failures
             )
 
     asyncio.run(run())
@@ -2101,9 +2108,7 @@ def test_postgresql_confirm_http_empty_object_envelope_and_error_contract(
             )
         assert category is not None
         raw, _ = await _confirmation_token(database, identity(), category)
-        expired_raw, _ = await _confirmation_token(
-            database, identity(), category, expired=True
-        )
+        expired_raw, _ = await _confirmation_token(database, identity(), category, expired=True)
         conversation_service = AgentConversationService(database)
 
         async def override_identity() -> SessionIdentity:
@@ -2129,9 +2134,7 @@ def test_postgresql_confirm_http_empty_object_envelope_and_error_contract(
         async with httpx2.AsyncClient(
             transport=httpx2.ASGITransport(app=app), base_url="https://testserver"
         ) as client:
-            response = await client.post(
-                f"/api/agent/confirmations/{raw}", json={}
-            )
+            response = await client.post(f"/api/agent/confirmations/{raw}", json={})
             assert response.status_code == 200
             body = response.json()
             assert body["code"] == "OK"
@@ -2147,9 +2150,7 @@ def test_postgresql_confirm_http_empty_object_envelope_and_error_contract(
             assert rejected_fields.json()["code"] == "VALIDATION_ERROR"
             assert rejected_fields.json()["data"] is None
 
-            expired = await client.post(
-                f"/api/agent/confirmations/{expired_raw}", json={}
-            )
+            expired = await client.post(f"/api/agent/confirmations/{expired_raw}", json={})
             assert expired.status_code == 410
             assert expired.json()["code"] == "AGENT_CONFIRMATION_EXPIRED"
             assert expired.json()["data"] is None
