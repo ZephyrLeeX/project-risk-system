@@ -4,9 +4,9 @@
 
 ## Overall Status
 
-`COMPLETED` / T049 `REVIEW_PASSED`
+`COMPLETED` / T050 `REVIEW_PASSED`
 
-Task 1–2 已完成并通过独立 Review；Task 3–5 尚未开始。
+Task 1–3 已完成并通过独立 Review；Task 4–5 尚未开始。
 
 ## Task Status
 
@@ -14,7 +14,7 @@ Task 1–2 已完成并通过独立 Review；Task 3–5 尚未开始。
 |---|---|---|
 | Task 1 | `COMPLETED` | [`task-01-provider-v2.md`](task-01-provider-v2.md) |
 | Task 2 | `COMPLETED` / `REVIEW_PASSED` | [`task-02-agent-core.md`](task-02-agent-core.md) |
-| Task 3 | `NOT_STARTED` | [`task-03-interactions.md`](task-03-interactions.md) |
+| Task 3 | `COMPLETED` / `REVIEW_PASSED` | [`task-03-interactions.md`](task-03-interactions.md) |
 | Task 4 | `NOT_STARTED` | [`task-04-mutations.md`](task-04-mutations.md) |
 | Task 5 | `NOT_STARTED` | [`task-05-integration-cleanup.md`](task-05-integration-cleanup.md) |
 
@@ -23,7 +23,7 @@ Task 1–2 已完成并通过独立 Review；Task 3–5 尚未开始。
 - branch：`main`
 - planning start HEAD SHA：`749371c7697af0869a571fb6456daa5053dc7888`
 - date：`2026-08-17`（Asia/Shanghai）
-- working tree at planning start：需求文档 `docs/AI Agent 重构需求说明书 v1.0.md` 已存在但未跟踪；除此之外无已报告改动
+- working tree at T050 completion：code checkpoint `85dc4bc29f2de19f7a874d2a6c934e68cff8d5f0`；metadata checkpoint follows this report update
 - planning content checkpoint SHA：`d9e93c49d4989aab6f6a3f5838f502366dd32bd0`
 
 Checkpoint 核对规则：开始 Task 时，最近 checkpoint 必须等于当前 `HEAD` 或是当前 `HEAD` 的祖先；若只是祖先，必须审计其后的 commits 与工作区 diff。不得因 SHA 不完全相等而删除或覆盖用户改动。
@@ -80,7 +80,7 @@ Checkpoint 核对规则：开始 Task 时，最近 checkpoint 必须等于当前
 
 ## Current Known Issues
 
-1. `DESIGN_DEVIATION GATE`：统一 editable `AgentInteraction` 与 ADR 0019 的 token-only empty-body confirm 不一致；Task 3/4 编码前需批准 API/persistence/安全语义。
+1. ADR 0036 已批准并完成 T050 的统一 `AgentInteraction` / respond / persistence / SSE replacement boundary；T051 仍需其自身 WRITE_CONFIRMATION addendum。
 2. `DESIGN_DEVIATION GATE`：六类 mutation、Risk 1:N Todo 和 Project status mutation 超出 ADR 0020 的三命令；Task 4 编码前需批准领域命令 addendum。
 3. 当前缺少集中 Project Domain Service/status transition policy；Task 4 必须先审计现有 import/legacy 行为，若无法从 authority 得到合法转换规则则报告 `DESIGN_GAP`。
 4. 仓库未见现成 browser E2E harness；Task 5 必须建立或明确接入可重复执行的真实 FastAPI/PostgreSQL/Redis/Celery E2E，而不能用 unit mock 冒充全量验收。
@@ -88,19 +88,35 @@ Checkpoint 核对规则：开始 Task 时，最近 checkpoint 必须等于当前
 ## Decisions / Deviations
 
 - ADR 0034 已批准并完成 Task 1 Provider V2 边界 reconciliation；实现未偏离该 ADR。
-- 其余与既有批准 ADR 的差异继续显式保留为 Task 2–4 gate，不静默融合。
+- T051 的 mutation/WRITE_CONFIRMATION 设计门禁继续显式保留，不在 T050 静默实现。
 - 旧 Provider 数据不自动迁移为 DeepSeek Official；不设计 dual write。
 - Task 5 不承接新的后端业务语义，避免成为无边界清理 Task。
 
 ## Next Task
 
-下一 Task：[`task-03-interactions.md`](task-03-interactions.md)（T050，`READY`；本轮未开始）
+下一 Task：[`task-04-mutations.md`](task-04-mutations.md)（T051，`READY`；本轮未开始）
 
 进入条件：
 
 1. T048 / Task 1 为 `REVIEW_PASSED / COMPLETED`，checkpoint 已记录。
 2. 用户明确要求开始/继续 AI Agent V2 的下一个任务。
-3. T049 被正式 assigned，且当前 branch/HEAD/worktree 已按本文件核对。
-4. T050 的 Interaction/project disambiguation contract 与其前置设计门禁须由 Orchestrator 明确授权。
+3. T050 已正式完成，且当前 branch/HEAD/worktree 已按本文件核对。
+4. T050 已由 ADR 0036 和本轮用户批准语义授权并完成；T051 需新的明确启动与 mutation addendum。
 
-T049 已完成；本轮在 T050 前停止，不自动开始下一 Task。
+T050 已完成；本轮在 T051 前停止，不自动开始下一 Task。
+
+### Task 3 / T050 completion — 2026-08-17
+
+- status：`COMPLETED` / mapped T050 `REVIEW_PASSED`
+- started/completed：`2026-08-17` / `2026-08-17`
+- checkpoint SHA：`85dc4bc29f2de19f7a874d2a6c934e68cff8d5f0`
+- summary：完成统一 `AgentInteraction`、`AgentExecution` 业务状态、PROJECT_SELECTION 项目消歧、严格 SELECT/MANUAL_INPUT/CANCEL respond、手输重新 scoped `project_search`、one-use/expiry/replay/ownership/concurrency、防权限变化、durable outbox resume、reload/restart recovery 与 SSE `interaction.required/resolved`。
+- architecture decisions：ADR 0036 批准并冻结 `WAITING_FOR_USER` 与 `DurableTask.RETRY_WAIT` 分离；等待不占 Worker、不调用 Provider、不累计 timeout；respond 不直接调用 Provider；T050 只登记 PROJECT_SELECTION，不登记 WRITE_CONFIRMATION。
+- DB changes：migration `20260817_0012` 新增 `agent_executions`、`agent_interactions`，扩展 AgentEventType enum，取消 execution config 对 user message 的错误唯一限制；Alembic fresh upgrade/single-head/autogenerate PASS。
+- API changes：新增 `POST /api/agent/interactions/{interactionId}/respond`；OpenAPI/generated contract 同步；前端 UI 未修改。
+- tests：focused `23 passed`；T050 regression focus `13 passed`；full pytest `464 passed, 52 skipped`；Ruff/mypy/uv lock、OpenAPI export/gen、frontend typecheck/build、git diff check PASS。
+- Independent Review：`REVIEW_PASSED`，无 blocking finding。
+- known limitations：真实 Provider live credential smoke 仍沿用 T048 的外部输入限制；前端交互 UI 与 WRITE_CONFIRMATION 留给 T051/T052。
+- deferred work：T051 confirmed writes + MutationDraft；本轮未开始 T051。
+
+T050 已完成；本轮在 T051 前停止，不自动开始下一 Task。
