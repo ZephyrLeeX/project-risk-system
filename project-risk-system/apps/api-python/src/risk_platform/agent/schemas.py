@@ -8,6 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 from risk_platform.model_types import JSONValue
+from risk_platform.risks.schemas import RiskItem
 from risk_platform.shared.http import StrictRequestModel
 
 
@@ -131,6 +132,12 @@ class ProjectListToolResponse(_Contract):
     total: int
 
 
+class DashboardFocusToolResponse(_Contract):
+    """Agent-specific envelope for the dashboard service's list return value."""
+
+    items: list[RiskItem]
+
+
 class RiskToolArguments(StrictRequestModel):
     keyword: str | None = Field(default=None, max_length=100)
     projectId: UUID | None = None
@@ -174,6 +181,7 @@ __all__ = [
     "AgentMessageResponse",
     "AgentToolHelp",
     "AgentToolResult",
+    "DashboardFocusToolResponse",
     "EmptyToolArguments",
     "ProjectListToolArguments",
     "ProjectListToolItem",

@@ -256,6 +256,10 @@ class AgentProviderAdapter:
                     raise ProviderRequestError("PROVIDER_INVALID_OUTPUT", retryable=False)
                 actions.append({"type": "tool_call", "name": name, "arguments": decoded})
             cls._diagnostic(phase, "native_function_call", item_types)
+            logging.getLogger(__name__).info(
+                "agent provider plan tools=%s",
+                ",".join(str(action["name"]) for action in actions),
+            )
             return {
                 "protocol": "AGENT_PROVIDER_EXECUTION_V2",
                 "phase": phase,

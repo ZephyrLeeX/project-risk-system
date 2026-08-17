@@ -207,6 +207,10 @@ class AgentProviderInvalidOutput(RuntimeError):
     pass
 
 
+class AgentExecutionConfigInvalid(RuntimeError):
+    """The durable payload/configuration/fencing relation is invalid."""
+
+
 class AgentReportCategoryStale(RuntimeError):
     pass
 
@@ -421,16 +425,29 @@ class AgentExecutionWorker:
             ) from None
         except DurableTaskFailure:
             raise
-        except Exception as exc:
-            # Configuration/payload/fencing failures are never retried or exposed verbatim.
+        except AgentExecutionConfigInvalid:
             config_id = ids[3] if ids is not None else self._config_id_if_valid(payload)
             if config_id is not None:
                 await self._try_config_invalid_event(config_id, task_id, lease_token)
-            cause = type(getattr(exc, "orig", None)).__name__
             raise DurableTaskFailure(
                 CONFIG_INVALID,
                 retryable=False,
-                summary=f"agent execution configuration invalid ({type(exc).__name__}:{cause})",
+                summary="agent execution configuration invalid",
+            ) from None
+        except Exception as exc:
+            config_id = ids[3] if ids is not None else self._config_id_if_valid(payload)
+            logger.exception(
+                "agent internal error task_id=%s config_id=%s exception_type=%s",
+                task_id,
+                config_id,
+                type(exc).__name__,
+            )
+            if config_id is not None:
+                await self._terminal_event(
+                    config_id, task_id, lease_token, "AGENT_INTERNAL_ERROR", False, force=True
+                )
+            raise DurableTaskFailure(
+                "AGENT_INTERNAL_ERROR", retryable=False, summary="agent internal error"
             ) from None
 
     async def _load_initial(
@@ -452,10 +469,10 @@ class AgentExecutionWorker:
                 or config.userMessageId != ids[1]
                 or config.requestedByUserId != ids[2]
             ):
-                raise RuntimeError(CONFIG_INVALID)
+                raise AgentExecutionConfigInvalid
             message = await session.get(AgentMessage, config.userMessageId)
             if message is None or message.role is not AgentMessageRole.USER:
-                raise RuntimeError(CONFIG_INVALID)
+                raise AgentExecutionConfigInvalid
             identity = await self._identity(session, config.requestedByUserId)
             rows = list(
                 (
@@ -600,7 +617,7 @@ class AgentExecutionWorker:
                     if current.cancellationRequestedAt is not None:
                         raise DurableTaskCancelled
                     if not await heartbeat(session, task_id, lease_token):
-                        raise RuntimeError(CONFIG_INVALID)
+                        raise AgentExecutionConfigInvalid
                     await self._append(
                         session, current, task_id, AgentEventType.HEARTBEAT, {}, force=False
                     )
@@ -1047,7 +1064,7 @@ class AgentExecutionWorker:
             select(AgentMessage.traceId).where(AgentMessage.id == config.userMessageId)
         )
         if trace_id is None:
-            raise RuntimeError(CONFIG_INVALID)
+            raise AgentExecutionConfigInvalid
         event_payload = {**payload, "traceId": trace_id}
         if not force and not await event_capacity_available(
             session, config.conversationId, event_payload
@@ -1098,7 +1115,7 @@ class AgentExecutionWorker:
             or task.status is not DurableTaskStatus.RUNNING
             or task.leaseToken != lease_token
         ):
-            raise RuntimeError(CONFIG_INVALID)
+            raise AgentExecutionConfigInvalid
         return config, task
 
     @staticmethod
@@ -1106,7 +1123,7 @@ class AgentExecutionWorker:
         repository = AuthRepository(session)
         user = await repository.user_by_id(user_id, for_update=False)
         if user is None or user.status is not UserStatus.ACTIVE:
-            raise RuntimeError(CONFIG_INVALID)
+            raise AgentExecutionConfigInvalid
         access = await repository.user_access(user_id)
         return SessionIdentity(
             session_id=UUID(int=0),
@@ -1145,7 +1162,7 @@ class AgentExecutionWorker:
             "execution_configuration_id",
         }
         if set(payload) != expected:
-            raise RuntimeError(CONFIG_INVALID)
+            raise AgentExecutionConfigInvalid
         try:
             values = tuple(UUID(cast(str, payload[name])) for name in sorted(expected))
             by_name = dict(zip(sorted(expected), values, strict=True))
@@ -1156,7 +1173,7 @@ class AgentExecutionWorker:
                 by_name["execution_configuration_id"],
             )
         except (TypeError, ValueError):
-            raise RuntimeError(CONFIG_INVALID) from None
+            raise AgentExecutionConfigInvalid from None
 
     @staticmethod
     def _config_id_if_valid(payload: Mapping[str, JSONValue]) -> UUID | None:
@@ -1206,6 +1223,7 @@ def agent_execution_handlers(
 
 
 __all__ = [
+    "AgentExecutionConfigInvalid",
     "AgentExecutionWorker",
     "AgentProviderError",
     "AgentProviderInvalidOutput",

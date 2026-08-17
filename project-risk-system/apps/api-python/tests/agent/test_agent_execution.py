@@ -299,6 +299,19 @@ class EmptyResultTools(SlowTools):
         super().__init__(delay=0)
 
 
+class BrokenTools(SlowTools):
+    async def invoke(
+        self,
+        value: SessionIdentity,
+        name: str,
+        arguments: Mapping[str, object],
+        *,
+        trace_id: str,
+    ) -> AgentToolResult:
+        del value, name, arguments, trace_id
+        raise RuntimeError("tool implementation defect")
+
+
 def test_grounded_respond_instruction_requires_tool_result_only_chinese_summary() -> None:
     worker = AgentExecutionWorker(
         cast(async_sessionmaker[AsyncSession], None), FakeProvider(), cast(AgentToolRegistry, None)
@@ -1111,6 +1124,35 @@ def test_grounding_execution_fails_without_a_tool_and_uses_fixed_empty_result_an
     empty_registry = cast(AgentToolRegistry, EmptyResultTools())
     with real_worker(database, provider, registry=empty_registry) as celery:
         asyncio.run(run(celery, provider))
+
+
+def test_tool_implementation_error_is_not_misclassified_as_config_invalid(
+    database: async_sessionmaker[AsyncSession],
+) -> None:
+    async def run(celery: Celery) -> None:
+        conversation_id, task_id = await _created(database, "tool")
+        celery.send_task("risk_platform.reliability.execute", args=[str(task_id), 1])
+        failed = await _wait(database, task_id, {DurableTaskStatus.FAILED})
+        assert failed.failureCode == "AGENT_INTERNAL_ERROR"
+        assert failed.failureSummary == "agent internal error"
+        async with database() as session:
+            error = await session.scalar(
+                select(AgentEvent)
+                .where(
+                    AgentEvent.conversationId == conversation_id,
+                    AgentEvent.type == AgentEventType.ERROR,
+                )
+                .order_by(AgentEvent.sequence.desc())
+                .limit(1)
+            )
+        assert error is not None
+        assert error.payload["code"] == "AGENT_INTERNAL_ERROR"
+        assert error.payload["message"] == "AI服务暂时不可用"
+        assert "RuntimeError" not in json.dumps(error.payload, ensure_ascii=False)
+
+    broken_registry = cast(AgentToolRegistry, BrokenTools())
+    with real_worker(database, FakeProvider(), registry=broken_registry) as celery:
+        asyncio.run(run(celery))
 
 
 def test_real_worker_heartbeat_and_backpressure_are_persisted_and_fail_closed(

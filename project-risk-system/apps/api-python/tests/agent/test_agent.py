@@ -4,7 +4,8 @@ import asyncio
 import os
 import re
 import uuid
-from collections.abc import Iterator
+from collections.abc import Awaitable, Callable, Iterator
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID
@@ -16,16 +17,21 @@ from sqlalchemy import create_engine, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from risk_platform.admin.models import User
+from risk_platform.agent.schemas import ProjectListToolResponse
 from risk_platform.agent.service import AgentConversationService
-from risk_platform.agent.tools import AgentToolRegistry
+from risk_platform.agent.tools import AgentToolRegistry, AgentToolResultTypeError
 from risk_platform.auth.schemas import AuthenticatedUser
 from risk_platform.auth.service import SessionIdentity
+from risk_platform.dashboard.schemas import DashboardSummary
 from risk_platform.dashboard.service import DashboardService
 from risk_platform.db import create_database_engine, create_session_factory, transaction
 from risk_platform.reliability.models import DurableTask, DurableTaskKind, DurableTaskStatus
+from risk_platform.risks.schemas import RiskDetail, RiskPage
 from risk_platform.risks.service import RisksService
 from risk_platform.shared.errors import ApiError
+from risk_platform.todos.schemas import ManagerTodoDetail, ManagerTodoListResponse
 from risk_platform.todos.service import TodosService
+from risk_platform.weekly_reports.schemas import WeeklyProjectDetail, WeeklyReportResponse
 from risk_platform.weekly_reports.service import WeeklyReportService
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -127,6 +133,76 @@ def test_tool_registry_is_closed_and_help_is_permission_filtered() -> None:
     with pytest.raises(ApiError) as error:
         asyncio.run(registry.invoke(identity(), "arbitrary_sql", {}, trace_id="trace"))
     assert error.value.code == "AGENT_TOOL_NOT_ALLOWED"
+
+
+def test_tool_registry_fails_closed_when_a_tool_returns_none() -> None:
+    registry = AgentToolRegistry(
+        None,  # type: ignore[arg-type]
+        DashboardService(None),  # type: ignore[arg-type]
+        RisksService(None),  # type: ignore[arg-type]
+        TodosService(None),  # type: ignore[arg-type]
+        WeeklyReportService(None),  # type: ignore[arg-type]
+    )
+    original = registry._by_name["project_list"]
+
+    async def returns_none(*_args: object, **_kwargs: object) -> None:
+        return None
+
+    registry._by_name["project_list"] = replace(original, call=returns_none)
+    with pytest.raises(AgentToolResultTypeError):
+        asyncio.run(registry.invoke(identity(), "project_list", {}, trace_id="trace"))
+
+
+def test_all_agent_tools_adapt_their_declared_runtime_result_to_agent_tool_result() -> None:
+    registry = AgentToolRegistry(
+        None,  # type: ignore[arg-type]
+        DashboardService(None),  # type: ignore[arg-type]
+        RisksService(None),  # type: ignore[arg-type]
+        TodosService(None),  # type: ignore[arg-type]
+        WeeklyReportService(None),  # type: ignore[arg-type]
+    )
+    values: dict[str, object] = {
+        "project_list": ProjectListToolResponse(items=[], page=1, pageSize=20, total=0),
+        "dashboard_summary": DashboardSummary.model_construct(),
+        "dashboard_focus": [],
+        "risk_list": RiskPage.model_construct(),
+        "risk_detail": RiskDetail.model_construct(),
+        "todo_list": ManagerTodoListResponse.model_construct(),
+        "todo_detail": ManagerTodoDetail.model_construct(),
+        "weekly_report": WeeklyReportResponse.model_construct(),
+        "weekly_report_detail": WeeklyProjectDetail.model_construct(),
+    }
+    arguments = {
+        "project_list": {},
+        "dashboard_summary": {},
+        "dashboard_focus": {},
+        "risk_list": {},
+        "risk_detail": {"riskId": str(uuid.uuid4())},
+        "todo_list": {},
+        "todo_detail": {"todoId": str(uuid.uuid4())},
+        "weekly_report": {},
+        "weekly_report_detail": {
+            "weekStart": "2026-08-17T00:00:00+00:00",
+            "projectId": str(uuid.uuid4()),
+        },
+    }
+
+    def call_for(value: object) -> Callable[..., Awaitable[object]]:
+        async def call(*_args: object, **_kwargs: object) -> object:
+            return value
+
+        return call
+
+    for name, value in values.items():
+        registry._by_name[name] = replace(registry._by_name[name], call=call_for(value))
+
+    async def run() -> list[str]:
+        return [
+            (await registry.invoke(identity(), name, arguments[name], trace_id="trace")).tool
+            for name in values
+        ]
+
+    assert asyncio.run(run()) == list(values)
 
 
 def test_conversation_persistence_owner_scope_and_frozen_retention(

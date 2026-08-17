@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -13,21 +14,24 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from risk_platform.auth.service import SessionIdentity
+from risk_platform.dashboard.schemas import DashboardSummary
 from risk_platform.dashboard.service import DashboardService
 from risk_platform.model_types import JSONValue
 from risk_platform.projects.models import Project, ProjectStatus
 from risk_platform.rbac.models import DataScopeType
 from risk_platform.rbac.scopes import project_scope_predicate
-from risk_platform.risks.schemas import RiskQuery
+from risk_platform.risks.schemas import RiskDetail, RiskItem, RiskPage, RiskQuery
 from risk_platform.risks.service import RisksService
 from risk_platform.shared.errors import ApiError
-from risk_platform.todos.schemas import ListTodosQuery
+from risk_platform.todos.schemas import ListTodosQuery, ManagerTodoDetail, ManagerTodoListResponse
 from risk_platform.todos.service import TodosService
+from risk_platform.weekly_reports.schemas import WeeklyProjectDetail, WeeklyReportResponse
 from risk_platform.weekly_reports.service import WeeklyReportService, shanghai_week_start
 
 from .schemas import (
     AgentToolHelp,
     AgentToolResult,
+    DashboardFocusToolResponse,
     EmptyToolArguments,
     ProjectListToolArguments,
     ProjectListToolItem,
@@ -41,6 +45,14 @@ from .schemas import (
 )
 
 ToolCallable = Callable[[SessionIdentity, Mapping[str, object]], Awaitable[object]]
+ToolResponseAdapter = Callable[[object], BaseModel]
+logger = logging.getLogger(__name__)
+
+
+class AgentToolResultTypeError(RuntimeError):
+    """A tool violated its closed, explicit Agent result contract."""
+
+
 @dataclass(frozen=True, slots=True)
 class AgentTool:
     name: str
@@ -48,6 +60,7 @@ class AgentTool:
     required_permissions: tuple[str, ...]
     supports_preview: bool
     request_model: type[BaseModel]
+    response_adapter: ToolResponseAdapter
     call: ToolCallable
 
 
@@ -70,6 +83,7 @@ class AgentToolRegistry:
                 ("dashboard.view",),
                 False,
                 ProjectListToolArguments,
+                _model_adapter(ProjectListToolResponse),
                 self._project_list,
             ),
             AgentTool(
@@ -78,6 +92,7 @@ class AgentToolRegistry:
                 ("dashboard.view",),
                 False,
                 EmptyToolArguments,
+                _model_adapter(DashboardSummary),
                 lambda i, _: dashboard.summary(i),
             ),
             AgentTool(
@@ -86,6 +101,7 @@ class AgentToolRegistry:
                 ("dashboard.view",),
                 False,
                 EmptyToolArguments,
+                _dashboard_focus_adapter,
                 lambda i, _: dashboard.focus(i),
             ),
             AgentTool(
@@ -94,6 +110,7 @@ class AgentToolRegistry:
                 ("dashboard.view",),
                 False,
                 RiskToolArguments,
+                _model_adapter(RiskPage),
                 self._risk_list(risks),
             ),
             AgentTool(
@@ -102,6 +119,7 @@ class AgentToolRegistry:
                 ("dashboard.view",),
                 False,
                 RiskDetailToolArguments,
+                _model_adapter(RiskDetail),
                 self._risk_detail(risks),
             ),
             AgentTool(
@@ -110,6 +128,7 @@ class AgentToolRegistry:
                 ("dashboard.view",),
                 False,
                 TodoToolArguments,
+                _model_adapter(ManagerTodoListResponse),
                 self._todo_list(todos),
             ),
             AgentTool(
@@ -118,6 +137,7 @@ class AgentToolRegistry:
                 ("dashboard.view",),
                 False,
                 TodoDetailToolArguments,
+                _model_adapter(ManagerTodoDetail),
                 self._todo_detail(todos),
             ),
             AgentTool(
@@ -126,6 +146,7 @@ class AgentToolRegistry:
                 ("dashboard.view",),
                 False,
                 WeeklyReportToolArguments,
+                _model_adapter(WeeklyReportResponse),
                 self._weekly_report(weekly_reports),
             ),
             AgentTool(
@@ -134,6 +155,7 @@ class AgentToolRegistry:
                 ("dashboard.view",),
                 False,
                 WeeklyDetailToolArguments,
+                _model_adapter(WeeklyProjectDetail),
                 self._weekly_detail(weekly_reports),
             ),
         )
@@ -168,12 +190,29 @@ class AgentToolRegistry:
             validated = tool.request_model.model_validate(arguments)
         except ValidationError:
             raise ApiError(422, "VALIDATION_ERROR", "Agent 工具参数不符合约束") from None
-        data = await tool.call(identity, validated.model_dump(mode="python", exclude_none=True))
-        if not isinstance(data, BaseModel):
-            raise RuntimeError("Agent tool returned an unsupported result type")
+        logger.info("agent tool invoke tool=%s phase=PLAN status=start", name)
+        data: object | None = None
+        completed_call = False
+        try:
+            data = await tool.call(identity, validated.model_dump(mode="python", exclude_none=True))
+            completed_call = True
+            response = tool.response_adapter(data)
+        except Exception as error:
+            logger.info(
+                "agent tool invoke tool=%s phase=PLAN result_type=%s status=failure error_class=%s",
+                name,
+                type(data).__name__ if completed_call else "unavailable",
+                type(error).__name__,
+            )
+            raise
+        logger.info(
+            "agent tool invoke tool=%s phase=PLAN result_type=%s status=success",
+            name,
+            type(data).__name__,
+        )
         return AgentToolResult(
             tool=name,
-            data=cast(JSONValue, data.model_dump(mode="json")),
+            data=cast(JSONValue, response.model_dump(mode="json")),
             dataAsOf=datetime.now(UTC),
             traceId=trace_id,
         )
@@ -297,7 +336,26 @@ class AgentToolRegistry:
         return call
 
 
-__all__ = ["AgentTool", "AgentToolRegistry"]
+__all__ = ["AgentTool", "AgentToolRegistry", "AgentToolResultTypeError"]
+
+
+def _model_adapter(model: type[BaseModel]) -> ToolResponseAdapter:
+    def adapt(value: object) -> BaseModel:
+        if not isinstance(value, model):
+            raise AgentToolResultTypeError(
+                f"expected {model.__name__}, received {type(value).__name__}"
+            )
+        return value
+
+    return adapt
+
+
+def _dashboard_focus_adapter(value: object) -> DashboardFocusToolResponse:
+    if not isinstance(value, list) or not all(isinstance(item, RiskItem) for item in value):
+        raise AgentToolResultTypeError(
+            f"expected list[RiskItem], received {type(value).__name__}"
+        )
+    return DashboardFocusToolResponse(items=value)
 
 
 def _int_argument(value: object | None, default: int) -> int:
