@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Mapping
+from contextlib import suppress
 from datetime import UTC, datetime
 from typing import cast
 from uuid import UUID
@@ -10,15 +12,15 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from risk_platform.ai_providers.v2_adapter import ProviderError
+from risk_platform.ai_providers.v2_adapter import ProviderError, ProviderErrorClassification
 from risk_platform.auth.repository import AuthRepository
 from risk_platform.auth.service import AuthService, SessionIdentity
 from risk_platform.model_types import JSONValue
-from risk_platform.reliability.core import TaskHandler
+from risk_platform.reliability.core import TaskHandler, heartbeat
 from risk_platform.reliability.dispatcher import DurableTaskCancelled, DurableTaskFailure
 from risk_platform.reliability.models import DurableTask, DurableTaskStatus
 
-from .core import AgentLoopError, ReadOnlyAgentCore
+from .core import AgentCoreOutcome, AgentLoopError, ReadOnlyAgentCore
 from .events import append_event, event_capacity_available
 from .models import (
     AgentConversation,
@@ -35,16 +37,27 @@ class NativeAgentExecutionWorker:
 
     with_context = True
 
-    def __init__(self, sessions: async_sessionmaker[AsyncSession], core: ReadOnlyAgentCore) -> None:
+    def __init__(
+        self,
+        sessions: async_sessionmaker[AsyncSession],
+        core: ReadOnlyAgentCore,
+        *,
+        heartbeat_interval: float = 15.0,
+        attempt_timeout_seconds: float | None = None,
+    ) -> None:
         self._sessions = sessions
         self._core = core
+        self._heartbeat_interval = heartbeat_interval
+        self._attempt_timeout_seconds = attempt_timeout_seconds
 
     async def __call__(
         self, payload: Mapping[str, JSONValue], *, task_id: UUID, lease_token: UUID
     ) -> None:
         try:
             config, message, identity = await self._load(payload, task_id, lease_token)
-            outcome = await self._core.run(identity, message.content)
+            outcome = await self._run_with_heartbeat(
+                config, message, identity, task_id, lease_token
+            )
             await self._complete(
                 config, message, task_id, lease_token, outcome.text, outcome.candidate_risks
             )
@@ -70,7 +83,15 @@ class NativeAgentExecutionWorker:
                 retryable=error.retryable,
                 summary="provider candidates unavailable",
             ) from None
-        except DurableTaskFailure:
+        except DurableTaskFailure as error:
+            if error.code == "AGENT_STREAM_BACKPRESSURE":
+                await self._error(
+                    payload,
+                    task_id,
+                    lease_token,
+                    error.code,
+                    retryable=False,
+                )
             raise
         except DurableTaskCancelled:
             raise
@@ -81,6 +102,72 @@ class NativeAgentExecutionWorker:
             raise DurableTaskFailure(
                 "AGENT_INTERNAL_ERROR", retryable=False, summary="native agent execution failed"
             ) from None
+
+    async def _run_with_heartbeat(
+        self,
+        config: AgentExecutionConfig,
+        message: AgentMessage,
+        identity: SessionIdentity,
+        task_id: UUID,
+        lease_token: UUID,
+    ) -> AgentCoreOutcome:
+        """Run the native loop with durable liveness and cancellation boundaries."""
+
+        call = asyncio.create_task(self._core.run(identity, message.content))
+        started = asyncio.get_running_loop().time()
+        try:
+            while not call.done():
+                timeout = self._heartbeat_interval
+                if self._attempt_timeout_seconds is not None:
+                    timeout = min(
+                        timeout,
+                        max(
+                            0.0,
+                            self._attempt_timeout_seconds
+                            - (asyncio.get_running_loop().time() - started),
+                        ),
+                    )
+                done, _ = await asyncio.wait({call}, timeout=timeout)
+                if done:
+                    break
+                async with self._sessions.begin() as session:
+                    current = await session.get(AgentExecutionConfig, config.id)
+                    if current is None or current.cancellationRequestedAt is not None:
+                        call.cancel()
+                        raise DurableTaskCancelled
+                    if not await heartbeat(session, task_id, lease_token):
+                        call.cancel()
+                        raise DurableTaskFailure(
+                            "AGENT_EXECUTION_CONFIG_INVALID",
+                            retryable=False,
+                            summary="stale agent lease",
+                        )
+                    await self._append(
+                        session,
+                        config,
+                        message,
+                        task_id,
+                        AgentEventType.HEARTBEAT,
+                        {"heartbeat": True},
+                        message.id,
+                    )
+                if (
+                    self._attempt_timeout_seconds is not None
+                    and asyncio.get_running_loop().time() - started
+                    >= self._attempt_timeout_seconds
+                ):
+                    call.cancel()
+                    raise ProviderError(
+                        ProviderErrorClassification.NETWORK,
+                        retryable=True,
+                        failover_allowed=False,
+                    )
+            return await call
+        finally:
+            if not call.done():
+                call.cancel()
+            with suppress(asyncio.CancelledError):
+                await call
 
     async def _load(
         self, payload: Mapping[str, JSONValue], task_id: UUID, lease_token: UUID
@@ -225,7 +312,9 @@ class NativeAgentExecutionWorker:
         message_id: UUID,
     ) -> None:
         event_payload = {**payload, "traceId": message.traceId}
-        if not await event_capacity_available(session, config.conversationId, event_payload):
+        if kind is not AgentEventType.ERROR and not await event_capacity_available(
+            session, config.conversationId, event_payload
+        ):
             raise DurableTaskFailure(
                 "AGENT_STREAM_BACKPRESSURE", retryable=False, summary="agent event capacity reached"
             )

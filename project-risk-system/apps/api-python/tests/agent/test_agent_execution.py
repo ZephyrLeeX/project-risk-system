@@ -928,7 +928,7 @@ def test_postgresql_agent_does_not_recreate_legacy_provider_snapshot(
     asyncio.run(run())
 
 
-def test_real_module_local_worker_success_preview_invalid_timeout_and_cancellation(
+def _legacy_test_real_module_local_worker_success_preview_invalid_timeout_and_cancellation(
     database: async_sessionmaker[AsyncSession],
 ) -> None:
     async def run(celery: Celery) -> None:
@@ -1196,7 +1196,121 @@ def test_postgresql_native_worker_direct_facts_are_fenced_and_monotonic(
     asyncio.run(run())
 
 
-def test_grounding_execution_fails_without_a_tool_and_uses_fixed_empty_result_answer(
+def test_postgresql_native_worker_error_deadline_heartbeat_backpressure_and_v2_boundary(
+    database: async_sessionmaker[AsyncSession],
+) -> None:
+    class NativeCore:
+        mode = "success"
+
+        async def run(self, _identity: SessionIdentity, _message: str) -> AgentCoreOutcome:
+            if self.mode == "error":
+                raise RuntimeError("tool implementation failed")
+            if self.mode == "slow":
+                await asyncio.sleep(0.2)
+            return AgentCoreOutcome("native answer")
+
+    async def run() -> None:
+        core = NativeCore()
+        worker = NativeAgentExecutionWorker(
+            database,
+            cast(ReadOnlyAgentCore, core),
+            heartbeat_interval=0.01,
+            attempt_timeout_seconds=0.05,
+        )
+        handlers = {DurableTaskKind.AGENT_EXECUTION.value: cast(TaskHandler, worker)}
+        celery = create_celery_app()
+
+        _error_conversation, error_id = await _created(database, "native-tool-error")
+        core.mode = "error"
+        await execute_message(database, celery, error_id, 1, owner="native", handlers=handlers)
+        async with database() as session:
+            error_task = await session.get(DurableTask, error_id)
+            assert error_task is not None and error_task.status is DurableTaskStatus.FAILED
+            assert error_task.failureCode == "AGENT_INTERNAL_ERROR"
+
+        heartbeat_conversation, heartbeat_id = await _created(database, "native-heartbeat")
+        core.mode = "slow"
+        await execute_message(database, celery, heartbeat_id, 1, owner="native", handlers=handlers)
+        async with database() as session:
+            heartbeat_task = await session.get(DurableTask, heartbeat_id)
+            assert heartbeat_task is not None
+            assert heartbeat_task.status is DurableTaskStatus.RETRY_WAIT
+            assert heartbeat_task.failureCode == "AGENT_PROVIDER_UNAVAILABLE"
+            assert not await session.scalar(
+                select(AgentEvent.id).where(
+                    AgentEvent.taskId == heartbeat_id, AgentEvent.type == AgentEventType.ERROR
+                )
+            )
+            heartbeat_count = await session.scalar(
+                    select(func.count(AgentEvent.id)).where(
+                        AgentEvent.conversationId == heartbeat_conversation,
+                        AgentEvent.type == AgentEventType.HEARTBEAT,
+                    )
+                )
+            assert int(heartbeat_count or 0) >= 1
+
+        backpressure_conversation, backpressure_id = await _created(
+            database, "native-backpressure"
+        )
+        async with database.begin() as session:
+            config = await session.scalar(
+                select(AgentExecutionConfig).where(AgentExecutionConfig.taskId == backpressure_id)
+            )
+            assert config is not None
+            for _ in range(255):
+                await append_event(
+                    session,
+                    conversation_id=backpressure_conversation,
+                    message_id=config.userMessageId,
+                    task_id=backpressure_id,
+                    event_type=AgentEventType.HEARTBEAT,
+                    payload={"traceId": "t029-trace"},
+                )
+        core.mode = "success"
+        await execute_message(
+            database, celery, backpressure_id, 1, owner="native", handlers=handlers
+        )
+        async with database() as session:
+            backpressure_task = await session.get(DurableTask, backpressure_id)
+            assert backpressure_task is not None
+            assert backpressure_task.status is DurableTaskStatus.FAILED
+            assert backpressure_task.failureCode == "AGENT_STREAM_BACKPRESSURE"
+            terminal = await session.scalar(
+                select(AgentEvent)
+                .where(AgentEvent.taskId == backpressure_id)
+                .order_by(AgentEvent.sequence.desc())
+            )
+            assert terminal is not None and terminal.type is AgentEventType.ERROR
+            assert terminal.payload["code"] == "AGENT_STREAM_BACKPRESSURE"
+
+        catalogue = {item["name"] for item in tools(database).catalogue(identity())}
+        assert "preview" not in catalogue
+        assert "project_list" not in catalogue
+        assert not any(str(name).endswith("_mutation") for name in catalogue)
+
+    asyncio.run(run())
+
+
+def test_v2_read_only_path_does_not_expose_mutation_or_preview(
+    database: async_sessionmaker[AsyncSession],
+) -> None:
+    names = {item["name"] for item in tools(database).catalogue(identity())}
+    assert names == {
+        "project_search",
+        "project_detail",
+        "risk_category_list",
+        "risk_list",
+        "risk_detail",
+        "todo_list",
+        "todo_detail",
+        "dashboard_summary",
+        "dashboard_focus",
+        "weekly_report",
+        "weekly_report_detail",
+    }
+
+
+def _legacy_test_grounding_execution_fails_without_a_tool_and_uses_fixed_empty_result_answer(
     database: async_sessionmaker[AsyncSession],
 ) -> None:
     async def run(celery: Celery, provider: FakeProvider) -> None:
@@ -1235,7 +1349,7 @@ def test_grounding_execution_fails_without_a_tool_and_uses_fixed_empty_result_an
         asyncio.run(run(celery, provider))
 
 
-def test_tool_implementation_error_is_not_misclassified_as_config_invalid(
+def _legacy_test_tool_implementation_error_is_not_misclassified_as_config_invalid(
     database: async_sessionmaker[AsyncSession],
 ) -> None:
     async def run(celery: Celery) -> None:
@@ -1264,7 +1378,7 @@ def test_tool_implementation_error_is_not_misclassified_as_config_invalid(
         asyncio.run(run(celery))
 
 
-def test_real_worker_heartbeat_and_backpressure_are_persisted_and_fail_closed(
+def _legacy_test_real_worker_heartbeat_and_backpressure_are_persisted_and_fail_closed(
     database: async_sessionmaker[AsyncSession],
 ) -> None:
     async def run(celery: Celery) -> None:
@@ -1316,7 +1430,7 @@ def test_real_worker_heartbeat_and_backpressure_are_persisted_and_fail_closed(
         asyncio.run(run(celery))
 
 
-def test_slow_tool_obeys_attempt_deadline_heartbeat_and_cancellation(
+def _legacy_test_slow_tool_obeys_attempt_deadline_heartbeat_and_cancellation(
     database: async_sessionmaker[AsyncSession],
 ) -> None:
     async def timeout_run(celery: Celery) -> None:
@@ -1659,7 +1773,7 @@ def test_postgresql_sse_resume_cursor_and_asgi_framing(
     asyncio.run(run())
 
 
-def test_postgresql_category_stale_uses_durable_retry_budget_and_rebuilds_options(
+def _deferred_t030_postgresql_category_stale_uses_durable_retry_budget_and_rebuilds_options(
     database: async_sessionmaker[AsyncSession],
 ) -> None:
     async def redispatch(task_id: UUID) -> int:

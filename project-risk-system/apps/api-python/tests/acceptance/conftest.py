@@ -411,7 +411,7 @@ def acceptance_env() -> Iterator[AcceptanceEnv]:
     seed = asyncio.run(_seed_acceptance(factory))
 
     key_file = Path(tempfile.mkdtemp()) / "session-key"
-    key_file.write_bytes(os.urandom(32))
+    key_file.write_bytes(os.urandom(32).hex().encode())
     settings = Settings(
         environment="test",
         cors_origins=("https://web.internal",),

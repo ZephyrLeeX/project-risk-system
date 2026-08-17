@@ -40,5 +40,5 @@ if (schemas) {
 
 const ast = await openapiTS(spec, { alphabetize: true });
 mkdirSync(dirname(outPath), { recursive: true });
-writeFileSync(outPath, COMMENT_HEADER + astToString(ast) + "\n", "utf8");
+writeFileSync(outPath, (COMMENT_HEADER + astToString(ast)).replace(/\n+$/, "\n"), "utf8");
 console.log(`Generated: ${outPath}`);

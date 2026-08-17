@@ -158,6 +158,7 @@ def test_metadata_has_final_prisma_tables_with_approved_audit_override() -> None
         "sequence",
         "role",
         "content",
+        "structured",
         "traceId",
         "dataAsOf",
         "createdAt",

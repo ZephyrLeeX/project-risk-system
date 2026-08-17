@@ -1976,7 +1976,9 @@ export interface components {
             /** Sequence */
             sequence: number;
             /** Structured */
-            structured?: Record<string, components["schemas"]["JSONValue"]> | null;
+            structured?: {
+                [key: string]: components["schemas"]["JSONValue"];
+            } | null;
             /** Traceid */
             traceId: string;
         };
