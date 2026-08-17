@@ -474,7 +474,6 @@ class SystemConfigService:
         published_by: str | None,
     ) -> ConfigOverview:
         return ConfigOverview(
-            **snapshot.model_dump(),
             version=release.version,
             publishedAt=release.publishedAt.astimezone(UTC)
             .isoformat(timespec="milliseconds")
@@ -490,6 +489,7 @@ class SystemConfigService:
             lastMailboxSyncAt=None,
             nextMailboxSyncAt=None,
             authorizedMailboxCount=0,
+            snapshot=snapshot,
         )
 
     def _release_item(self, row: SystemConfigRelease, name: str | None) -> ReleaseItem:

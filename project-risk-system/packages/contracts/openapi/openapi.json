@@ -3786,26 +3786,9 @@
             "title": "Activelevelcount",
             "type": "integer"
           },
-          "aliases": {
-            "items": {
-              "$ref": "#/components/schemas/ProjectAlias"
-            },
-            "maxItems": 1000,
-            "title": "Aliases",
-            "type": "array"
-          },
           "authorizedMailboxCount": {
             "title": "Authorizedmailboxcount",
             "type": "integer"
-          },
-          "categories": {
-            "items": {
-              "$ref": "#/components/schemas/RiskCategory"
-            },
-            "maxItems": 50,
-            "minItems": 1,
-            "title": "Categories",
-            "type": "array"
           },
           "changeSummary": {
             "title": "Changesummary",
@@ -3822,18 +3805,6 @@
             ],
             "title": "Lastmailboxsyncat"
           },
-          "levels": {
-            "items": {
-              "$ref": "#/components/schemas/RiskLevelRule"
-            },
-            "maxItems": 3,
-            "minItems": 3,
-            "title": "Levels",
-            "type": "array"
-          },
-          "mail": {
-            "$ref": "#/components/schemas/MailSettings"
-          },
           "monthlyChangeCount": {
             "title": "Monthlychangecount",
             "type": "integer"
@@ -3849,9 +3820,6 @@
             ],
             "title": "Nextmailboxsyncat"
           },
-          "notifications": {
-            "$ref": "#/components/schemas/NotificationSettings"
-          },
           "publishedAt": {
             "title": "Publishedat",
             "type": "string"
@@ -3860,11 +3828,8 @@
             "title": "Publishedby",
             "type": "string"
           },
-          "retention": {
-            "$ref": "#/components/schemas/RetentionSettings"
-          },
-          "security": {
-            "$ref": "#/components/schemas/SecuritySettings"
+          "snapshot": {
+            "$ref": "#/components/schemas/ConfigSnapshot"
           },
           "version": {
             "title": "Version",
@@ -3872,12 +3837,6 @@
           }
         },
         "required": [
-          "categories",
-          "levels",
-          "aliases",
-          "mail",
-          "security",
-          "notifications",
           "version",
           "publishedAt",
           "publishedBy",
@@ -3888,7 +3847,8 @@
           "monthlyChangeCount",
           "lastMailboxSyncAt",
           "nextMailboxSyncAt",
-          "authorizedMailboxCount"
+          "authorizedMailboxCount",
+          "snapshot"
         ],
         "title": "ConfigOverview",
         "type": "object"

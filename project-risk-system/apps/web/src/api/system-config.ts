@@ -8,10 +8,13 @@ import type {
 } from "@risk-platform/contracts";
 
 import { apiRequest } from "./http";
+import { requireSystemConfigOverview } from "./system-config-contract";
 
 export const systemConfigApi = {
   async overview(): Promise<SystemConfigOverview> {
-    return (await apiRequest<SystemConfigOverview>("/admin/system-config")).data;
+    return requireSystemConfigOverview(
+      (await apiRequest<unknown>("/admin/system-config")).data,
+    );
   },
 
   async projectOptions(): Promise<ProjectOption[]> {
@@ -35,12 +38,14 @@ export const systemConfigApi = {
         }) => alias,
       ),
     };
-    return (
-      await apiRequest<SystemConfigOverview>("/admin/system-config/publish", {
+    return requireSystemConfigOverview(
+      (
+        await apiRequest<unknown>("/admin/system-config/publish", {
         method: "POST",
         body: JSON.stringify(body),
-      })
-    ).data;
+        })
+      ).data,
+    );
   },
 
   async releases(module: SystemConfigModule | "all" = "all"): Promise<SystemConfigReleaseItem[]> {

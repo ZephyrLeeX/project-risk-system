@@ -14,6 +14,7 @@ import type {
 } from "@risk-platform/contracts";
 
 import { systemConfigApi } from "@/api/system-config";
+import { cloneConfigSnapshot } from "@/api/system-config-contract";
 import AdminShell from "@/components/AdminShell.vue";
 import ModalDialog from "@/components/ModalDialog.vue";
 
@@ -72,7 +73,6 @@ function emptyCategory(): SystemRiskCategory {
   return { id: null, code: "", name: "", keywords: [], colorToken: "#4C8FE8", description: null, defaultLevel: null, sortOrder: 0, isActive: true, riskCount: 0 };
 }
 
-function clone<T>(value: T): T { return JSON.parse(JSON.stringify(value)) as T; }
 function formatTime(value: string): string { return new Date(value).toLocaleString("zh-CN", { hour12: false }); }
 function showToast(message: string): void { toast.value = message; window.setTimeout(() => { if (toast.value === message) toast.value = ""; }, 2600); }
 function markChanged(module: SystemConfigModule): void { changedModules.value = new Set([...changedModules.value, module]); }
@@ -88,8 +88,8 @@ async function load(): Promise<void> {
       systemConfigApi.projectOptions(),
     ]);
     overview.value = data;
-    draft.value = clone(data.snapshot);
-    original.value = clone(data.snapshot);
+    draft.value = cloneConfigSnapshot(data.snapshot);
+    original.value = cloneConfigSnapshot(data.snapshot);
     releases.value = history;
     projectOptions.value = projects;
     changedModules.value = new Set();
@@ -99,7 +99,7 @@ async function load(): Promise<void> {
 }
 
 function discardChanges(): void {
-  if (original.value) draft.value = clone(original.value);
+  if (original.value) draft.value = cloneConfigSnapshot(original.value);
   changedModules.value = new Set();
   discardOpen.value = false;
   showToast(`草稿已恢复为已发布的 ${overview.value?.version ?? "当前"} 配置。`);
@@ -108,7 +108,7 @@ function discardChanges(): void {
 function openCategory(index?: number): void {
   editingCategoryIndex.value = index ?? null;
   const existing = index === undefined ? undefined : draft.value?.categories[index];
-  categoryForm.value = existing ? clone(existing) : emptyCategory();
+  categoryForm.value = existing ? structuredClone(existing) : emptyCategory();
   categoryOpen.value = true;
 }
 
@@ -121,8 +121,8 @@ function saveCategory(): void {
   if (!form.name || !/^[A-Z][A-Z0-9_]{1,63}$/.test(form.code)) { error.value = "请填写类别名称，并使用大写字母、数字和下划线作为类别编码"; return; }
   if (editingCategoryIndex.value === null) {
     form.sortOrder = (draft.value.categories[draft.value.categories.length - 1]?.sortOrder ?? 0) + 10;
-    draft.value.categories.push(clone(form));
-  } else draft.value.categories[editingCategoryIndex.value] = clone(form);
+    draft.value.categories.push(structuredClone(form));
+  } else draft.value.categories[editingCategoryIndex.value] = structuredClone(form);
   categoryOpen.value = false;
   markChanged("RISK");
 }
@@ -189,10 +189,10 @@ async function publish(): Promise<void> {
     const module: SystemConfigModule = changedModules.value.size === 1
       ? ([...changedModules.value][0] ?? "ALL")
       : "ALL";
-    const result = await systemConfigApi.publish({ ...clone(draft.value), changeCount: changeCount.value, changeSummary: changeSummary.value.trim(), module });
+    const result = await systemConfigApi.publish({ ...cloneConfigSnapshot(draft.value), changeCount: changeCount.value, changeSummary: changeSummary.value.trim(), module });
     overview.value = result;
-    draft.value = clone(result.snapshot);
-    original.value = clone(result.snapshot);
+    draft.value = cloneConfigSnapshot(result.snapshot);
+    original.value = cloneConfigSnapshot(result.snapshot);
     releases.value = await systemConfigApi.releases();
     changedModules.value = new Set();
     publishOpen.value = false;

@@ -4,7 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from risk_platform.shared.errors import ApiError
-from risk_platform.system_config.schemas import PublishRequest
+from risk_platform.system_config.schemas import ConfigOverview, PublishRequest
 from risk_platform.system_config.service import SystemConfigService
 
 
@@ -97,3 +97,32 @@ def test_system_config_normalization_matches_alias_invariant() -> None:
     assert SystemConfigService._code(" delivery-risk ") == "DELIVERY_RISK"
     with pytest.raises(ApiError):
         SystemConfigService._code("bad code!")
+
+
+def test_overview_contract_nests_the_required_snapshot() -> None:
+    payload = _payload()
+    snapshot = {
+        key: value
+        for key, value in payload.items()
+        if key in {"categories", "levels", "aliases", "mail", "security", "notifications"}
+    }
+    overview = ConfigOverview.model_validate(
+        {
+            "version": "V12.3",
+            "publishedAt": "2026-08-17T00:00:00.000Z",
+            "publishedBy": "系统初始化",
+            "changeSummary": "初始配置",
+            "activeConfigCount": 19,
+            "activeCategoryCount": 8,
+            "activeLevelCount": 3,
+            "monthlyChangeCount": 0,
+            "lastMailboxSyncAt": None,
+            "nextMailboxSyncAt": None,
+            "authorizedMailboxCount": 0,
+            "snapshot": snapshot,
+        }
+    )
+
+    response = overview.model_dump(mode="json")
+    assert response["snapshot"]["categories"][0]["code"] == " DELIVERY "
+    assert "categories" not in response

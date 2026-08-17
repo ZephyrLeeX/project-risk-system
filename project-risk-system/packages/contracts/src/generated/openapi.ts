@@ -2963,30 +2963,21 @@ export interface components {
             activeConfigCount: number;
             /** Activelevelcount */
             activeLevelCount: number;
-            /** Aliases */
-            aliases: components["schemas"]["ProjectAlias"][];
             /** Authorizedmailboxcount */
             authorizedMailboxCount: number;
-            /** Categories */
-            categories: components["schemas"]["RiskCategory"][];
             /** Changesummary */
             changeSummary: string;
             /** Lastmailboxsyncat */
             lastMailboxSyncAt: string | null;
-            /** Levels */
-            levels: components["schemas"]["RiskLevelRule"][];
-            mail: components["schemas"]["MailSettings"];
             /** Monthlychangecount */
             monthlyChangeCount: number;
             /** Nextmailboxsyncat */
             nextMailboxSyncAt: string | null;
-            notifications: components["schemas"]["NotificationSettings"];
             /** Publishedat */
             publishedAt: string;
             /** Publishedby */
             publishedBy: string;
-            retention?: components["schemas"]["RetentionSettings"];
-            security: components["schemas"]["SecuritySettings"];
+            snapshot: components["schemas"]["ConfigSnapshot"];
             /** Version */
             version: string;
         };

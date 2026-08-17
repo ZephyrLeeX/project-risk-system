@@ -108,7 +108,7 @@ class ProjectOptionResponse(StrictRequestModel):
     departmentName: str | None
 
 
-class ConfigOverview(ConfigSnapshot):
+class ConfigOverview(StrictRequestModel):
     version: str
     publishedAt: str
     publishedBy: str
@@ -120,6 +120,7 @@ class ConfigOverview(ConfigSnapshot):
     lastMailboxSyncAt: str | None
     nextMailboxSyncAt: str | None
     authorizedMailboxCount: int
+    snapshot: ConfigSnapshot
 
 
 class ReleaseItem(StrictRequestModel):
