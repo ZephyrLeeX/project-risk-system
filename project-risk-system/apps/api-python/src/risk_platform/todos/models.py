@@ -7,6 +7,7 @@ from enum import StrEnum
 from uuid import UUID
 
 from sqlalchemy import (
+    Boolean,
     Date,
     Enum,
     ForeignKey,
@@ -45,7 +46,12 @@ class ActionItemUrgency(StrEnum):
 class ActionItem(Base):
     __tablename__ = "action_items"
     __table_args__ = (
-        Index("action_items_riskId_key", "riskId", unique=True),
+        Index(
+            "action_items_default_risk_key",
+            "riskId",
+            unique=True,
+            postgresql_where=text('"riskId" IS NOT NULL AND "isDefaultForRisk" = TRUE'),
+        ),
         Index("action_items_projectId_status_idx", "projectId", "status"),
         Index("action_items_assigneeUserId_status_idx", "assigneeUserId", "status"),
         Index("action_items_assigneeNameSource_status_idx", "assigneeNameSource", "status"),
@@ -59,6 +65,9 @@ class ActionItem(Base):
         UUIDType(as_uuid=True),
         ForeignKey("risks.id", ondelete="CASCADE", onupdate="CASCADE"),
         nullable=True,
+    )
+    isDefaultForRisk: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("FALSE")
     )
     projectId: Mapped[UUID] = mapped_column(
         UUIDType(as_uuid=True),

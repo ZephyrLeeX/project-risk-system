@@ -1958,6 +1958,10 @@ export interface components {
         AgentInteractionRespondRequest: {
             /** Action */
             action: string;
+            /** Finalfields */
+            finalFields?: {
+                [key: string]: components["schemas"]["JSONValue-Input"];
+            } | null;
             /** Projectid */
             projectId?: string | null;
             /** Projectname */
@@ -1973,13 +1977,17 @@ export interface components {
         AgentInteractionResponse: {
             /** Candidates */
             candidates: {
-                [key: string]: components["schemas"]["JSONValue"];
+                [key: string]: components["schemas"]["JSONValue-Output"];
             }[];
             /**
              * Conversationid
              * Format: uuid
              */
             conversationId: string;
+            /** Draft */
+            draft?: {
+                [key: string]: components["schemas"]["JSONValue-Output"];
+            } | null;
             /**
              * Executionid
              * Format: uuid
@@ -2040,7 +2048,7 @@ export interface components {
             sequence: number;
             /** Structured */
             structured?: {
-                [key: string]: components["schemas"]["JSONValue"];
+                [key: string]: components["schemas"]["JSONValue-Output"];
             } | null;
             /** Traceid */
             traceId: string;
@@ -3817,7 +3825,9 @@ export interface components {
         /** @description Arbitrary JSON value; normalized to `unknown` for TypeScript codegen (T032). */
         JSONScalar: unknown;
         /** @description Arbitrary JSON value; normalized to `unknown` for TypeScript codegen (T032). */
-        JSONValue: unknown;
+        "JSONValue-Input": unknown;
+        /** @description Arbitrary JSON value; normalized to `unknown` for TypeScript codegen (T032). */
+        "JSONValue-Output": unknown;
         /** LegalRowItem */
         LegalRowItem: {
             /** Annualplanamount */
@@ -5537,7 +5547,7 @@ export interface components {
          * RiskSourceType
          * @enum {string}
          */
-        RiskSourceType: "EXCEL" | "LITIGATION" | "MAIL_AI" | "MANUAL";
+        RiskSourceType: "EXCEL" | "LITIGATION" | "MAIL_AI" | "MANUAL" | "AGENT";
         /**
          * RiskStatus
          * @enum {string}
@@ -6045,13 +6055,13 @@ export interface components {
             riskCount: number;
             /** Risklevelcounts */
             riskLevelCounts: {
-                [key: string]: components["schemas"]["JSONValue"];
+                [key: string]: components["schemas"]["JSONValue-Output"];
             };
             /** Sourcerevision */
             sourceRevision: number;
             /** Summary */
             summary: {
-                [key: string]: components["schemas"]["JSONValue"];
+                [key: string]: components["schemas"]["JSONValue-Output"];
             };
         };
         /** WeeklyReportItemResponse */
@@ -6107,7 +6117,7 @@ export interface components {
             stale: boolean;
             /** Summary */
             summary: {
-                [key: string]: components["schemas"]["JSONValue"];
+                [key: string]: components["schemas"]["JSONValue-Output"];
             };
             /**
              * Weekend

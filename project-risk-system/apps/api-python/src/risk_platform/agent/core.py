@@ -7,7 +7,7 @@ import json
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from time import monotonic
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from risk_platform.ai_providers.v2_adapter import (
     ProviderChatRequest,
@@ -78,7 +78,13 @@ class ReadOnlyAgentCore:
         self._identity_loader = identity_loader
 
     async def run(
-        self, identity: SessionIdentity, message: str, resume_context: str | None = None
+        self,
+        identity: SessionIdentity,
+        message: str,
+        resume_context: str | None = None,
+        *,
+        conversation_id: UUID | None = None,
+        execution_id: UUID | None = None,
     ) -> AgentCoreOutcome:
         if self._scope.decide(message) is ScopeDecision.OUT_OF_SCOPE:
             return AgentCoreOutcome(OUT_OF_SCOPE_MESSAGE, out_of_scope=True)
@@ -87,7 +93,9 @@ class ReadOnlyAgentCore:
         messages: list[ProviderMessage] = [
             ProviderMessage(
                 ProviderRole.SYSTEM,
-                "你是只读项目风险管理助手。业务事实只能来自 tool 结果, 不得提出写操作。",
+                "你是项目风险管理助手。业务事实只能来自授权 tool 结果; "
+                "需要写入时只能调用 proposal tool; "
+                "不得直接执行业务写入; 必须等待用户确认。",
             ),
             ProviderMessage(
                 ProviderRole.USER,
@@ -125,7 +133,12 @@ class ReadOnlyAgentCore:
                 if repeated[key] > self._limits.duplicate_call_threshold:
                     raise AgentLoopError("AGENT_DUPLICATE_TOOL_CALL")
             results = await asyncio.gather(
-                *[self._invoke_current(identity, call) for call in response.tool_calls]
+                *[
+                    self._invoke_current(
+                        identity, call, conversation_id=conversation_id, execution_id=execution_id
+                    )
+                    for call in response.tool_calls
+                ]
             )
             for call, result in zip(response.tool_calls, results, strict=True):
                 if call.name == "project_search" and isinstance(result.data, dict):
@@ -151,12 +164,28 @@ class ReadOnlyAgentCore:
         raise AgentLoopError("AGENT_MAX_MODEL_ROUNDS")
 
     async def _invoke_current(
-        self, original: SessionIdentity, call: ProviderToolCall
+        self,
+        original: SessionIdentity,
+        call: ProviderToolCall,
+        *,
+        conversation_id: UUID | None = None,
+        execution_id: UUID | None = None,
     ) -> AgentToolResult:
         identity = (
             await self._identity_loader(original) if self._identity_loader is not None else original
         )
-        return await self._tools.invoke(identity, call.name, call.arguments, trace_id=str(uuid4()))
+        context = (
+            (conversation_id, execution_id)
+            if conversation_id is not None and execution_id is not None
+            else None
+        )
+        if context is None:
+            return await self._tools.invoke(
+                identity, call.name, call.arguments, trace_id=str(uuid4())
+            )
+        return await self._tools.invoke(
+            identity, call.name, call.arguments, trace_id=str(uuid4()), mutation_context=context
+        )
 
     def _within_time(self, started: float) -> None:
         if monotonic() - started > self._limits.max_total_execution_time:

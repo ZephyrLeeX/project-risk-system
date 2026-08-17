@@ -9,6 +9,7 @@ from typing import Any, cast
 from uuid import UUID
 
 from sqlalchemy import func, literal, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from risk_platform.admin.models import Department, User, UserStatus
@@ -51,6 +52,18 @@ class TodoProcessCommand:
     description: str
     due_date: date | None = None
     assignee_user_id: UUID | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class TodoCreateCommand:
+    project_id: UUID
+    risk_id: UUID
+    title: str
+    description: str
+    urgency: ActionItemUrgency = ActionItemUrgency.NORMAL
+    due_date: date | None = None
+    assignee_user_id: UUID | None = None
+    actor_id: UUID | None = None
 
 
 class TodosService:
@@ -178,6 +191,70 @@ class TodosService:
         await self._finish_update(session, identity, todo, project.id, risk, before, trace_id)
         return row
 
+    async def create_for_risk_in_session(
+        self,
+        session: AsyncSession,
+        identity: SessionIdentity,
+        command: TodoCreateCommand,
+        *,
+        trace_id: UUID,
+    ) -> ActionItem:
+        """Create a non-default todo for an already existing, in-scope risk."""
+        risk = await session.scalar(
+            select(Risk)
+            .join(Project, Project.id == Risk.projectId)
+            .where(
+                Risk.id == command.risk_id,
+                Risk.projectId == command.project_id,
+                project_scope_predicate(
+                    UUID(identity.user.id), DataScopeType(identity.user.dataScope)
+                ),
+            )
+            .with_for_update()
+        )
+        if risk is None:
+            raise ApiError(404, "NOT_FOUND", "风险不存在或已超出数据范围")
+        if risk.status is not RiskStatus.ACTIVE:
+            raise ApiError(409, "RISK_NOT_ACTIVE", "已解除风险不能新增待办")
+        if not command.title.strip() or not command.description.strip():
+            raise ApiError(422, "VALIDATION_ERROR", "待办标题和描述不能为空")
+        assignee_name = None
+        if command.assignee_user_id is not None:
+            assignee = await session.scalar(
+                select(User).where(
+                    User.id == command.assignee_user_id, User.status == UserStatus.ACTIVE
+                )
+            )
+            if assignee is None:
+                raise ApiError(404, "NOT_FOUND", "负责人不存在或不可用")
+            assignee_name = assignee.displayName
+        todo = ActionItem(
+            riskId=risk.id,
+            isDefaultForRisk=False,
+            projectId=risk.projectId,
+            title=command.title.strip()[:250],
+            description=command.description.strip(),
+            urgency=command.urgency,
+            sourceType=ActionItemSourceType.MANUAL,
+            assigneeUserId=command.assignee_user_id,
+            assigneeNameSource=assignee_name,
+            dueDate=command.due_date,
+            createdById=command.actor_id or UUID(identity.user.id),
+        )
+        session.add(todo)
+        await session.flush()
+        await AuditService(session).record_success(
+            actor_id=UUID(identity.user.id),
+            actor_type=AuditActorType.USER,
+            module="TODO",
+            action="ACTION_ITEM_CREATED",
+            resource_type="ACTION_ITEM",
+            resource_id=str(todo.id),
+            trace_id=trace_id,
+            project_id=todo.projectId,
+        )
+        return todo
+
     async def process_in_session(
         self,
         session: AsyncSession,
@@ -255,7 +332,11 @@ class TodosService:
         actor_id: UUID | None = None,
     ) -> ActionItem:
         """Return the sole auto todo for a risk, creating it when absent."""
-        existing = await session.scalar(select(ActionItem).where(ActionItem.riskId == risk.id))
+        existing = await session.scalar(
+            select(ActionItem).where(
+                ActionItem.riskId == risk.id, ActionItem.isDefaultForRisk.is_(True)
+            )
+        )
         title = f"{risk.title}处理事项"[:250]
         description = (
             risk.suggestion.strip()
@@ -272,6 +353,7 @@ class TodosService:
             return existing
         todo = ActionItem(
             riskId=risk.id,
+            isDefaultForRisk=True,
             projectId=risk.projectId,
             title=title,
             description=description,
@@ -281,13 +363,22 @@ class TodosService:
             createdById=actor_id,
         )
         session.add(todo)
-        await session.flush()
+        try:
+            async with session.begin_nested():
+                await session.flush()
+        except IntegrityError:
+            existing = await session.scalar(
+                select(ActionItem).where(
+                    ActionItem.riskId == risk.id, ActionItem.isDefaultForRisk.is_(True)
+                )
+            )
+            if existing is None:
+                raise
+            return cast(ActionItem, existing)
         return todo
 
     @staticmethod
-    def _filtered_conditions(
-        query: ListTodosQuery, scope_predicate: Any
-    ) -> builtin_list[Any]:
+    def _filtered_conditions(query: ListTodosQuery, scope_predicate: Any) -> builtin_list[Any]:
         conditions: builtin_list[Any] = [scope_predicate]
         if query.owner and query.owner.strip():
             owner = query.owner.strip()
@@ -350,20 +441,22 @@ class TodosService:
         """Distinct assignee names over the full scoped set, matching the
         ``assigneeName`` resolution used for items (assigned user display name
         falling back to the source name, then ``待分配``)."""
-        expr = func.coalesce(
-            User.displayName, ActionItem.assigneeNameSource, literal("待分配")
-        )
+        expr = func.coalesce(User.displayName, ActionItem.assigneeNameSource, literal("待分配"))
         rows = (
-            await session.execute(
-                select(expr)
-                .distinct()
-                .select_from(ActionItem)
-                .join(Project, Project.id == ActionItem.projectId)
-                .outerjoin(User, User.id == ActionItem.assigneeUserId)
-                .where(scope_predicate)
-                .order_by(expr.asc())
+            (
+                await session.execute(
+                    select(expr)
+                    .distinct()
+                    .select_from(ActionItem)
+                    .join(Project, Project.id == ActionItem.projectId)
+                    .outerjoin(User, User.id == ActionItem.assigneeUserId)
+                    .where(scope_predicate)
+                    .order_by(expr.asc())
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         return [str(value) for value in rows if value is not None]
 
     async def _schedule_items(
@@ -509,4 +602,4 @@ def _source_label(source: str) -> str:
     }.get(source, "其他来源")
 
 
-__all__ = ["TodoProcessCommand", "TodosService"]
+__all__ = ["TodoCreateCommand", "TodoProcessCommand", "TodosService"]

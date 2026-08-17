@@ -73,23 +73,35 @@ class AgentInteractionResponse(_Contract):
     conversationId: UUID
     executionId: UUID
     candidates: list[dict[str, JSONValue]]
+    draft: dict[str, JSONValue] | None = None
     expiresAt: datetime
 
 
 class AgentInteractionRespondRequest(StrictRequestModel):
-    action: str = Field(pattern=r"^(SELECT|MANUAL_INPUT|CANCEL)$")
+    action: str = Field(pattern=r"^(SELECT|MANUAL_INPUT|CONFIRM|CANCEL)$")
     projectId: UUID | None = None
     projectName: str | None = Field(default=None, min_length=1, max_length=100)
+    finalFields: dict[str, JSONValue] | None = None
 
     @model_validator(mode="after")
     def strict_action_payload(self) -> AgentInteractionRespondRequest:
-        if self.action == "SELECT" and (self.projectId is None or self.projectName is not None):
+        if self.action == "SELECT" and (
+            self.projectId is None or self.projectName is not None or self.finalFields is not None
+        ):
             raise ValueError("SELECT requires only projectId")
         if self.action == "MANUAL_INPUT" and (
-            self.projectName is None or self.projectId is not None
+            self.projectName is None or self.projectId is not None or self.finalFields is not None
         ):
             raise ValueError("MANUAL_INPUT requires only projectName")
-        if self.action == "CANCEL" and (self.projectId is not None or self.projectName is not None):
+        if self.action == "CONFIRM" and (
+            self.projectId is not None or self.projectName is not None or self.finalFields is None
+        ):
+            raise ValueError("CONFIRM requires only finalFields")
+        if self.action == "CANCEL" and (
+            self.projectId is not None
+            or self.projectName is not None
+            or self.finalFields is not None
+        ):
             raise ValueError("CANCEL does not accept a project")
         return self
 
@@ -97,6 +109,49 @@ class AgentInteractionRespondRequest(StrictRequestModel):
 class AgentInteractionRespondResponse(_Contract):
     interaction: AgentInteractionResponse
     streamUrl: str | None
+
+
+class MutationProposalRequest(StrictRequestModel):
+    """Wire-neutral proposal payload; fields are checked again by the domain service."""
+
+    projectId: UUID
+    riskId: UUID | None = None
+    todoId: UUID | None = None
+    title: str | None = Field(default=None, max_length=250)
+    description: str | None = Field(default=None, max_length=4000)
+    level: str | None = None
+    category: UUID | None = None
+    evidence: str | None = Field(default=None, max_length=10000)
+    suggestion: str | None = Field(default=None, max_length=10000)
+    resolutionReason: str | None = Field(default=None, max_length=2000)
+    urgency: str | None = None
+    assigneeUserId: UUID | None = None
+    dueDate: str | None = None
+    status: str | None = None
+    completionNote: str | None = Field(default=None, max_length=2000)
+    targetStatus: str | None = None
+    batchId: str | None = None
+
+
+class MutationProposalResponse(_Contract):
+    draftId: UUID
+    interactionId: UUID
+    operation: str
+    status: str
+    draft: dict[str, JSONValue]
+
+
+class MutationCommitItem(_Contract):
+    draftId: UUID
+    success: bool
+    code: str
+    resourceType: str | None = None
+    resourceId: UUID | None = None
+
+
+class MutationCommitResponse(_Contract):
+    status: str
+    items: list[MutationCommitItem]
 
 
 class AgentMessageRequest(StrictRequestModel):
@@ -281,6 +336,10 @@ __all__ = [
     "CandidateRiskBasisType",
     "DashboardFocusToolResponse",
     "EmptyToolArguments",
+    "MutationCommitItem",
+    "MutationCommitResponse",
+    "MutationProposalRequest",
+    "MutationProposalResponse",
     "ProjectDetailToolArguments",
     "ProjectDetailToolResponse",
     "ProjectListToolItem",

@@ -12,12 +12,15 @@ from risk_platform.agent.models import (
 from risk_platform.agent.schemas import AgentInteractionRespondRequest
 
 
-def test_project_selection_contract_is_single_action_and_has_no_write_confirmation() -> None:
+def test_interaction_contract_keeps_project_selection_and_adds_write_confirmation() -> None:
     assert AgentInteractionType.PROJECT_SELECTION.value == "PROJECT_SELECTION"
-    assert {item.value for item in AgentInteractionAction} == {
-        "SELECT",
-        "MANUAL_INPUT",
-        "CANCEL",
+    assert {"SELECT", "MANUAL_INPUT", "CANCEL"}.issubset(
+        {item.value for item in AgentInteractionAction}
+    )
+    assert "CONFIRM" in {item.value for item in AgentInteractionAction}
+    assert {item.value for item in AgentInteractionType} == {
+        "PROJECT_SELECTION",
+        "WRITE_CONFIRMATION",
     }
     assert AgentExecutionStatus.WAITING_FOR_USER.value not in {"RETRY_WAIT"}
     assert AgentEventType.INTERACTION_REQUIRED.value == "interaction.required"

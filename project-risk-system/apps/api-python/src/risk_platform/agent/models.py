@@ -53,6 +53,7 @@ class AgentExecutionStatus(StrEnum):
 
 class AgentInteractionType(StrEnum):
     PROJECT_SELECTION = "PROJECT_SELECTION"
+    WRITE_CONFIRMATION = "WRITE_CONFIRMATION"
 
 
 class AgentInteractionStatus(StrEnum):
@@ -66,6 +67,24 @@ class AgentInteractionAction(StrEnum):
     SELECT = "SELECT"
     MANUAL_INPUT = "MANUAL_INPUT"
     CANCEL = "CANCEL"
+    CONFIRM = "CONFIRM"
+
+
+class MutationDraftOperation(StrEnum):
+    RISK_CREATE = "risk_create_proposal"
+    RISK_UPDATE = "risk_update_proposal"
+    RISK_RESOLVE = "risk_resolve_proposal"
+    TODO_CREATE = "todo_create_proposal"
+    TODO_UPDATE = "todo_update_proposal"
+    PROJECT_STATUS_UPDATE = "project_status_update_proposal"
+
+
+class MutationDraftStatus(StrEnum):
+    OPEN = "OPEN"
+    CONFIRMED = "CONFIRMED"
+    CANCELLED = "CANCELLED"
+    EXPIRED = "EXPIRED"
+    FAILED = "FAILED"
 
 
 class AgentConfirmationOperation(StrEnum):
@@ -195,6 +214,71 @@ class AgentInteraction(Base):
         Enum(AgentInteractionAction, name="AgentInteractionAction", native_enum=True)
     )
     responsePayload: Mapped[dict[str, JSONValue] | None] = mapped_column(JSONB)
+    createdAt: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True, precision=3),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    expiresAt: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True, precision=3), nullable=False
+    )
+    resolvedAt: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True, precision=3))
+
+
+class MutationDraft(Base):
+    __tablename__ = "agent_mutation_drafts"
+    __table_args__ = (
+        Index("agent_mutation_drafts_ownerUserId_status_idx", "ownerUserId", "status"),
+        Index("agent_mutation_drafts_interactionId_key", "interactionId", unique=True),
+        Index("agent_mutation_drafts_idempotencyKey_key", "idempotencyKey", unique=True),
+        CheckConstraint("jsonb_typeof(proposal) = 'object'", name="proposal_object"),
+        CheckConstraint("btrim(digest) <> ''", name="digest_nonempty"),
+    )
+    id: Mapped[UUID] = mapped_column(UUIDType(as_uuid=True), primary_key=True, default=new_uuid)
+    interactionId: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True),
+        ForeignKey("agent_interactions.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    ownerUserId: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    conversationId: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True),
+        ForeignKey("agent_conversations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    executionId: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True),
+        ForeignKey("agent_executions.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    operation: Mapped[MutationDraftOperation] = mapped_column(
+        Enum(
+            MutationDraftOperation,
+            name="MutationDraftOperation",
+            native_enum=True,
+            values_callable=lambda enum: [item.value for item in enum],
+        ),
+        nullable=False,
+    )
+    status: Mapped[MutationDraftStatus] = mapped_column(
+        Enum(
+            MutationDraftStatus,
+            name="MutationDraftStatus",
+            native_enum=True,
+            values_callable=lambda enum: [item.value for item in enum],
+        ),
+        nullable=False,
+        server_default="OPEN",
+    )
+    proposal: Mapped[dict[str, JSONValue]] = mapped_column(JSONB, nullable=False)
+    digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
+    idempotencyKey: Mapped[str] = mapped_column(String(255), nullable=False)
+    resultResourceType: Mapped[str | None] = mapped_column(String(64))
+    resultResourceId: Mapped[UUID | None] = mapped_column(UUIDType(as_uuid=True))
+    failureCode: Mapped[str | None] = mapped_column(String(64))
     createdAt: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True, precision=3),
         nullable=False,
@@ -399,4 +483,7 @@ __all__ = [
     "AgentExecutionConfig",
     "AgentMessage",
     "AgentMessageRole",
+    "MutationDraft",
+    "MutationDraftOperation",
+    "MutationDraftStatus",
 ]

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, cast
@@ -180,6 +180,63 @@ class RisksService:
             risk, project, department, category, reporter, resolved_by = row
         return _detail((risk, project, department, category, reporter, resolved_by))
 
+    async def update_agent_in_session(
+        self,
+        session: AsyncSession,
+        identity: SessionIdentity,
+        risk_id: UUID,
+        fields: Mapping[str, object],
+        *,
+        trace_id: UUID,
+    ) -> Risk:
+        """Apply the T051 allowlist through the risk domain boundary."""
+        row = await self._risk_row(session, identity, risk_id, for_update=True)
+        if row is None:
+            raise ApiError(404, "NOT_FOUND", "风险不存在或不在当前数据范围内")
+        risk, project, _department, _category, _reporter, _resolved_by = row
+        allowed = {"title", "description", "level", "category", "evidence", "suggestion"}
+        if not fields or set(fields) - allowed:
+            raise ApiError(422, "VALIDATION_ERROR", "风险字段不在允许修改范围内")
+        for key, value in fields.items():
+            if key in {"title", "description"}:
+                if not isinstance(value, str) or not value.strip():
+                    raise ApiError(422, "VALIDATION_ERROR", "风险标题和描述不能为空")
+                setattr(risk, key, value.strip())
+            elif key == "level":
+                try:
+                    risk.level = ProjectRiskLevel(str(value))
+                except ValueError:
+                    raise ApiError(422, "VALIDATION_ERROR", "风险等级无效") from None
+            elif key == "category":
+                try:
+                    category_id = UUID(str(value))
+                except ValueError:
+                    raise ApiError(422, "VALIDATION_ERROR", "风险分类无效") from None
+                category = await session.scalar(
+                    select(RiskCategory).where(
+                        RiskCategory.id == category_id, RiskCategory.isActive.is_(True)
+                    )
+                )
+                if category is None:
+                    raise ApiError(409, "RISK_CATEGORY_STALE", "风险分类已失效")
+                risk.categoryId = category.id
+            elif key in {"evidence", "suggestion"}:
+                if value is not None and not isinstance(value, str):
+                    raise ApiError(422, "VALIDATION_ERROR", "风险字段格式无效")
+                setattr(risk, key, value.strip() if isinstance(value, str) else None)
+        await session.flush()
+        await AuditService(session).record_success(
+            actor_id=UUID(identity.user.id),
+            actor_type=AuditActorType.USER,
+            module="RISK",
+            action="RISK_UPDATED",
+            resource_type="RISK",
+            resource_id=str(risk.id),
+            trace_id=trace_id,
+            project_id=project.id,
+        )
+        return cast(Risk, risk)
+
     async def resolve_in_session(
         self,
         session: AsyncSession,
@@ -198,36 +255,41 @@ class RisksService:
         now = datetime.now(UTC)
         risk.status, risk.resolvedAt = RiskStatus.RESOLVED, now
         risk.resolvedById, risk.resolutionReason = UUID(identity.user.id), payload.reason
-        todo = await session.scalar(
-            select(ActionItem).where(ActionItem.riskId == risk.id).with_for_update()
-        )
-        if todo is not None and todo.status is not ActionItemStatus.COMPLETED:
-            old = todo.status
-            todo.status, todo.completedAt, todo.completedById = (
-                ActionItemStatus.COMPLETED,
-                now,
-                UUID(identity.user.id),
-            )
-            todo.completionNote = _resolution_note(todo.completionNote, payload.reason)
-            session.add(
-                _event(
-                    risk,
-                    project.id,
-                    todo.id,
-                    RiskTimelineEventType.ACTION_COMPLETED,
-                    "待办事项随风险解除完成",
-                    f"风险已解除，关联待办同步完成：{payload.reason}",  # noqa: RUF001
-                    old.value,
-                    todo.status.value,
-                    identity,
-                    now,
+        todos = list(
+            (
+                await session.scalars(
+                    select(ActionItem).where(ActionItem.riskId == risk.id).with_for_update()
                 )
-            )
+            ).all()
+        )
+        for todo in todos:
+            if todo.status is not ActionItemStatus.COMPLETED:
+                old = todo.status
+                todo.status, todo.completedAt, todo.completedById = (
+                    ActionItemStatus.COMPLETED,
+                    now,
+                    UUID(identity.user.id),
+                )
+                todo.completionNote = _resolution_note(todo.completionNote, payload.reason)
+                session.add(
+                    _event(
+                        risk,
+                        project.id,
+                        todo.id,
+                        RiskTimelineEventType.ACTION_COMPLETED,
+                        "待办事项随风险解除完成",
+                        f"风险已解除，关联待办同步完成：{payload.reason}",  # noqa: RUF001
+                        old.value,
+                        todo.status.value,
+                        identity,
+                        now,
+                    )
+                )
         session.add(
             _event(
                 risk,
                 project.id,
-                todo.id if todo else None,
+                todos[0].id if todos else None,
                 RiskTimelineEventType.RISK_RESOLVED,
                 "风险已解除",
                 payload.reason,
@@ -267,10 +329,15 @@ class RisksService:
                 None,
                 None,
             )
-            todo = await session.scalar(
-                select(ActionItem).where(ActionItem.riskId == risk.id).with_for_update()
+            todos = list(
+                (
+                    await session.scalars(
+                        select(ActionItem).where(ActionItem.riskId == risk.id).with_for_update()
+                    )
+                ).all()
             )
-            if todo is None:
+            if not todos:
+                todo = None
                 todo = await TodosService(self._session_factory).ensure_for_risk(
                     session,
                     risk,
@@ -291,28 +358,27 @@ class RisksService:
                         now,
                     )
                 )
-            elif todo.status is not ActionItemStatus.PENDING:
-                old = todo.status
-                todo.status, todo.completionNote, todo.completedAt, todo.completedById = (
-                    ActionItemStatus.PENDING,
-                    None,
-                    None,
-                    None,
-                )
-                session.add(
-                    _event(
-                        risk,
-                        project.id,
-                        todo.id,
-                        RiskTimelineEventType.ACTION_STATUS_CHANGED,
-                        "风险重启后待办恢复处理",
-                        f"风险重新打开：{payload.reason}",  # noqa: RUF001
-                        old.value,
-                        todo.status.value,
-                        identity,
-                        now,
-                    )
-                )
+            else:
+                todo = todos[0]
+                for todo_item in todos:
+                    if todo_item.status is not ActionItemStatus.PENDING:
+                        old = todo_item.status
+                        todo_item.status, todo_item.completionNote = ActionItemStatus.PENDING, None
+                        todo_item.completedAt, todo_item.completedById = None, None
+                        session.add(
+                            _event(
+                                risk,
+                                project.id,
+                                todo_item.id,
+                                RiskTimelineEventType.ACTION_STATUS_CHANGED,
+                                "风险重启后待办恢复处理",
+                                f"风险重新打开：{payload.reason}",  # noqa: RUF001
+                                old.value,
+                                todo_item.status.value,
+                                identity,
+                                now,
+                            )
+                        )
             session.add(
                 _event(
                     risk,

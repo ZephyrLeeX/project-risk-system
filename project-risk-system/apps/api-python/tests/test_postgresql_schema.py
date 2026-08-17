@@ -131,7 +131,7 @@ def test_enum_values_and_single_alembic_head(
     ] + ["AGENT_EXECUTION"]
     assert actual_enums == expected_enums
     config = Config(ROOT / "alembic.ini")
-    assert ScriptDirectory.from_config(config).get_heads() == ["20260817_0012"]
+    assert ScriptDirectory.from_config(config).get_heads() == ["20260817_0013"]
 
 
 def test_downgrade_policy_never_restores_forbidden_audit_schema(

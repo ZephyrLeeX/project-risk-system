@@ -72,6 +72,7 @@ class RiskSourceType(StrEnum):
     LITIGATION = "LITIGATION"
     MAIL_AI = "MAIL_AI"
     MANUAL = "MANUAL"
+    AGENT = "AGENT"
 
 
 class RiskStatus(StrEnum):

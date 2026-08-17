@@ -28,7 +28,12 @@ const spec = JSON.parse(readFileSync(specPath, "utf8"));
 
 const schemas = spec.components?.schemas;
 if (schemas) {
-  for (const name of ["JSONValue", "JSONScalar"]) {
+  for (const name of [
+    "JSONValue",
+    "JSONValue-Input",
+    "JSONValue-Output",
+    "JSONScalar",
+  ]) {
     if (name in schemas) {
       schemas[name] = {
         description:

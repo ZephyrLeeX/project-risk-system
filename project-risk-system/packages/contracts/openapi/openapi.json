@@ -405,9 +405,23 @@
         "additionalProperties": false,
         "properties": {
           "action": {
-            "pattern": "^(SELECT|MANUAL_INPUT|CANCEL)$",
+            "pattern": "^(SELECT|MANUAL_INPUT|CONFIRM|CANCEL)$",
             "title": "Action",
             "type": "string"
+          },
+          "finalFields": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JSONValue-Input"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finalfields"
           },
           "projectId": {
             "anyOf": [
@@ -472,7 +486,7 @@
           "candidates": {
             "items": {
               "additionalProperties": {
-                "$ref": "#/components/schemas/JSONValue"
+                "$ref": "#/components/schemas/JSONValue-Output"
               },
               "type": "object"
             },
@@ -483,6 +497,20 @@
             "format": "uuid",
             "title": "Conversationid",
             "type": "string"
+          },
+          "draft": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JSONValue-Output"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft"
           },
           "executionId": {
             "format": "uuid",
@@ -617,7 +645,7 @@
             "anyOf": [
               {
                 "additionalProperties": {
-                  "$ref": "#/components/schemas/JSONValue"
+                  "$ref": "#/components/schemas/JSONValue-Output"
                 },
                 "type": "object"
               },
@@ -5750,20 +5778,39 @@
           }
         ]
       },
-      "JSONValue": {
+      "JSONValue-Input": {
         "anyOf": [
           {
             "$ref": "#/components/schemas/JSONScalar"
           },
           {
             "items": {
-              "$ref": "#/components/schemas/JSONValue"
+              "$ref": "#/components/schemas/JSONValue-Input"
             },
             "type": "array"
           },
           {
             "additionalProperties": {
-              "$ref": "#/components/schemas/JSONValue"
+              "$ref": "#/components/schemas/JSONValue-Input"
+            },
+            "type": "object"
+          }
+        ]
+      },
+      "JSONValue-Output": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/JSONScalar"
+          },
+          {
+            "items": {
+              "$ref": "#/components/schemas/JSONValue-Output"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JSONValue-Output"
             },
             "type": "object"
           }
@@ -10834,7 +10881,8 @@
           "EXCEL",
           "LITIGATION",
           "MAIL_AI",
-          "MANUAL"
+          "MANUAL",
+          "AGENT"
         ],
         "title": "RiskSourceType",
         "type": "string"
@@ -12367,7 +12415,7 @@
           },
           "riskLevelCounts": {
             "additionalProperties": {
-              "$ref": "#/components/schemas/JSONValue"
+              "$ref": "#/components/schemas/JSONValue-Output"
             },
             "title": "Risklevelcounts",
             "type": "object"
@@ -12378,7 +12426,7 @@
           },
           "summary": {
             "additionalProperties": {
-              "$ref": "#/components/schemas/JSONValue"
+              "$ref": "#/components/schemas/JSONValue-Output"
             },
             "title": "Summary",
             "type": "object"
@@ -12481,7 +12529,7 @@
           },
           "summary": {
             "additionalProperties": {
-              "$ref": "#/components/schemas/JSONValue"
+              "$ref": "#/components/schemas/JSONValue-Output"
             },
             "title": "Summary",
             "type": "object"

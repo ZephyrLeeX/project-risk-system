@@ -1291,7 +1291,7 @@ def test_postgresql_native_worker_error_deadline_heartbeat_backpressure_and_v2_b
     asyncio.run(run())
 
 
-def test_v2_read_only_path_does_not_expose_mutation_or_preview(
+def test_v2_catalogue_exposes_read_tools_and_confirmed_proposal_tools_only(
     database: async_sessionmaker[AsyncSession],
 ) -> None:
     names = {item["name"] for item in tools(database).catalogue(identity())}
@@ -1307,6 +1307,12 @@ def test_v2_read_only_path_does_not_expose_mutation_or_preview(
         "dashboard_focus",
         "weekly_report",
         "weekly_report_detail",
+        "risk_create_proposal",
+        "risk_update_proposal",
+        "risk_resolve_proposal",
+        "todo_create_proposal",
+        "todo_update_proposal",
+        "project_status_update_proposal",
     }
 
 

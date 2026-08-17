@@ -28,7 +28,9 @@ from .models import (
     AgentInteractionAction,
     AgentInteractionStatus,
     AgentMessage,
+    MutationDraft,
 )
+from .mutations import MutationDraftService
 from .schemas import (
     AgentInteractionRespondRequest,
     AgentInteractionRespondResponse,
@@ -62,6 +64,18 @@ class AgentInteractionService:
         payload: AgentInteractionRespondRequest,
         trace_id: str,
     ) -> AgentInteractionRespondResponse:
+        if payload.action in {"CONFIRM", "CANCEL"}:
+            await MutationDraftService(self._sessions).respond(
+                identity,
+                interaction_id,
+                payload.action,
+                payload.finalFields,
+                trace_id=UUID(trace_id),
+            )
+            return AgentInteractionRespondResponse(
+                interaction=await self._write_interaction_view(identity, interaction_id),
+                streamUrl=None,
+            )
         owner_id = UUID(identity.user.id)
         if "dashboard.view" not in identity.user.permissions:
             raise ApiError(403, "FORBIDDEN", "当前账号无权重新解析项目")
@@ -197,6 +211,25 @@ class AgentInteractionService:
                 interaction=interaction_view(row),
                 streamUrl=f"/api/agent/conversations/{row.conversationId}/events",
             )
+
+    async def _write_interaction_view(
+        self, identity: SessionIdentity, interaction_id: UUID
+    ) -> AgentInteractionResponse:
+        async with self._sessions() as session:
+            row = await session.scalar(
+                select(AgentInteraction).where(
+                    AgentInteraction.id == interaction_id,
+                    AgentInteraction.ownerUserId == UUID(identity.user.id),
+                )
+            )
+            if row is None:
+                raise ApiError(404, "AGENT_INTERACTION_NOT_FOUND", "交互不存在或不属于当前用户")
+            draft = await session.scalar(
+                select(MutationDraft).where(MutationDraft.interactionId == interaction_id)
+            )
+            view = interaction_view(row)
+            view.draft = None if draft is None else draft.proposal
+            return view
 
 
 __all__ = ["AgentInteractionService", "interaction_view"]

@@ -25,11 +25,19 @@ from risk_platform.todos.service import TodosService
 from risk_platform.weekly_reports.schemas import WeeklyProjectDetail, WeeklyReportResponse
 from risk_platform.weekly_reports.service import WeeklyReportService, shanghai_week_start
 
+from .models import MutationDraftOperation
+from .mutations import (
+    MutationConfirmationRequired,
+    MutationDraftService,
+    proposal_tool_names,
+)
 from .schemas import (
     AgentToolHelp,
     AgentToolResult,
     DashboardFocusToolResponse,
     EmptyToolArguments,
+    MutationProposalRequest,
+    MutationProposalResponse,
     ProjectDetailToolArguments,
     ProjectDetailToolResponse,
     ProjectListToolItem,
@@ -176,6 +184,18 @@ class AgentToolRegistry:
                 _model_adapter(WeeklyProjectDetail),
                 self._weekly_detail(weekly_reports),
             ),
+            *tuple(
+                AgentTool(
+                    name,
+                    "生成待用户确认的 MutationDraft; 不会直接写入业务表",
+                    ("risk.report",),
+                    True,
+                    MutationProposalRequest,
+                    _model_adapter(MutationProposalResponse),
+                    self._proposal_only(name),
+                )
+                for name in proposal_tool_names()
+            ),
         )
         self._by_name = {tool.name: tool for tool in self._tools}
 
@@ -198,6 +218,7 @@ class AgentToolRegistry:
         arguments: Mapping[str, object],
         *,
         trace_id: str,
+        mutation_context: tuple[UUID, UUID] | None = None,
     ) -> AgentToolResult:
         tool = self._by_name.get(name)
         if tool is None:
@@ -209,6 +230,30 @@ class AgentToolRegistry:
         except ValidationError:
             raise ApiError(422, "VALIDATION_ERROR", "Agent 工具参数不符合约束") from None
         logger.info("agent tool invoke tool=%s phase=PLAN status=start", name)
+        if name in proposal_tool_names():
+            if mutation_context is None:
+                raise ApiError(
+                    409,
+                    "AGENT_MUTATION_CONTEXT_REQUIRED",
+                    "proposal必须由服务端 execution context调用",
+                )
+            draft = await MutationDraftService(self._sessions).propose(
+                identity,
+                MutationDraftOperation(name),
+                cast(MutationProposalRequest, validated),
+                conversation_id=mutation_context[0],
+                execution_id=mutation_context[1],
+                trace_id=UUID(trace_id),
+            )
+            proposal_response = MutationProposalResponse(
+                draftId=draft.id,
+                interactionId=draft.interactionId,
+                operation=draft.operation.value,
+                status=draft.status.value,
+                draft=draft.proposal,
+            )
+            del proposal_response
+            raise MutationConfirmationRequired
         data: object | None = None
         completed_call = False
         try:
@@ -352,6 +397,20 @@ class AgentToolRegistry:
         async def call(identity: SessionIdentity, arguments: Mapping[str, object]) -> object:
             week = datetime.fromisoformat(str(arguments["weekStart"])).date()
             return await service.detail(identity, week, UUID(str(arguments["projectId"])))
+
+        return call
+
+    @staticmethod
+    def _proposal_only(name: str) -> ToolCallable:
+        async def call(_identity: SessionIdentity, _arguments: Mapping[str, object]) -> object:
+            # The durable execution context is intentionally not part of model arguments.
+            # Production commit/proposal orchestration injects it from the server-owned
+            # interaction service; a direct model invocation fails closed.
+            raise ApiError(
+                409,
+                "AGENT_MUTATION_CONTEXT_REQUIRED",
+                f"{name}必须由服务端 execution context调用",
+            )
 
         return call
 

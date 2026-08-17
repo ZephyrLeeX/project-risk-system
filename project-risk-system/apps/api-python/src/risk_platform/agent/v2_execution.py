@@ -34,6 +34,7 @@ from .models import (
     AgentMessage,
     AgentMessageRole,
 )
+from .mutations import MutationConfirmationRequired
 from .schemas import CandidateRisk
 
 
@@ -90,6 +91,8 @@ class NativeAgentExecutionWorker:
                 payload, task_id, lease_token, required.candidates
             )
             return
+        except MutationConfirmationRequired:
+            return
         except AgentLoopError as error:
             await self._error(payload, task_id, lease_token, error.code, retryable=False)
             raise DurableTaskFailure(
@@ -123,9 +126,7 @@ class NativeAgentExecutionWorker:
                 )
             raise
         except DurableTaskCancelled:
-            await self._mark_execution_terminal(
-                payload, task_id, AgentExecutionStatus.CANCELLED
-            )
+            await self._mark_execution_terminal(payload, task_id, AgentExecutionStatus.CANCELLED)
             raise
         except Exception:
             await self._error(
@@ -154,9 +155,24 @@ class NativeAgentExecutionWorker:
                 f"(项目状态: {selected.get('status')})。请继续回答原问题。"
             )
         if context is None:
-            call = asyncio.create_task(self._core.run(identity, message.content))
+            call = asyncio.create_task(
+                self._core.run(
+                    identity,
+                    message.content,
+                    conversation_id=config.conversationId,
+                    execution_id=None if execution is None else execution.id,
+                )
+            )
         else:
-            call = asyncio.create_task(self._core.run(identity, message.content, context))
+            call = asyncio.create_task(
+                self._core.run(
+                    identity,
+                    message.content,
+                    context,
+                    conversation_id=config.conversationId,
+                    execution_id=None if execution is None else execution.id,
+                )
+            )
         started = asyncio.get_running_loop().time()
         try:
             while not call.done():
@@ -410,9 +426,7 @@ class NativeAgentExecutionWorker:
     ) -> None:
         async with self._sessions.begin() as session:
             config_id_value = payload.get("execution_configuration_id")
-            config_id = (
-                UUID(str(config_id_value)) if config_id_value is not None else None
-            )
+            config_id = UUID(str(config_id_value)) if config_id_value is not None else None
             if config_id is None:
                 config_row = await session.scalar(
                     select(AgentExecutionConfig).where(AgentExecutionConfig.taskId == task_id)
