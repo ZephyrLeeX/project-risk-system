@@ -10,16 +10,13 @@ from typing import cast
 from uuid import UUID
 
 from pydantic import BaseModel, ValidationError
-from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from risk_platform.auth.service import SessionIdentity
 from risk_platform.dashboard.schemas import DashboardSummary
 from risk_platform.dashboard.service import DashboardService
 from risk_platform.model_types import JSONValue
-from risk_platform.projects.models import Project, ProjectAlias, ProjectStatus
-from risk_platform.rbac.models import DataScopeType
-from risk_platform.rbac.scopes import project_scope_predicate
+from risk_platform.projects.query_service import ProjectSearchQuery, ProjectsQueryService
 from risk_platform.risks.schemas import RiskDetail, RiskItem, RiskPage, RiskQuery
 from risk_platform.risks.service import RisksService
 from risk_platform.shared.errors import ApiError
@@ -87,7 +84,7 @@ class AgentToolRegistry:
                 False,
                 ProjectSearchToolArguments,
                 _model_adapter(ProjectListToolResponse),
-                self._project_list,
+                self._project_search(ProjectsQueryService(sessions)),
             ),
             AgentTool(
                 "project_detail",
@@ -96,7 +93,7 @@ class AgentToolRegistry:
                 False,
                 ProjectDetailToolArguments,
                 _model_adapter(ProjectDetailToolResponse),
-                self._project_detail,
+                self._project_detail(ProjectsQueryService(sessions)),
             ),
             AgentTool(
                 "risk_category_list",
@@ -253,75 +250,31 @@ class AgentToolRegistry:
             if set(tool.required_permissions).issubset(identity.user.permissions)
         ]
 
-    async def _project_list(
-        self,
-        identity: SessionIdentity,
-        arguments: Mapping[str, object],
-    ) -> ProjectListToolResponse:
-        scope = project_scope_predicate(
-            UUID(identity.user.id), DataScopeType(identity.user.dataScope)
-        )
-        keyword = cast(str | None, arguments.get("keyword"))
-        status = cast(str | None, arguments.get("status"))
-        page = _int_argument(arguments.get("page"), 1)
-        page_size = _int_argument(arguments.get("pageSize"), 20)
-        filters = [scope]
-        if keyword:
-            filters.append(
-                or_(
-                    Project.name.ilike(f"%{keyword}%"),
-                    Project.alias.ilike(f"%{keyword}%"),
-                    select(ProjectAlias.id)
-                    .where(
-                        ProjectAlias.projectId == Project.id,
-                        ProjectAlias.isActive.is_(True),
-                        ProjectAlias.alias.ilike(f"%{keyword}%"),
-                    )
-                    .exists(),
-                )
+    @staticmethod
+    def _project_search(service: ProjectsQueryService) -> ToolCallable:
+        async def call(identity: SessionIdentity, arguments: Mapping[str, object]) -> object:
+            result = await service.search(identity, ProjectSearchQuery.model_validate(arguments))
+            return ProjectListToolResponse(
+                items=[
+                    ProjectListToolItem(id=item.id, name=item.name, status=item.status)
+                    for item in result.items
+                ],
+                page=result.page,
+                pageSize=result.pageSize,
+                total=result.total,
             )
-        if status:
-            try:
-                filters.append(Project.status == ProjectStatus(status))
-            except ValueError:
-                raise ApiError(422, "VALIDATION_ERROR", "项目状态不符合约束") from None
-        async with self._sessions() as session:
-            rows = list(
-                (
-                    await session.scalars(
-                        select(Project)
-                        .where(*filters)
-                        .order_by(Project.name, Project.id)
-                        .offset((page - 1) * page_size)
-                        .limit(page_size)
-                    )
-                ).all()
-            )
-            total = int(await session.scalar(select(func.count(Project.id)).where(*filters)) or 0)
-        return ProjectListToolResponse(
-            items=[
-                ProjectListToolItem(id=row.id, name=row.name, status=row.status.value)
-                for row in rows
-            ],
-            page=page,
-            pageSize=page_size,
-            total=total,
-        )
 
-    async def _project_detail(
-        self, identity: SessionIdentity, arguments: Mapping[str, object]
-    ) -> ProjectDetailToolResponse:
-        scope = project_scope_predicate(
-            UUID(identity.user.id), DataScopeType(identity.user.dataScope)
-        )
-        project_id = UUID(str(arguments["projectId"]))
-        async with self._sessions() as session:
-            row = await session.scalar(select(Project).where(Project.id == project_id, scope))
-        if row is None:
-            raise ApiError(404, "PROJECT_NOT_FOUND", "项目不存在或无权访问")
-        return ProjectDetailToolResponse(
-            id=row.id, name=row.name, alias=row.alias, status=row.status.value
-        )
+        return call
+
+    @staticmethod
+    def _project_detail(service: ProjectsQueryService) -> ToolCallable:
+        async def call(identity: SessionIdentity, arguments: Mapping[str, object]) -> object:
+            item = await service.detail(identity, UUID(str(arguments["projectId"])))
+            return ProjectDetailToolResponse(
+                id=item.id, name=item.name, alias=item.alias, status=item.status
+            )
+
+        return call
 
     @staticmethod
     def _risk_category_list(service: RisksService) -> ToolCallable:
@@ -415,9 +368,7 @@ def _model_adapter(model: type[BaseModel]) -> ToolResponseAdapter:
 
 def _dashboard_focus_adapter(value: object) -> DashboardFocusToolResponse:
     if not isinstance(value, list) or not all(isinstance(item, RiskItem) for item in value):
-        raise AgentToolResultTypeError(
-            f"expected list[RiskItem], received {type(value).__name__}"
-        )
+        raise AgentToolResultTypeError(f"expected list[RiskItem], received {type(value).__name__}")
     return DashboardFocusToolResponse(items=value)
 
 

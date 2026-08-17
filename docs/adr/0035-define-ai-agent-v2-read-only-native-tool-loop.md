@@ -76,3 +76,16 @@ preview/mutation 语义。AI Agent V2 V1 要以 ADR 0034 的 provider-neutral
   Task 1 snapshot/typed-error 编排及必要的 durable/SSE 修正。
 - T049 不得实现 AgentInteraction、`PROJECT_SELECTION`、`WAITING_FOR_USER`、write confirmation、
   risk/todo/project mutation、Risk 1:N Todo、`RiskSourceType.AGENT`、前端重构或 Company adapter。
+
+## T049 domain-read boundary addendum
+
+用户于 2026-08-17 批准解除 T049 的最小领域查询缺口：新增 `ProjectsQueryService`，只拥有
+`search(identity, query)` 与 `detail(identity, project_id)`。该 service 自行执行数据库查询和当前
+`SessionIdentity` 的 project data-scope 过滤；Agent Tool 仅可调用该 service，不得直接使用
+`Project`、`ProjectAlias`、`RiskCategory`、SQLAlchemy 或 ORM。search 只匹配现有 name、alias 与 active
+`ProjectAlias`，并使用有界 keyword/page/pageSize，返回真实授权项目的 typed DTO。detail 对不存在或
+越权统一返回现有不泄露存在性的 404。
+
+风险分类读取优先复用 `RisksService.filter_options(identity)` 的 active-category 正式能力；必要时可在
+`RisksService` 内抽出 typed `list_categories(identity)`，且 filter-options 与 Agent Tool 复用该能力。
+本补充不新增 REST API、业务字段、业务推导、mutation、Interaction 或任何 T050 内容。
