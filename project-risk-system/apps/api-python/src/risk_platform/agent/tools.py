@@ -10,14 +10,14 @@ from typing import cast
 from uuid import UUID
 
 from pydantic import BaseModel, ValidationError
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from risk_platform.auth.service import SessionIdentity
 from risk_platform.dashboard.schemas import DashboardSummary
 from risk_platform.dashboard.service import DashboardService
 from risk_platform.model_types import JSONValue
-from risk_platform.projects.models import Project, ProjectStatus
+from risk_platform.projects.models import Project, ProjectAlias, ProjectStatus
 from risk_platform.rbac.models import DataScopeType
 from risk_platform.rbac.scopes import project_scope_predicate
 from risk_platform.risks.schemas import RiskDetail, RiskItem, RiskPage, RiskQuery
@@ -33,9 +33,12 @@ from .schemas import (
     AgentToolResult,
     DashboardFocusToolResponse,
     EmptyToolArguments,
-    ProjectListToolArguments,
+    ProjectDetailToolArguments,
+    ProjectDetailToolResponse,
     ProjectListToolItem,
     ProjectListToolResponse,
+    ProjectSearchToolArguments,
+    RiskCategoryListToolResponse,
     RiskDetailToolArguments,
     RiskToolArguments,
     TodoDetailToolArguments,
@@ -78,13 +81,31 @@ class AgentToolRegistry:
         self._sessions = sessions
         self._tools = (
             AgentTool(
-                "project_list",
+                "project_search",
                 "读取当前授权范围内的项目名称、标识和状态",
                 ("dashboard.view",),
                 False,
-                ProjectListToolArguments,
+                ProjectSearchToolArguments,
                 _model_adapter(ProjectListToolResponse),
                 self._project_list,
+            ),
+            AgentTool(
+                "project_detail",
+                "读取当前授权范围内的项目详情",
+                ("dashboard.view",),
+                False,
+                ProjectDetailToolArguments,
+                _model_adapter(ProjectDetailToolResponse),
+                self._project_detail,
+            ),
+            AgentTool(
+                "risk_category_list",
+                "读取当前授权范围可用的风险分类",
+                ("dashboard.view",),
+                False,
+                EmptyToolArguments,
+                _model_adapter(RiskCategoryListToolResponse),
+                self._risk_category_list(risks),
             ),
             AgentTool(
                 "dashboard_summary",
@@ -211,10 +232,12 @@ class AgentToolRegistry:
             type(data).__name__,
         )
         return AgentToolResult(
+            toolInvocationId=trace_id,
             tool=name,
             data=cast(JSONValue, response.model_dump(mode="json")),
             dataAsOf=datetime.now(UTC),
             traceId=trace_id,
+            provenance=f"agent-tool:{name}:{trace_id}",
         )
 
     def catalogue(self, identity: SessionIdentity) -> list[dict[str, object]]:
@@ -244,7 +267,19 @@ class AgentToolRegistry:
         page_size = _int_argument(arguments.get("pageSize"), 20)
         filters = [scope]
         if keyword:
-            filters.append(Project.name.ilike(f"%{keyword}%"))
+            filters.append(
+                or_(
+                    Project.name.ilike(f"%{keyword}%"),
+                    Project.alias.ilike(f"%{keyword}%"),
+                    select(ProjectAlias.id)
+                    .where(
+                        ProjectAlias.projectId == Project.id,
+                        ProjectAlias.isActive.is_(True),
+                        ProjectAlias.alias.ilike(f"%{keyword}%"),
+                    )
+                    .exists(),
+                )
+            )
         if status:
             try:
                 filters.append(Project.status == ProjectStatus(status))
@@ -272,6 +307,34 @@ class AgentToolRegistry:
             pageSize=page_size,
             total=total,
         )
+
+    async def _project_detail(
+        self, identity: SessionIdentity, arguments: Mapping[str, object]
+    ) -> ProjectDetailToolResponse:
+        scope = project_scope_predicate(
+            UUID(identity.user.id), DataScopeType(identity.user.dataScope)
+        )
+        project_id = UUID(str(arguments["projectId"]))
+        async with self._sessions() as session:
+            row = await session.scalar(select(Project).where(Project.id == project_id, scope))
+        if row is None:
+            raise ApiError(404, "PROJECT_NOT_FOUND", "项目不存在或无权访问")
+        return ProjectDetailToolResponse(
+            id=row.id, name=row.name, alias=row.alias, status=row.status.value
+        )
+
+    @staticmethod
+    def _risk_category_list(service: RisksService) -> ToolCallable:
+        async def call(identity: SessionIdentity, _: Mapping[str, object]) -> object:
+            options = await service.filter_options(identity)
+            return RiskCategoryListToolResponse(
+                items=[
+                    {"id": str(item.id), "code": item.code, "name": item.name}
+                    for item in options.categories
+                ]
+            )
+
+        return call
 
     @staticmethod
     def _risk_list(service: RisksService) -> ToolCallable:

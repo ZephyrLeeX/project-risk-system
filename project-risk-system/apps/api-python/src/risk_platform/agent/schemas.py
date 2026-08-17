@@ -102,21 +102,27 @@ class AgentConfirmationRequest(StrictRequestModel):
 
 
 class AgentToolResult(_Contract):
+    toolInvocationId: str
     tool: str
     data: JSONValue
     dataAsOf: datetime
     traceId: str
+    provenance: str
 
 
 class EmptyToolArguments(StrictRequestModel):
     pass
 
 
-class ProjectListToolArguments(StrictRequestModel):
+class ProjectSearchToolArguments(StrictRequestModel):
     keyword: str | None = Field(default=None, max_length=100)
     page: int = Field(default=1, ge=1)
     pageSize: int = Field(default=20, ge=1, le=100)
     status: str | None = Field(default=None, max_length=32)
+
+
+# Compatibility import only; it is intentionally not exported in the V2 tool catalogue.
+ProjectListToolArguments = ProjectSearchToolArguments
 
 
 class ProjectListToolItem(_Contract):
@@ -130,6 +136,21 @@ class ProjectListToolResponse(_Contract):
     page: int
     pageSize: int
     total: int
+
+
+class ProjectDetailToolArguments(StrictRequestModel):
+    projectId: UUID
+
+
+class ProjectDetailToolResponse(_Contract):
+    id: UUID
+    name: str
+    alias: str | None
+    status: str
+
+
+class RiskCategoryListToolResponse(_Contract):
+    items: list[dict[str, str]]
 
 
 class DashboardFocusToolResponse(_Contract):
@@ -183,9 +204,12 @@ __all__ = [
     "AgentToolResult",
     "DashboardFocusToolResponse",
     "EmptyToolArguments",
-    "ProjectListToolArguments",
+    "ProjectDetailToolArguments",
+    "ProjectDetailToolResponse",
     "ProjectListToolItem",
     "ProjectListToolResponse",
+    "ProjectSearchToolArguments",
+    "RiskCategoryListToolResponse",
     "RiskDetailToolArguments",
     "RiskToolArguments",
     "TodoDetailToolArguments",
