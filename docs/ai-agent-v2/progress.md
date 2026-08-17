@@ -4,9 +4,9 @@
 
 ## Overall Status
 
-`COMPLETED` / T050 `REVIEW_PASSED`
+`COMPLETED` / T051 `REVIEW_PASSED`
 
-Task 1–3 已完成并通过独立 Review；Task 4–5 尚未开始。
+Task 1–4 已完成并通过独立 Review；Task 5 尚未开始。
 
 ## Task Status
 
@@ -15,7 +15,7 @@ Task 1–3 已完成并通过独立 Review；Task 4–5 尚未开始。
 | Task 1 | `COMPLETED` | [`task-01-provider-v2.md`](task-01-provider-v2.md) |
 | Task 2 | `COMPLETED` / `REVIEW_PASSED` | [`task-02-agent-core.md`](task-02-agent-core.md) |
 | Task 3 | `COMPLETED` / `REVIEW_PASSED` | [`task-03-interactions.md`](task-03-interactions.md) |
-| Task 4 | `NOT_STARTED` | [`task-04-mutations.md`](task-04-mutations.md) |
+| Task 4 | `COMPLETED` / `REVIEW_PASSED` | [`task-04-mutations.md`](task-04-mutations.md) |
 | Task 5 | `NOT_STARTED` | [`task-05-integration-cleanup.md`](task-05-integration-cleanup.md) |
 
 ## Current Baseline
@@ -94,7 +94,7 @@ Checkpoint 核对规则：开始 Task 时，最近 checkpoint 必须等于当前
 
 ## Next Task
 
-下一 Task：[`task-04-mutations.md`](task-04-mutations.md)（T051，`READY`；本轮未开始）
+下一 Task：[`task-05-integration-cleanup.md`](task-05-integration-cleanup.md)（T052，`READY`；本轮未开始）
 
 进入条件：
 
@@ -103,7 +103,20 @@ Checkpoint 核对规则：开始 Task 时，最近 checkpoint 必须等于当前
 3. T050 已正式完成，且当前 branch/HEAD/worktree 已按本文件核对。
 4. T050 已由 ADR 0036 和本轮用户批准语义授权并完成；T051 需新的明确启动与 mutation addendum。
 
-T050 已完成；本轮在 T051 前停止，不自动开始下一 Task。
+T051 已完成；本轮在 T052 前停止，不自动开始下一 Task。
+
+### Task 4 / T051 completion — 2026-08-17
+
+- status：`COMPLETED` / mapped T051 `REVIEW_PASSED`
+- checkpoint SHA：`2696e1cca23d2ba7dc331f8dd3373e1886d4d34a`
+- summary：完成六个 proposal tools、MutationDraft、WRITE_CONFIRMATION、CONFIRM/CANCEL、editable final fields、server-only commit、六类 mutation、Risk 1:N Todo、default Todo partial unique、batch partial success 与 metadata-only audit。
+- architecture decisions：ADR 0037 approved；Project status authority 不足，集中 Policy 保持 `DESIGN_GAP` fail-closed；不猜测 transition。
+- DB changes：Alembic `20260817_0013`，新增 `AGENT`、MutationDraft persistence、Risk 1:N Todo/default marker；fresh chain，无 backfill/dual-write。
+- API changes：Agent interaction confirm/draft contract、AGENT enum、OpenAPI/generated types；未修改前端 UI。
+- tests：T051 focused `22 passed`；Ruff/mypy/Alembic/schema/contracts sync PASS；full PostgreSQL `463 passed, 52 skipped, 6 failed`（既有 worker/SSE/scheduler integration baseline）；legacy NestJS/Prisma typecheck 保持既有失败。
+- Independent Review：`REVIEW_PASSED`；无确认无 mutation、catalogue 无 commit handler、allowlist/scope/RBAC/replay/batch/default Todo/audit 边界复核通过。
+- known limitations：Project status capability blocked by `DESIGN_GAP`；全量历史 integration failures 未归因于 T051，未做 legacy cleanup。
+- deferred work：T052 frontend/Admin cutover and cleanup；本轮未开始 T052。
 
 ### Task 3 / T050 completion — 2026-08-17
 

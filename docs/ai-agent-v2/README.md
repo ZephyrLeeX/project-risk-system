@@ -1,6 +1,6 @@
 # AI Agent V2 实施入口
 
-本目录是 AI Agent V2 重构的长期执行与交接入口。Task 1–3 已完成并通过独立 Review；Task 4–5 尚未开始。
+本目录是 AI Agent V2 重构的长期执行与交接入口。Task 1–4 已完成并通过独立 Review；Task 5 尚未开始。
 
 ## Authority 与文档索引
 
@@ -28,15 +28,15 @@
 
 ## 当前 Task
 
-当前阶段：`COMPLETED — Task 3 / T050`
+当前阶段：`COMPLETED — Task 4 / T051`
 
-下一 Task：`Task 4 — confirmed writes + MutationDraft`（T051，`READY`；本轮未开始）
+下一 Task：`Task 5 — frontend/Admin cutover and cleanup`（T052，`READY`；本轮未开始）
 
 进入文件：[`task-02-agent-core.md`](task-02-agent-core.md)
 
-T050 的 ADR 0036 Interaction addendum、实现、Quality Gates 与 Independent Review 已完成；本轮只实施 Task 3，不得开始 T051。
+T051 的 ADR 0037 Mutation addendum、实现、Quality Gates 与 Independent Review 已完成；本轮只实施 Task 4，不得开始 T052。
 
-仓库 `AGENTS.md` 要求所有 implementation 只能由 `docs/implementation/TASK_GRAPH.md` 中的 assigned `Txxx` 驱动。五个主 Task 已一一登记为 T048–T052；T050 为 `REVIEW_PASSED`，T051 保持 `READY / NOT_STARTED`，不得自动推进。
+仓库 `AGENTS.md` 要求所有 implementation 只能由 `docs/implementation/TASK_GRAPH.md` 中的 assigned `Txxx` 驱动。五个主 Task 已一一登记为 T048–T052；T051 为 `REVIEW_PASSED`，T052 保持 `READY / NOT_STARTED`，不得自动推进。
 
 激活后，`TASK_GRAPH.md`、assigned `Txxx`、`EXECUTION_STATE.md` 和正式 Task report 是正式调度与机器执行 authority；本目录 `progress.md`、各 Task `# Status` 和本 README 的当前 Task 是 V2 详细交接镜像。Orchestrator 在 review/checkpoint 后同步两侧；Implementer 不得自行修改或推进官方状态。两者不一致时停止并按正式 execution state 核对，不能选择较“先进”的状态继续执行。
 

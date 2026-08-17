@@ -2,7 +2,7 @@
 
 # Status
 
-`NOT_STARTED`
+`COMPLETED` / `REVIEW_PASSED`
 
 # Goal
 
