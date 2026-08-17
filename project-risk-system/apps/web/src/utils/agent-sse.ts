@@ -1,11 +1,13 @@
 /**
- * Pure Agent SSE parsing and event reduction (ADRs 0019 / 0028 / 0029).
+ * Pure Agent SSE parsing and event reduction (ADRs 0019 / 0028 / 0029 / 0036 / 0037).
  *
  * The FastAPI event stream is typed as `text/event-stream: unknown` in the
  * frozen OpenAPI authority (T032), so this module narrows the wire payload at
  * runtime with typed guards instead of substituting a hand-written contract.
  * No `any` is used: every payload field is validated before it is trusted.
  */
+
+import type { AgentInteraction } from "@/api/agent";
 
 // ---------------------------------------------------------------------------
 // SSE frame parsing
@@ -122,41 +124,6 @@ function safeJson(data: string): unknown {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Preview content (the canonical confirmation payload, ADR 0029)
-// ---------------------------------------------------------------------------
-
-export type AgentOperation = "REPORT" | "PROCESS" | "RESOLVE";
-
-export interface PreviewContent {
-  operation: string;
-  projectId: string;
-  riskId: string | null;
-  todoId: string | null;
-  title: string;
-  description: string;
-  riskLevel: string | null;
-  dueDate: string | null;
-  assigneeUserId: string | null;
-  categoryId: string | null;
-}
-
-function parsePreviewContent(value: unknown): PreviewContent {
-  const record = asRecord(value) ?? {};
-  return {
-    operation: asString(record.operation),
-    projectId: asString(record.projectId),
-    riskId: nullableString(record.riskId),
-    todoId: nullableString(record.todoId),
-    title: asString(record.title),
-    description: asString(record.description),
-    riskLevel: nullableString(record.riskLevel),
-    dueDate: nullableString(record.dueDate),
-    assigneeUserId: nullableString(record.assigneeUserId),
-    categoryId: nullableString(record.categoryId),
-  };
-}
-
 function nullableString(value: unknown): string | null {
   return typeof value === "string" ? value : null;
 }
@@ -172,31 +139,12 @@ export interface AgentStreamMessage {
   createdAt: string;
   dataAsOf: string | null;
   sequence: number;
+  structured?: Record<string, unknown> | null;
 }
 
 export interface AgentProgressState {
   stage: string;
   message: string;
-}
-
-export interface AgentPreviewState {
-  token: string;
-  operation: AgentOperation;
-  contentDigest: string;
-  expiresAt: string;
-  occurredAt: string;
-  content: PreviewContent;
-  status: "pending" | "confirming" | "confirmed" | "failed";
-  result: AgentConfirmationFeedback | null;
-  /** Mapped user-facing message when confirmation fails (replay/expired/...). */
-  failureMessage: string | null;
-}
-
-export interface AgentConfirmationFeedback {
-  operation: string;
-  resourceType: string;
-  resourceId: string;
-  completedAt: string;
 }
 
 export interface AgentErrorState {
@@ -220,7 +168,8 @@ export interface AgentConversationState {
   /** Accumulated `message.delta` text for the in-flight assistant turn. */
   streamingText: string;
   progress: AgentProgressState | null;
-  preview: AgentPreviewState | null;
+  /** The one open server-owned interaction, restored from durable SSE facts. */
+  interaction: AgentInteraction | null;
   error: AgentErrorState | null;
   /** Last applied event UUID — the resume cursor (`after` query param). */
   lastEventId: string | null;
@@ -233,7 +182,7 @@ export function initialAgentState(): AgentConversationState {
     messages: [],
     streamingText: "",
     progress: null,
-    preview: null,
+    interaction: null,
     error: null,
     lastEventId: null,
   };
@@ -277,18 +226,28 @@ export function applyFrame(
       next.status = streamingOr(state);
       return next;
     }
-    case "preview": {
-      next.preview = {
-        token: asString(base.raw.confirmationToken),
-        operation: parseOperation(base.raw.operation),
-        contentDigest: asString(base.raw.contentDigest),
+    case "interaction.required": {
+      const type = asString(base.raw.type);
+      const candidates = Array.isArray(base.raw.candidates)
+        ? base.raw.candidates.filter((item): item is Record<string, unknown> => asRecord(item) !== null)
+        : [];
+      next.interaction = {
+        id: asString(base.raw.interactionId),
+        type,
+        status: "OPEN",
+        conversationId: base.conversationId,
+        executionId: asString(base.raw.executionId),
+        candidates: candidates as AgentInteraction["candidates"],
+        draft: asRecord(base.raw.draft) as AgentInteraction["draft"],
         expiresAt: asString(base.raw.expiresAt),
-        occurredAt: base.occurredAt,
-        content: parsePreviewContent(base.raw.content),
-        status: "pending",
-        result: null,
-        failureMessage: null,
       };
+      next.status = "completed";
+      return next;
+    }
+    case "interaction.resolved": {
+      if (next.interaction && asString(base.raw.interactionId) === next.interaction.id) {
+        next.interaction = { ...next.interaction, status: "RESOLVED" };
+      }
       next.status = streamingOr(state);
       return next;
     }
@@ -345,12 +304,6 @@ function finalizeAssistant(
   return { messages: [...state.messages, assistant] };
 }
 
-function parseOperation(value: unknown): AgentOperation {
-  return value === "REPORT" || value === "PROCESS" || value === "RESOLVE"
-    ? value
-    : "REPORT";
-}
-
 // ---------------------------------------------------------------------------
 // Display labels
 // ---------------------------------------------------------------------------
@@ -369,31 +322,4 @@ const AGENT_ERROR_LABELS: Record<string, string> = {
 
 export function agentErrorLabel(code: string, fallback: string): string {
   return AGENT_ERROR_LABELS[code] ?? fallback;
-}
-
-const CONFIRMATION_ERROR_LABELS: Record<string, string> = {
-  AGENT_CONFIRMATION_ALREADY_USED: "确认凭证已被使用，请勿重复确认",
-  AGENT_CONFIRMATION_EXPIRED: "确认凭证已过期，请重新发起",
-  AGENT_CONFIRMATION_CONTENT_MISMATCH: "确认内容或当前授权已变化，请重新发起",
-  AGENT_CONFIRMATION_IN_PROGRESS: "确认正在处理中，请稍候",
-  AGENT_CONFIRMATION_OWNER_MISMATCH: "确认凭证不属于当前用户",
-  AGENT_RISK_ALREADY_RESOLVED: "风险已经解除",
-};
-
-export function confirmationErrorLabel(code: string, fallback: string): string {
-  return CONFIRMATION_ERROR_LABELS[code] ?? fallback;
-}
-
-export function operationLabel(operation: AgentOperation): string {
-  return (
-    { REPORT: "上报风险", PROCESS: "处理待办", RESOLVE: "解除风险" } as const
-  )[operation];
-}
-
-/** A one-line, read-only summary of a preview's canonical content. */
-export function previewSummary(content: PreviewContent): string {
-  if (content.operation === "REPORT") {
-    return content.title || content.description || "新建风险上报";
-  }
-  return content.description || "风险处理操作";
 }

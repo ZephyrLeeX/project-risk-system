@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 from collections.abc import Mapping
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
@@ -154,25 +155,9 @@ class NativeAgentExecutionWorker:
                 f"用户已选择项目: {selected.get('name')} "
                 f"(项目状态: {selected.get('status')})。请继续回答原问题。"
             )
-        if context is None:
-            call = asyncio.create_task(
-                self._core.run(
-                    identity,
-                    message.content,
-                    conversation_id=config.conversationId,
-                    execution_id=None if execution is None else execution.id,
-                )
-            )
-        else:
-            call = asyncio.create_task(
-                self._core.run(
-                    identity,
-                    message.content,
-                    context,
-                    conversation_id=config.conversationId,
-                    execution_id=None if execution is None else execution.id,
-                )
-            )
+        call = asyncio.create_task(
+            self._invoke_core(identity, message.content, context, config, execution)
+        )
         started = asyncio.get_running_loop().time()
         try:
             while not call.done():
@@ -226,6 +211,40 @@ class NativeAgentExecutionWorker:
                 call.cancel()
             with suppress(asyncio.CancelledError):
                 await call
+
+    async def _invoke_core(
+        self,
+        identity: SessionIdentity,
+        message: str,
+        context: str | None,
+        config: AgentExecutionConfig,
+        execution: AgentExecution | None,
+    ) -> AgentCoreOutcome:
+        """Invoke the V2 core while keeping old test doubles source-compatible.
+
+        Production ``ReadOnlyAgentCore`` accepts the durable execution context.
+        A few integration fixtures intentionally use a minimal ``run(identity,
+        message)`` double; detecting that shape avoids turning a fixture
+        composition mismatch into a false ``AGENT_INTERNAL_ERROR`` without
+        weakening the production contract or catching real runtime TypeErrors.
+        """
+        parameters = inspect.signature(self._core.run).parameters
+        if "conversation_id" not in parameters:
+            return await self._core.run(identity, message)
+        if context is None:
+            return await self._core.run(
+                identity,
+                message,
+                conversation_id=config.conversationId,
+                execution_id=None if execution is None else execution.id,
+            )
+        return await self._core.run(
+            identity,
+            message,
+            context,
+            conversation_id=config.conversationId,
+            execution_id=None if execution is None else execution.id,
+        )
 
     async def _load(
         self, payload: Mapping[str, JSONValue], task_id: UUID, lease_token: UUID

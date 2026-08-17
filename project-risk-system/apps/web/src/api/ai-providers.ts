@@ -1,86 +1,55 @@
-import type {
-  AiCallLogDetail,
-  AiCallLogListItem,
-  AiCallResult,
-  AiCallScene,
-  AiConnectionTestRequest,
-  AiConnectionTestResult,
-  AiProviderListItem,
-  AiProviderMutationRequest,
-  AiProviderStatusFilter,
-  AiProviderStrategyItem,
-  AiProviderSummary,
-  AiUsageOverview,
-  CreateAiProviderRequest,
-  PaginatedResponse,
-  RotateAiProviderKeyRequest,
-} from "@risk-platform/contracts";
+import type { OpenApi } from "@risk-platform/contracts";
 
 import { apiRequest } from "./http";
 
-function queryString(values: Record<string, string | number | undefined>): string {
-  const params = new URLSearchParams();
-  Object.entries(values).forEach(([key, value]) => {
-    if (value !== undefined && value !== "") params.set(key, String(value));
-  });
-  const query = params.toString();
-  return query ? `?${query}` : "";
-}
+type Schemas = OpenApi.components["schemas"];
+export type ProviderAccount = Schemas["ProviderAccountResponse"];
+export type ModelConfig = Schemas["ModelConfigResponse"];
+export type ConnectionResult = Schemas["ProviderV2ConnectionResult"];
+export type CreateAccountRequest = Schemas["CreateProviderAccountRequest"];
+export type UpdateAccountRequest = Schemas["UpdateProviderAccountRequest"];
+export type RotateKeyRequest = Schemas["RotateProviderAccountKeyRequest"];
+export type CreateModelRequest = Schemas["CreateModelConfigRequest"];
+export type UpdateModelRequest = Schemas["UpdateModelConfigRequest"];
 
 export const aiProviderApi = {
-  async summary(): Promise<AiProviderSummary> {
-    return (await apiRequest<AiProviderSummary>("/admin/ai-services/summary")).data;
+  async accounts(): Promise<ProviderAccount[]> {
+    return (await apiRequest<ProviderAccount[]>("/admin/ai-provider-v2/accounts")).data;
   },
-
-  async list(filters: { keyword?: string; status?: AiProviderStatusFilter } = {}): Promise<AiProviderListItem[]> {
-    return (await apiRequest<AiProviderListItem[]>(`/admin/ai-services${queryString(filters)}`)).data;
+  async createAccount(body: CreateAccountRequest): Promise<ProviderAccount> {
+    return (await apiRequest<ProviderAccount>("/admin/ai-provider-v2/accounts", { method: "POST", body: JSON.stringify(body) })).data;
   },
-
-  async strategy(): Promise<AiProviderStrategyItem[]> {
-    return (await apiRequest<AiProviderStrategyItem[]>("/admin/ai-services/strategy")).data;
+  async updateAccount(id: string, body: UpdateAccountRequest): Promise<ProviderAccount> {
+    return (await apiRequest<ProviderAccount>(`/admin/ai-provider-v2/accounts/${id}`, { method: "PATCH", body: JSON.stringify(body) })).data;
   },
-
-  async create(request: CreateAiProviderRequest): Promise<AiProviderListItem> {
-    return (await apiRequest<AiProviderListItem>("/admin/ai-services", { method: "POST", body: JSON.stringify(request) })).data;
+  async rotateKey(id: string, body: RotateKeyRequest): Promise<ProviderAccount> {
+    return (await apiRequest<ProviderAccount>(`/admin/ai-provider-v2/accounts/${id}/rotate-key`, { method: "POST", body: JSON.stringify(body) })).data;
   },
-
-  async update(id: string, request: AiProviderMutationRequest): Promise<AiProviderListItem> {
-    return (await apiRequest<AiProviderListItem>(`/admin/ai-services/${id}`, { method: "PATCH", body: JSON.stringify(request) })).data;
+  async setAccountStatus(id: string, enabled: boolean): Promise<ProviderAccount> {
+    return (await apiRequest<ProviderAccount>(`/admin/ai-provider-v2/accounts/${id}/status`, { method: "POST", body: JSON.stringify({ enabled }) })).data;
   },
-
-  async rotateKey(id: string, request: RotateAiProviderKeyRequest): Promise<AiProviderListItem> {
-    return (await apiRequest<AiProviderListItem>(`/admin/ai-services/${id}/rotate-key`, { method: "POST", body: JSON.stringify(request) })).data;
+  async testAccount(id: string): Promise<ConnectionResult> {
+    return (await apiRequest<ConnectionResult>(`/admin/ai-provider-v2/accounts/${id}/test`, { method: "POST" })).data;
   },
-
-  async setDefault(id: string): Promise<AiProviderListItem> {
-    return (await apiRequest<AiProviderListItem>(`/admin/ai-services/${id}/set-default`, { method: "POST" })).data;
+  async discoverModels(id: string): Promise<Schemas["DiscoveredModelResponse"][]> {
+    return (await apiRequest<Schemas["DiscoveredModelResponse"][]>(`/admin/ai-provider-v2/accounts/${id}/models/discover`)).data;
   },
-
-  async setStatus(id: string, enabled: boolean): Promise<AiProviderListItem> {
-    return (await apiRequest<AiProviderListItem>(`/admin/ai-services/${id}/status`, { method: "POST", body: JSON.stringify({ enabled }) })).data;
+  async models(accountId: string): Promise<ModelConfig[]> {
+    return (await apiRequest<ModelConfig[]>(`/admin/ai-provider-v2/accounts/${accountId}/models`)).data;
   },
-
-  async test(id: string): Promise<AiConnectionTestResult> {
-    return (await apiRequest<AiConnectionTestResult>(`/admin/ai-services/${id}/test`, { method: "POST" })).data;
+  async createModel(accountId: string, body: CreateModelRequest): Promise<ModelConfig> {
+    return (await apiRequest<ModelConfig>(`/admin/ai-provider-v2/accounts/${accountId}/models`, { method: "POST", body: JSON.stringify(body) })).data;
   },
-
-  async testDraft(request: AiConnectionTestRequest): Promise<AiConnectionTestResult> {
-    return (await apiRequest<AiConnectionTestResult>("/admin/ai-services/test-draft", { method: "POST", body: JSON.stringify(request) })).data;
+  async updateModel(accountId: string, modelId: string, body: UpdateModelRequest): Promise<ModelConfig> {
+    return (await apiRequest<ModelConfig>(`/admin/ai-provider-v2/accounts/${accountId}/models/${modelId}`, { method: "PATCH", body: JSON.stringify(body) })).data;
   },
-
-  async testAll(): Promise<AiConnectionTestResult[]> {
-    return (await apiRequest<AiConnectionTestResult[]>("/admin/ai-services/test-all", { method: "POST" })).data;
+  async setModelStatus(accountId: string, modelId: string, enabled: boolean): Promise<ModelConfig> {
+    return (await apiRequest<ModelConfig>(`/admin/ai-provider-v2/accounts/${accountId}/models/${modelId}/status`, { method: "POST", body: JSON.stringify({ enabled }) })).data;
   },
-
-  async usage(scene?: AiCallScene): Promise<AiUsageOverview> {
-    return (await apiRequest<AiUsageOverview>(`/admin/ai-services/usage${queryString({ scene })}`)).data;
+  async setDefaultModel(accountId: string, modelId: string): Promise<ModelConfig> {
+    return (await apiRequest<ModelConfig>(`/admin/ai-provider-v2/accounts/${accountId}/models/${modelId}/set-default`, { method: "POST" })).data;
   },
-
-  async calls(filters: { page?: number; pageSize?: number; result?: AiCallResult; scene?: AiCallScene }): Promise<PaginatedResponse<AiCallLogListItem>> {
-    return (await apiRequest<PaginatedResponse<AiCallLogListItem>>(`/admin/ai-services/calls${queryString(filters)}`)).data;
-  },
-
-  async callDetail(id: string): Promise<AiCallLogDetail> {
-    return (await apiRequest<AiCallLogDetail>(`/admin/ai-services/calls/${id}`)).data;
+  async testModel(accountId: string, modelId: string): Promise<ConnectionResult> {
+    return (await apiRequest<ConnectionResult>(`/admin/ai-provider-v2/accounts/${accountId}/models/${modelId}/test`, { method: "POST" })).data;
   },
 };

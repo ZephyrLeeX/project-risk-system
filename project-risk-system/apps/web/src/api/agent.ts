@@ -20,8 +20,12 @@ export type AgentMessageResponse =
 export type AgentMessagePage = OpenApi.components["schemas"]["AgentMessagePage"];
 export type AgentMessageEnvelope =
   OpenApi.components["schemas"]["AgentMessageEnvelope"];
-export type AgentConfirmationResponse =
-  OpenApi.components["schemas"]["AgentConfirmationResponse"];
+export type AgentInteraction =
+  OpenApi.components["schemas"]["AgentInteractionResponse"];
+export type AgentInteractionResponse =
+  OpenApi.components["schemas"]["AgentInteractionRespondResponse"];
+export type AgentInteractionRequest =
+  OpenApi.components["schemas"]["AgentInteractionRespondRequest"];
 
 export interface AgentMessageQuery {
   afterSequence?: number;
@@ -87,20 +91,15 @@ export const agentApi = {
     ).data;
   },
 
-  /**
-   * One-use confirmation (`POST /agent/confirmations/{token}`).
-   *
-   * The request body is the empty `{}` `AgentConfirmationRequest`; the token
-   * alone authorizes the canonical preview content (ADR 0029).
-   */
-  async confirm(token: string): Promise<AgentConfirmationResponse> {
+
+  async respondInteraction(
+    interactionId: string,
+    body: AgentInteractionRequest,
+  ): Promise<AgentInteractionResponse> {
     return (
-      await apiRequest<AgentConfirmationResponse>(
-        `/agent/confirmations/${encodeURIComponent(token)}`,
-        {
-          method: "POST",
-          body: JSON.stringify({}),
-        },
+      await apiRequest<AgentInteractionResponse>(
+        `/agent/interactions/${encodeURIComponent(interactionId)}/respond`,
+        { method: "POST", body: JSON.stringify(body) },
       )
     ).data;
   },

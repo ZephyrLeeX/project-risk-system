@@ -21,6 +21,7 @@
     "build": "pnpm -r --if-present build",
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "pnpm -r --if-present test",
+    "test:e2e": "playwright test --config=e2e/playwright.config.ts e2e/agent-v2.spec.ts",
     "check": "pnpm typecheck && pnpm test && pnpm build",
     "contracts:export": "uv run --project apps/api-python --frozen risk-platform-openapi packages/contracts/openapi/openapi.json",
     "contracts:gen": "pnpm --filter @risk-platform/contracts gen",
@@ -30,5 +31,8 @@
     "prisma:migrate:dev": "pnpm --filter @risk-platform/api prisma:migrate:dev",
     "prisma:seed": "pnpm --filter @risk-platform/api prisma:seed",
     "prisma:studio": "pnpm --filter @risk-platform/api prisma:studio"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.55.0"
   }
 }

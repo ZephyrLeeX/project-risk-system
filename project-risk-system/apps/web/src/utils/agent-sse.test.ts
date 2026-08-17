@@ -3,11 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   agentErrorLabel,
   applyFrame,
-  confirmationErrorLabel,
   initialAgentState,
-  operationLabel,
   parseSseFrames,
-  previewSummary,
   type SseFrame,
 } from "@/utils/agent-sse";
 
@@ -76,6 +73,37 @@ describe("SSE frame parser", () => {
 });
 
 describe("agent event reducer", () => {
+  it("restores project selection and resolves it without duplicating the prompt", () => {
+    let state = applyFrame(
+      initialAgentState(),
+      frame("interaction.required", "i1", {
+        interactionId: "interaction-1",
+        type: "PROJECT_SELECTION",
+        candidates: [{ id: "p-1", name: "Alpha 项目" }],
+        expiresAt: "2026-08-17T00:30:00.000Z",
+      }),
+    );
+    expect(state.status).toBe("completed");
+    expect(state.interaction?.type).toBe("PROJECT_SELECTION");
+    expect(state.interaction?.candidates).toHaveLength(1);
+    state = applyFrame(state, frame("interaction.resolved", "i2", { interactionId: "interaction-1", action: "SELECT" }));
+    expect(state.interaction?.status).toBe("RESOLVED");
+  });
+
+  it("keeps write confirmation draft fields and batch candidates displayable", () => {
+    const state = applyFrame(
+      initialAgentState(),
+      frame("interaction.required", "i1", {
+        interactionId: "interaction-2",
+        type: "WRITE_CONFIRMATION",
+        draft: { operation: "RISK_CREATE", title: "回款风险", items: [{ title: "A" }, { title: "B" }] },
+        expiresAt: "2026-08-17T00:30:00.000Z",
+      }),
+    );
+    expect(state.interaction?.draft?.title).toBe("回款风险");
+    expect(state.interaction?.draft?.items).toHaveLength(2);
+  });
+
   it("accumulates message.delta into streaming text", () => {
     let state = initialAgentState();
     state = applyFrame(state, frame("message.delta", "e1", { text: "Hello" }));
@@ -122,39 +150,6 @@ describe("agent event reducer", () => {
     expect(assistant.content).toBe("共 2 项");
     expect(assistant.dataAsOf).toBe("2026-08-14T00:00:01.000Z");
     expect(assistant.sequence).toBe(2);
-  });
-
-  it("captures a preview proposal with parsed canonical content", () => {
-    let state = initialAgentState();
-    state = applyFrame(
-      state,
-      frame("preview", "e1", {
-        operation: "REPORT",
-        content: {
-          operation: "REPORT",
-          projectId: "p-1",
-          riskId: null,
-          todoId: null,
-          title: "回款风险",
-          description: "质保款延期",
-          riskLevel: "HIGH",
-          dueDate: null,
-          assigneeUserId: null,
-          categoryId: "c-1",
-          categoryBindingDigest: "d-1",
-        },
-        contentDigest: "digest-1",
-        confirmationToken: "token-1",
-        expiresAt: "2026-08-14T00:10:00.000Z",
-      }),
-    );
-    expect(state.preview).not.toBeNull();
-    expect(state.preview?.operation).toBe("REPORT");
-    expect(state.preview?.token).toBe("token-1");
-    expect(state.preview?.status).toBe("pending");
-    expect(state.preview?.content.title).toBe("回款风险");
-    expect(state.preview?.content.categoryId).toBe("c-1");
-    expect(state.preview?.failureMessage).toBeNull();
   });
 
   it("records a terminal error and clears streaming state", () => {
@@ -213,50 +208,4 @@ describe("agent display labels", () => {
     expect(agentErrorLabel("UNKNOWN_CODE", "fallback")).toBe("fallback");
   });
 
-  it("maps one-use confirmation error codes", () => {
-    expect(
-      confirmationErrorLabel("AGENT_CONFIRMATION_ALREADY_USED", "fallback"),
-    ).toBe("确认凭证已被使用，请勿重复确认");
-    expect(
-      confirmationErrorLabel("AGENT_CONFIRMATION_EXPIRED", "fallback"),
-    ).toBe("确认凭证已过期，请重新发起");
-    expect(
-      confirmationErrorLabel("AGENT_RISK_ALREADY_RESOLVED", "fallback"),
-    ).toBe("风险已经解除");
-    expect(confirmationErrorLabel("UNKNOWN", "fallback")).toBe("fallback");
-  });
-
-  it("labels operations and summarizes previews", () => {
-    expect(operationLabel("REPORT")).toBe("上报风险");
-    expect(operationLabel("PROCESS")).toBe("处理待办");
-    expect(operationLabel("RESOLVE")).toBe("解除风险");
-    expect(
-      previewSummary({
-        operation: "REPORT",
-        projectId: "p",
-        riskId: null,
-        todoId: null,
-        title: "回款风险",
-        description: "延期",
-        riskLevel: "HIGH",
-        dueDate: null,
-        assigneeUserId: null,
-        categoryId: "c",
-      }),
-    ).toBe("回款风险");
-    expect(
-      previewSummary({
-        operation: "RESOLVE",
-        projectId: "p",
-        riskId: "r",
-        todoId: null,
-        title: "",
-        description: "已解决",
-        riskLevel: null,
-        dueDate: null,
-        assigneeUserId: null,
-        categoryId: null,
-      }),
-    ).toBe("已解决");
-  });
 });

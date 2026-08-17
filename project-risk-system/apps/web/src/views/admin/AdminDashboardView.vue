@@ -103,10 +103,10 @@ async function loadOverview(): Promise<void> {
 async function loadMetrics(): Promise<void> {
   metricsLoading.value = true;
   try {
-    const [summary, roles, permissions, batches, aiSummary] = await Promise.all([
-      adminApi.userSummary(), adminApi.roles(), adminApi.permissions(), projectImportApi.batches(1, 3), aiProviderApi.summary(),
+    const [summary, roles, permissions, batches, accounts] = await Promise.all([
+      adminApi.userSummary(), adminApi.roles(), adminApi.permissions(), projectImportApi.batches(1, 3), aiProviderApi.accounts(),
     ]);
-    metrics.value = { users: summary.total, activeUsers: summary.active, roles: roles.length, permissions: permissions.length, imports: batches.total, aiServices: aiSummary.total, healthyAiServices: aiSummary.healthy, expiringAiServices: aiSummary.expiring };
+    metrics.value = { users: summary.total, activeUsers: summary.active, roles: roles.length, permissions: permissions.length, imports: batches.total, aiServices: accounts.length, healthyAiServices: accounts.filter((account) => account.health === "AVAILABLE").length, expiringAiServices: 0 };
     recentImports.value = batches.items;
   } catch {
     // Leave the previous/zero metric state; overview panels stay authoritative.

@@ -51,7 +51,6 @@ describe("Agent conversation reset", () => {
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
     agent.state.streamingText = "旧回复";
     agent.state.lastEventId = "event-1";
-    agent.state.preview = {} as never;
     agent.reset();
     await send;
 
@@ -60,7 +59,6 @@ describe("Agent conversation reset", () => {
       messages: [],
       status: "idle",
       error: null,
-      preview: null,
       streamingText: "",
       progress: null,
       lastEventId: null,

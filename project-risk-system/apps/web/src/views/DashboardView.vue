@@ -20,6 +20,7 @@ import type {
   RiskTimelineEventType,
   RiskTimelineListResponse,
 } from "@risk-platform/contracts";
+import type { OpenApi } from "@risk-platform/contracts";
 import { computed, onMounted, onUnmounted, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 
@@ -37,8 +38,6 @@ import { useAgentConversation } from "@/composables/useAgentConversation";
 import { useAuthStore } from "@/stores/auth";
 import {
   agentErrorLabel,
-  operationLabel,
-  previewSummary,
 } from "@/utils/agent-sse";
 import {
   formatDateTime,
@@ -103,6 +102,10 @@ const profileMenuOpen = ref(false);
 const agentOpen = ref(false);
 const agent = useAgentConversation();
 const agentInput = ref("");
+type JsonValue = OpenApi.components["schemas"]["JSONValue-Input"];
+const interactionFields = reactive<Record<string, string>>({});
+const selectedInteractionCandidates = ref<string[]>([]);
+const manualProjectName = ref("");
 const agentHelp = ref<AgentHelpResponse | null>(null);
 const agentSuggestions = [
   "当前有哪些高风险？",
@@ -416,6 +419,46 @@ function sendAgent(prompt?: string): void {
   if (!message) return;
   agentInput.value = "";
   void agent.send(message);
+}
+
+function interactionCandidateId(value: unknown): string {
+  if (value && typeof value === "object" && !Array.isArray(value) && typeof (value as Record<string, unknown>).id === "string") return String((value as Record<string, unknown>).id);
+  return "";
+}
+
+function interactionCandidateName(value: unknown): string {
+  if (value && typeof value === "object" && !Array.isArray(value) && typeof (value as Record<string, unknown>).name === "string") return String((value as Record<string, unknown>).name);
+  return "候选项目";
+}
+
+function draftField(key: string): string {
+  const draft = agent.state.interaction?.draft;
+  const value = draft && typeof draft === "object" ? draft[key] : null;
+  return value === null || value === undefined ? "" : String(value);
+}
+
+function candidateRisks(message: { structured?: unknown }): Record<string, unknown>[] {
+  const structured = message.structured && typeof message.structured === "object" && !Array.isArray(message.structured) ? message.structured as Record<string, unknown> : null;
+  const value = structured?.candidateRisks;
+  return Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object" && !Array.isArray(item))) : [];
+}
+
+function selectProject(id: string): void {
+  void agent.respondInteraction({ action: "SELECT", projectId: id });
+}
+
+function submitManualProject(): void {
+  const projectName = manualProjectName.value.trim();
+  if (projectName) void agent.respondInteraction({ action: "MANUAL_INPUT", projectName });
+}
+
+function confirmInteraction(): void {
+  const finalFields: Record<string, JsonValue> = { ...interactionFields };
+  const draftItems = agent.state.interaction?.draft?.items;
+  if (Array.isArray(draftItems) && selectedInteractionCandidates.value.length > 0) {
+    finalFields.items = draftItems.filter((_, index) => selectedInteractionCandidates.value.includes(String(index))) as JsonValue;
+  }
+  void agent.respondInteraction({ action: "CONFIRM", finalFields });
 }
 
 async function loadWeeklyReport(): Promise<void> {
@@ -2170,49 +2213,29 @@ onUnmounted(() => {
         </p>
       </div>
 
-      <section
-        v-if="agent.state.preview"
-        class="agent-preview"
-        :class="`preview-${agent.state.preview.status}`"
-        aria-label="Agent 预览确认"
-      >
-        <header>
-          <span class="agent-preview-operation">
-            {{ operationLabel(agent.state.preview.operation) }}
-          </span>
-          <small>需确认后生效</small>
-        </header>
-        <p class="agent-preview-summary">
-          {{ previewSummary(agent.state.preview.content) }}
-        </p>
-        <p v-if="agent.state.preview.content.description" class="agent-preview-desc">
-          {{ agent.state.preview.content.description }}
-        </p>
+      <section v-if="agent.state.interaction" class="agent-interaction" aria-live="polite">
+        <header><strong>{{ agent.state.interaction.type === 'PROJECT_SELECTION' ? '请选择项目' : 'WRITE_CONFIRMATION：请确认写入' }}</strong><small>服务端状态：{{ agent.state.interaction.status }} · {{ formatDateTime(agent.state.interaction.expiresAt) }}</small></header>
+        <template v-if="agent.state.interaction.type === 'PROJECT_SELECTION' && agent.state.interaction.status === 'OPEN'">
+          <button v-for="candidate in agent.state.interaction.candidates" :key="interactionCandidateId(candidate)" type="button" @click="selectProject(interactionCandidateId(candidate))">{{ interactionCandidateName(candidate) }}</button>
+          <button type="button" @click="selectedInteractionCandidates = []">以上都不是</button>
+          <form @submit.prevent="submitManualProject"><input v-model="manualProjectName" placeholder="手动输入项目名称"><button type="submit">重新搜索</button></form>
+          <button type="button" @click="agent.cancelInteraction()">取消</button>
+        </template>
+        <template v-else-if="agent.state.interaction.type === 'WRITE_CONFIRMATION' && agent.state.interaction.status === 'OPEN'">
+          <div v-if="agent.state.interaction.draft" class="agent-editable-fields">
+            <label>标题<input v-model="interactionFields.title" :placeholder="draftField('title')"></label>
+            <label>描述<textarea v-model="interactionFields.description" :placeholder="draftField('description')"></textarea></label>
+            <label>等级<input v-model="interactionFields.level" :placeholder="draftField('level')"></label>
+            <label>依据<input v-model="interactionFields.evidence" :placeholder="draftField('evidence')"></label>
+          </div>
+          <div v-if="Array.isArray(agent.state.interaction.draft?.items)" class="agent-batch-selection"><label v-for="(item, index) in agent.state.interaction.draft.items" :key="index"><input v-model="selectedInteractionCandidates" type="checkbox" :value="String(index)">保留第 {{ Number(index) + 1 }} 项</label></div>
+          <button type="button" :disabled="agent.sending.value" @click="confirmInteraction">确认提交</button><button type="button" :disabled="agent.sending.value" @click="agent.cancelInteraction()">取消</button>
+        </template>
+        <p v-else>交互已处理；刷新或重连不会重复提交。</p>
+      </section>
 
-        <p v-if="agent.state.preview.status === 'confirmed' && agent.state.preview.result" class="agent-preview-feedback">
-          已确认：{{ agent.state.preview.result.resourceType }}
-          {{ formatDateTime(agent.state.preview.result.completedAt) }}
-        </p>
-        <p v-if="agent.state.preview.status === 'failed'" class="agent-preview-feedback" role="alert">
-          {{ agent.state.preview.failureMessage }}
-        </p>
-
-        <div class="agent-preview-actions">
-          <button
-            v-if="agent.state.preview.status === 'pending' || agent.state.preview.status === 'failed'"
-            type="button"
-            @click="agent.confirmPreview()"
-          >
-            确认执行
-          </button>
-          <button
-            v-if="agent.state.preview.status === 'confirmed'"
-            type="button"
-            @click="agent.dismissPreview()"
-          >
-            完成
-          </button>
-        </div>
+      <section v-for="message in agent.state.messages" :key="`${message.id}-risks`" class="agent-candidate-risks">
+        <article v-for="risk in candidateRisks(message)" :key="String(risk.id)"><strong>{{ String(risk.title ?? '候选风险') }}</strong><span>{{ String(risk.basisType ?? '') }}</span><p>{{ String(risk.evidenceSummary ?? '') }}</p></article>
       </section>
 
       <p v-if="agent.state.error" class="agent-error" role="alert">

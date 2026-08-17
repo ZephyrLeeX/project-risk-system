@@ -1,10 +1,13 @@
 import { onScopeDispose, reactive, ref } from "vue";
 
-import { agentApi, type AgentMessageResponse } from "@/api/agent";
+import {
+  agentApi,
+  type AgentInteractionRequest,
+  type AgentMessageResponse,
+} from "@/api/agent";
 import { ApiError } from "@/api/http";
 import {
   applyFrame,
-  confirmationErrorLabel,
   initialAgentState,
   parseSseFrames,
   type AgentConversationState,
@@ -17,7 +20,7 @@ import {
  * Wires the generated REST surface (`agentApi`) and the PostgreSQL-backed SSE
  * stream to the pure reducer in `utils/agent-sse`. Owns the resilient-state
  * lifecycle: create/continue, resume-after-disconnect, retry after a provider
- * failure, and one-use preview confirmation with feedback. No write occurs on
+ * failure and durable interaction confirmation. No write occurs on
  * the stream — it is consumed read-only and reduced into view state.
  */
 export function useAgentConversation() {
@@ -41,6 +44,7 @@ export function useAgentConversation() {
       createdAt: message.createdAt,
       dataAsOf: message.dataAsOf,
       sequence: message.sequence,
+      structured: message.structured,
     };
   }
 
@@ -51,7 +55,6 @@ export function useAgentConversation() {
     lastUserMessage.value = message;
     sending.value = true;
     state.error = null;
-    state.preview = null;
     state.streamingText = "";
     state.progress = null;
     state.status = "loading";
@@ -105,33 +108,29 @@ export function useAgentConversation() {
     void send(message);
   }
 
-  /** Confirm the pending preview; maps one-use confirmation errors to labels. */
-  async function confirmPreview(): Promise<void> {
-    const preview = state.preview;
-    if (!preview) return;
-    if (preview.status !== "pending" && preview.status !== "failed") return;
-    preview.status = "confirming";
-    preview.failureMessage = null;
+  /** Respond to a durable PROJECT_SELECTION or WRITE_CONFIRMATION interaction. */
+  async function respondInteraction(body: AgentInteractionRequest): Promise<void> {
+    const interaction = state.interaction;
+    if (!interaction || interaction.status !== "OPEN" || sending.value) return;
+    sending.value = true;
+    state.error = null;
     try {
-      const result = await agentApi.confirm(preview.token);
-      preview.status = "confirmed";
-      preview.result = {
-        operation: result.operation,
-        resourceType: result.resourceType,
-        resourceId: result.resourceId,
-        completedAt: result.completedAt,
-      };
+      const result = await agentApi.respondInteraction(interaction.id, body);
+      state.interaction = result.interaction;
+      if (result.streamUrl) {
+        activeStreamUrl = result.streamUrl;
+        state.status = "streaming";
+        await connectStream(result.streamUrl, state.lastEventId);
+      }
     } catch (error) {
-      preview.status = "failed";
-      const fallback =
-        error instanceof Error ? error.message : "确认失败，请重试";
-      const code = error instanceof ApiError ? error.code : "";
-      preview.failureMessage = confirmationErrorLabel(code, fallback);
+      applyRequestError(error);
+    } finally {
+      sending.value = false;
     }
   }
 
-  function dismissPreview(): void {
-    state.preview = null;
+  async function cancelInteraction(): Promise<void> {
+    await respondInteraction({ action: "CANCEL" });
   }
 
   /** Drop all conversation state and abort any active stream. */
@@ -248,8 +247,8 @@ export function useAgentConversation() {
     send,
     reconnect,
     retry,
-    confirmPreview,
-    dismissPreview,
+    respondInteraction,
+    cancelInteraction,
     reset,
   };
 }

@@ -6,10 +6,10 @@ Plan baseline: <commit>
 AI Agent V2 activation:
 - Mapping: Task 1→T048, Task 2→T049, Task 3→T050, Task 4→T051, Task 5→T052（恰好 5 个主 Task，一一对应）。
 - T048: `REVIEW_PASSED`（Task 1 implementation、quality gates 与独立 Review 完成；start SHA `09d189dbb83610dd0ee7b16b2fefd8caac3afef0`；checkpoint `31e84f1e9dcecee51f6ded41ef9307c4dfe49960`）。
-- Current assigned Task: T051 `REVIEW_PASSED`。T051 已完成实现、质量门禁和 Independent Review；code checkpoint `2696e1cca23d2ba7dc331f8dd3373e1886d4d34a`。
+- Current assigned Task: T052 `REVIEW_FAILED`。启动前已核对 T051 `REVIEW_PASSED`、code checkpoint `2696e1cca23d2ba7dc331f8dd3373e1886d4d34a`、metadata commit `1082cc3f8ea9d1ef777592d7937c88d030902af0`；T052 为 `READY / NOT_STARTED`，本轮仅执行 Task 5。Independent Review 未通过：backend legacy Agent replacement + zero runtime references 无法证明，且真实 DeepSeek/Admin credential flow 未提供；未创建 final checkpoint，未启动 Task 6。
 - T050 completion: `REVIEW_PASSED`；AgentInteraction、PROJECT_SELECTION、WAITING_FOR_USER、respond/resume、durable/SSE required→resolved 链路完成，Independent Review通过。
 - T049 completion: `REVIEW_PASSED`；Native Agent V2 read-only core/durable/SSE test baseline migration完成，Independent Review通过；code checkpoint `3813163`。
-- T051: `REVIEW_PASSED`；T052: `READY / TODO`，未开始；线性依赖 `T048 → T049 → T050 → T051 → T052`。
+- T051: `REVIEW_PASSED`；T052: `REVIEW_FAILED`，仅执行 Task 5；线性依赖 `T048 → T049 → T050 → T051 → T052`。未创建 T052 final checkpoint，未启动 Task 6。
 - Provider V2 ADR gate: ADR 0034 已由本轮用户明确授权建立并批准；仅替代 ADR 0005/0028 中与 T048 冲突的 Provider 边界。
 - Historical Task/Wave conclusions remain unchanged, including T038 `REVIEW_FAILED` and T039 `DEFERRED`.
 
