@@ -61,6 +61,11 @@ flowchart TD
  T036 --> T037
  T037 --> T038
  T038 --> T039
+ T014 & T032 & T040 --> T048
+ T048 --> T049
+ T049 --> T050
+ T050 --> T051
+ T051 --> T052
 ```
 
 ## Suggested execution waves
@@ -93,6 +98,11 @@ flowchart TD
 | 24 | T037 | Full compatibility and security suite. |
 | 25 | T038 | DG-05 resolved by ADR 0032; numeric capacity/reliability thresholds now approved. T038 executed = `REVIEW_FAILED`/`FAIL` (two runs, structural); primary root cause remediated by T047 `REVIEW_PASSED`. Per ADR 0033: Wave 25 is capacity-track **deferred / closed-for-MVP**, **not** Integration `PASS` (T038 not PASS); full 50-VU certification + external E2E (T039) deferred to PRODUCTION_CAPACITY_READY milestone. |
 | 26 | T039 | External mailbox/provider, restore, frontend E2E and Python-only production cutover evidence. |
+| 27 | T048 | AI Agent V2 Provider Account/Model Config and DeepSeek Official adapter checkpoint. |
+| 28 | T049 | AI Agent V2 read-only Core and native Tool Loop checkpoint; not started until T048 passes. |
+| 29 | T050 | AI Agent V2 interactions/project disambiguation checkpoint; not started until T049 passes. |
+| 30 | T051 | AI Agent V2 confirmed mutations checkpoint; not started until T050 passes. |
+| 31 | T052 | AI Agent V2 frontend/Admin cutover and cleanup checkpoint; not started until T051 passes. |
 
 Tasks in a wave may run concurrently only when every dependency from an earlier wave is `PASS`; a blocked task is skipped, never treated as passed. Alembic revisions are strictly serialized in the order T003 → T006 → T041 → T004 → T042. No parallel task may create an opportunistic revision. Shared app/Celery bootstrap is owned by T002 then T040; production Compose/proxy/env examples by T035; the production scheduler application entrypoint by T046 (ADR 0030), with T035 owning only its Compose deployment wiring; generated OpenAPI/types by T032; the `_Contract` serialization-mode schema-fidelity fix and re-freeze of the same OpenAPI/generated artifacts by T045 (cross frozen write-set, explicitly authorized). Feature tasks expose module-local entry points and test them with T002/T003/T008 fixtures without editing those shared files. Specifically, T029 owns the dependency-injected module-local `AGENT_EXECUTION` handler mapping and may validate it with an isolated Celery app; T040 exclusively constructs production dependencies, merges module handlers and registers them once on the shared `celery_app`. T037/T038 record findings only and route fixes back to the owning task.
 
@@ -146,6 +156,11 @@ Tasks in a wave may run concurrently only when every dependency from an earlier 
 | T046 | REVIEW_PASSED | T008, T024 | Production scheduler entrypoint (ADR 0030 / DG-16 resolution): single-active PostgreSQL advisory-lock process driving outbox drain (`publish_outbox`), reconciliation (`reconcile`) and scheduled mailbox sync (`schedule_enabled_syncs`) at approved cadence (5s/30s/300s); per-tick/per-function failure isolation; liveness probe (lock held + recent tick); no audit; no dual-write; read-only reuse of five public entry points; write-set limited to `scheduler.py` + tests. Independent Review REVIEW_PASSED; code checkpoint recorded in `EXECUTION_STATE.md`. Unblocks T035. See `tasks/T046-production-scheduler-entrypoint.md`, `reports/T046.md`. |
 | T041 | READY | T006 | Add the ADR 0018 durable task/outbox persistence schema. |
 | T042 | READY | T004, T013, T019 | Implement ADR 0027's approved retention configuration, hold-management API and deletion-protection policy. |
+| T048 | REVIEW_PASSED | T014, T032, T040 | AI Agent V2 Task 1: Provider V2 + DeepSeek Official Adapter. |
+| T049 | READY | T048 | AI Agent V2 Task 2: read-only Agent Core + native Tool Loop. |
+| T050 | READY | T049 | AI Agent V2 Task 3: AgentInteraction + project disambiguation + WAITING_FOR_USER. |
+| T051 | READY | T050 | AI Agent V2 Task 4: confirmed writes + MutationDraft. |
+| T052 | READY | T051 | AI Agent V2 Task 5: frontend/Admin closeout + legacy Agent cleanup + full E2E. |
 
 ## Design gaps
 

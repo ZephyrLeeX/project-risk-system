@@ -4,15 +4,15 @@
 
 ## Overall Status
 
-`PLANNED`
+`IN_PROGRESS`
 
-本次仅完成任务拆解和文档建设，尚未开始 Task 1 功能开发。
+Task 1 已完成并通过独立 Review；Task 2–5 尚未开始。
 
 ## Task Status
 
 | Task | Status | Task file |
 |---|---|---|
-| Task 1 | `NOT_STARTED` | [`task-01-provider-v2.md`](task-01-provider-v2.md) |
+| Task 1 | `COMPLETED` | [`task-01-provider-v2.md`](task-01-provider-v2.md) |
 | Task 2 | `NOT_STARTED` | [`task-02-agent-core.md`](task-02-agent-core.md) |
 | Task 3 | `NOT_STARTED` | [`task-03-interactions.md`](task-03-interactions.md) |
 | Task 4 | `NOT_STARTED` | [`task-04-mutations.md`](task-04-mutations.md) |
@@ -49,34 +49,44 @@ Checkpoint 核对规则：开始 Task 时，最近 checkpoint 必须等于当前
 
 后续每完成一个 Task，必须在此追加独立小节，固定记录：status、started/completed、checkpoint SHA、summary、architecture decisions、DB changes、API changes、tests、Independent Review、known limitations、deferred work。
 
+### Task 1 — Provider V2 + DeepSeek Official Adapter — 2026-08-17
+
+- status：`COMPLETED` / mapped T048 `REVIEW_PASSED`
+- started/completed：`2026-08-17` / `2026-08-17`
+- checkpoint SHA：由紧随 Task 1 code/report checkpoint 的 metadata-only commit 回填
+- summary：建立 DeepSeek-only Provider V2；Provider Account 1:N Model Config；厂商无关 adapter/DTO/typed errors；唯一 production `DeepSeekOfficialAdapter`；immutable candidate snapshot；bounded retry/failover；Account/Model health 分离；additive Admin V2/OpenAPI。
+- architecture decisions：ADR 0034 批准并替代 ADR 0005/0028 中与 V2 Provider 冲突的部分；固定 `https://api.deepseek.com`、`/models`、`/chat/completions`，实际 socket 固定到 outbound guard revalidated IP，同时保留官方 Host/TLS SNI/证书校验名；不实现 Company adapter 或业务默认 model。
+- DB changes：Alembic head `20260817_0010` 新增 `ai_provider_accounts`、`ai_model_configs`、`ai_provider_v2_call_logs` 与三个 enum；旧 Provider 数据保留，无 backfill/dual-write。
+- API changes：新增 `/api/admin/ai-provider-v2/accounts/**` Account/Model 管理、discovery/test/status/default/key rotation；旧 `/api/admin/ai-services/**` 保持；OpenAPI 更新为 104 paths / 260 schemas。
+- tests：最终 focused `80 passed`；legacy Provider/composition impacted `48 passed`；mail/weekly `28 passed`；uv lock/Ruff/mypy、PostgreSQL fresh migration/check/downgrade-forward、OpenAPI reproducibility、contracts/web typecheck 与 web build、`git diff --check` 均 PASS。
+- Independent Review：前两轮共发现 6 项 findings（IP pin、失败 audit、fake HTTPS、strict usage、header casing、missing-account 404），全部修复并补测试；第三轮结论 `REVIEW_PASSED`。
+- known limitations：真实 DeepSeek live smoke 因环境无 credential 标记 `BLOCKED_EXTERNAL_INPUTS`，未伪造 PASS；migration 未应用到 production database。
+- deferred work：Task 2 才消费 Provider-neutral adapter/candidate snapshot/typed errors；legacy runtime 清理由 Task 5 在零引用证据后处理。
+
 ## Current Known Issues
 
-1. `DESIGN_DEVIATION GATE`：V2 DeepSeek-only Provider Account/Model 架构与 ADR 0005/现有 `AiProviderConfig` 不一致；Task 1 功能编码前需批准 V2 ADR/addendum。
-2. `DESIGN_DEVIATION GATE`：native Tool Loop 与 ADR 0028/0029 的固定两轮内部 JSON protocol 不一致；Task 2 功能编码前需批准替代契约。
-3. `DESIGN_DEVIATION GATE`：统一 editable `AgentInteraction` 与 ADR 0019 的 token-only empty-body confirm 不一致；Task 3/4 编码前需批准 API/persistence/安全语义。
-4. `DESIGN_DEVIATION GATE`：六类 mutation、Risk 1:N Todo 和 Project status mutation 超出 ADR 0020 的三命令；Task 4 编码前需批准领域命令 addendum。
-5. `ACTIVATION GATE`：本轮未修改 `TASK_GRAPH.md`；实现前 Orchestrator 必须把本计划恰好 5 个主 Task 一一登记/映射为 5 个 assigned `Txxx`。未登记时任何 Task 都是 `BLOCKED`，不得编码。
-6. Provider Admin V2 的精确 HTTP path/DTO 尚未由产品需求固定；这是 Task 1 可在 V2 ADR/OpenAPI 兼容边界内确定的技术契约，不得破坏现有 `/api` 消费者。
-7. 当前缺少集中 Project Domain Service/status transition policy；Task 4 必须先审计现有 import/legacy 行为，若无法从 authority 得到合法转换规则则报告 `DESIGN_GAP`。
-8. 仓库未见现成 browser E2E harness；Task 5 必须建立或明确接入可重复执行的真实 FastAPI/PostgreSQL/Redis/Celery E2E，而不能用 unit mock 冒充全量验收。
+1. `DESIGN_DEVIATION GATE`：native Tool Loop 与 ADR 0028/0029 的固定两轮内部 JSON protocol 不一致；Task 2 功能编码前需批准替代契约。
+2. `DESIGN_DEVIATION GATE`：统一 editable `AgentInteraction` 与 ADR 0019 的 token-only empty-body confirm 不一致；Task 3/4 编码前需批准 API/persistence/安全语义。
+3. `DESIGN_DEVIATION GATE`：六类 mutation、Risk 1:N Todo 和 Project status mutation 超出 ADR 0020 的三命令；Task 4 编码前需批准领域命令 addendum。
+4. 当前缺少集中 Project Domain Service/status transition policy；Task 4 必须先审计现有 import/legacy 行为，若无法从 authority 得到合法转换规则则报告 `DESIGN_GAP`。
+5. 仓库未见现成 browser E2E harness；Task 5 必须建立或明确接入可重复执行的真实 FastAPI/PostgreSQL/Redis/Celery E2E，而不能用 unit mock 冒充全量验收。
 
 ## Decisions / Deviations
 
-- 本轮没有修改 ADR、冻结设计或 production code。
-- V2 需求作为产品行为 authority 被完整映射到计划，但所有与既有批准 ADR 的差异均显式保留为 gate。
+- ADR 0034 已批准并完成 Task 1 Provider V2 边界 reconciliation；实现未偏离该 ADR。
+- 其余与既有批准 ADR 的差异继续显式保留为 Task 2–4 gate，不静默融合。
 - 旧 Provider 数据不自动迁移为 DeepSeek Official；不设计 dual write。
 - Task 5 不承接新的后端业务语义，避免成为无边界清理 Task。
 
 ## Next Task
 
-下一 Task：[`task-01-provider-v2.md`](task-01-provider-v2.md)
+下一 Task：[`task-02-agent-core.md`](task-02-agent-core.md)（当前 `NOT_STARTED`）
 
 进入条件：
 
-1. Planning Review 为 `PASS`，planning checkpoint 已记录。
+1. T048 / Task 1 为 `REVIEW_PASSED / COMPLETED`，checkpoint 已记录。
 2. 用户明确要求开始/继续 AI Agent V2 的下一个任务。
-3. Orchestrator 已将 5 个主 Task 一一登记/映射到 Task Graph 中的 5 个 `Txxx`，并把 Task 1 对应项正式 assigned；未登记时必须 `BLOCKED`。
-4. 当前 branch/HEAD/worktree 已按本文件核对，未发现冲突中的实现改动。
-5. Task 1 所需 Provider V2 ADR/addendum 已批准；若未批准，Task 1 只能记录 `BLOCKED`/`DESIGN_DEVIATION`，不得编码。
+3. T049 被正式 assigned，且当前 branch/HEAD/worktree 已按本文件核对。
+4. Task 2 的 native Tool Loop / Scope Guard ADR gate 已批准；否则只能记录 `BLOCKED`/`DESIGN_DEVIATION`，不得编码。
 
-进入后只执行 Task 1；完成、Review、更新本文件并创建 checkpoint 后停止，不自动开始 Task 2。
+进入后只执行 Task 2；完成、Review、更新本文件并创建 checkpoint 后停止，不自动开始 Task 3。

@@ -27,6 +27,7 @@ from risk_platform.ai_providers.models import (
 from risk_platform.ai_providers.schemas import CreateProviderRequest, DraftTestRequest
 from risk_platform.ai_providers.service import AiProvidersService
 from risk_platform.composition import AgentProviderAdapter
+from risk_platform.model_types import JSONValue
 from risk_platform.shared.crypto import KeyRing, SecretCipher
 from risk_platform.shared.outbound import OutboundEndpointGuard
 
@@ -527,10 +528,10 @@ def test_responses_agent_adapter_normalizes_reasoning_then_native_tool_call() ->
             1,
         )
 
-    async def run() -> dict[str, object]:
+    async def run() -> dict[str, JSONValue]:
         adapter._client.complete_response = native  # type: ignore[method-assign]
         result = await adapter(config, _agent_request("PLAN"))
-        return json.loads(result.body)
+        return cast(dict[str, JSONValue], json.loads(result.body))
 
     assert asyncio.run(run()) == {
         "protocol": "AGENT_PROVIDER_EXECUTION_V2",
@@ -560,10 +561,10 @@ def test_responses_agent_adapter_normalizes_message_text_after_tools() -> None:
             1,
         )
 
-    async def run() -> dict[str, object]:
+    async def run() -> dict[str, JSONValue]:
         adapter._client.complete_response = native  # type: ignore[method-assign]
         result = await adapter(config, _agent_request("RESPOND"))
-        return json.loads(result.body)
+        return cast(dict[str, JSONValue], json.loads(result.body))
 
     assert asyncio.run(run())["actions"] == [{"type": "text_delta", "text": "有 1 个项目。"}]
 
@@ -596,13 +597,18 @@ def test_responses_agent_adapter_falls_back_only_for_explicit_tool_capability_fa
             1,
         )
 
-    async def run() -> dict[str, object]:
+    async def run() -> dict[str, JSONValue]:
         adapter._client.complete_response = native  # type: ignore[method-assign]
         adapter._client.complete = fallback  # type: ignore[method-assign]
         result = await adapter(config, _agent_request("PLAN"))
-        return json.loads(result.body)
+        return cast(dict[str, JSONValue], json.loads(result.body))
 
-    assert asyncio.run(run())["actions"][0]["name"] == "project_list"
+    assert asyncio.run(run()) == {
+        "protocol": "AGENT_PROVIDER_EXECUTION_V2",
+        "phase": "PLAN",
+        "grounded": True,
+        "actions": [{"type": "tool_call", "name": "project_list", "arguments": {}}],
+    }
     assert (native_calls, fallback_calls) == (1, 1)
 
 
@@ -640,7 +646,7 @@ def _agent_responses_config(cipher: SecretCipher) -> AgentExecutionConfig:
     )
 
 
-def _agent_request(phase: str) -> dict[str, object]:
+def _agent_request(phase: str) -> dict[str, JSONValue]:
     return {
         "protocol": "AGENT_PROVIDER_EXECUTION_V2",
         "phase": phase,

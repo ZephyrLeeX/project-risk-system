@@ -3,6 +3,14 @@
 Design baseline: <commit>
 Plan baseline: <commit>
 
+AI Agent V2 activation:
+- Mapping: Task 1→T048, Task 2→T049, Task 3→T050, Task 4→T051, Task 5→T052（恰好 5 个主 Task，一一对应）。
+- T048: `REVIEW_PASSED`（Task 1 implementation、quality gates 与独立 Review 完成；start SHA `09d189dbb83610dd0ee7b16b2fefd8caac3afef0`；checkpoint SHA 由紧随的 metadata commit 记录）。
+- Current assigned Task: none。下一 eligible Task 是 T049，但保持 `READY / NOT_STARTED`，本轮不得自动推进。
+- T049–T052: `READY / TODO`，未开始；线性依赖 `T048 → T049 → T050 → T051 → T052`。
+- Provider V2 ADR gate: ADR 0034 已由本轮用户明确授权建立并批准；仅替代 ADR 0005/0028 中与 T048 冲突的 Provider 边界。
+- Historical Task/Wave conclusions remain unchanged, including T038 `REVIEW_FAILED` and T039 `DEFERRED`.
+
 Completed waves:
 - Wave 1: PASS
 - Wave 2: PASS
@@ -32,6 +40,7 @@ Completed waves:
 - DG-16 resolution（design/metadata checkpoint，未实施 production code、未实现 scheduler、未修改 `infra/docker-compose.yml`、未执行 T035/T046、未启动 Wave 21 Integration）：ADR 0030 批准 production 调度器拓扑为**独立 scheduler 进程**（不采用 Celery Beat），以 PostgreSQL session-level advisory lock 保证 single-active，周期驱动三个已存在 entry point——outbox drain `publish_outbox`（默认 5s）、reconciliation `reconcile`（默认 30s）、scheduled mailbox sync `schedule_enabled_syncs`（默认 5min）。cadence 为 operational 默认值（env 可调），非 SLO（DG-05 out of scope）。ADR 0018 outbox publisher 澄清为 scheduler 的 drain tick（非请求路径 inline `send_task`）：请求路径仅写 PostgreSQL（`enqueue_task` 写 `DurableTask`+`TaskOutbox`，不碰 broker），无 DB/Celery dual-write，PostgreSQL 仍为唯一 authority，Redis/Celery 仅为 delivery/execution transport。failure 语义：per-tick/per-function 隔离、driven 函数幂等、scheduler 不写 audit（ADR 0017，业务效果由 owning domain path 审计）、日志不含 secret/mail content/payload（ADR 0014/0007）、tick 异常捕获续行、仅启动配置/DB 不可达超过有界重试才崩溃触发 `restart`。startup 获取 advisory lock（失败 fail-fast 退出），SIGTERM 完成当前 tick 后释放 lock，liveness 探针需 lock 持有 + 最近 tick 在窗口内。**归属**：scheduler application entrypoint 属新增 remediation Task **T046**（`READY`，deps T008/T024，write-set 限 `scheduler.py`+tests，只读复用 `risk_platform.db`/`celery_app`/`publish_outbox`/`reconcile`/`schedule_enabled_syncs`，禁止编辑 `composition.py`/`celery_app.py`/`worker.py`/`main.py`/driven 函数）；T035 仅拥有 Compose `scheduler` service wiring（image/command/env/healthcheck/restart/depends_on）+ env examples + deployment docs，**T035 deps 增 +T046**。DAG 新增 `T008 & T024 --> T046 --> T035`；Wave 表插入 Wave 21 = T046，T035 后移至 Wave 22，其后各 Wave 顺延 +1（T036→23、T037→24、T038→25、T039→26）。设计 §4 架构图与 §8 已补充 Scheduler 节点与 ADR 0030 契约。T035 状态由 `DESIGN_GAP` 恢复为 `READY`（仅 metadata，未实施，blocked on T046）。本 ADR 范围不含 scheduler 实现与 T035 实施；DG-05/DG-08 保持 out of scope。详见 `docs/adr/0030-define-production-scheduler-and-outbox-delivery-topology.md`、`docs/implementation/tasks/T046-production-scheduler-entrypoint.md`。
 
 Completed tasks:
+- T048 REVIEW_PASSED
 - T001 REVIEW_PASSED
 - T002 REVIEW_PASSED
 - T003 REVIEW_PASSED

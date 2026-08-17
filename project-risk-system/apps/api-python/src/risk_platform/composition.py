@@ -40,6 +40,12 @@ from risk_platform.ai_providers.client import (
 )
 from risk_platform.ai_providers.models import AiProviderProtocol
 from risk_platform.ai_providers.service import AiProvidersService
+from risk_platform.ai_providers.v2_adapter import (
+    AiProviderAdapterRegistry,
+    DeepSeekOfficialAdapter,
+    ProviderType,
+)
+from risk_platform.ai_providers.v2_service import AiProviderV2Service
 from risk_platform.audit.http import AuditQueryService
 from risk_platform.auth.service import AuthService
 from risk_platform.config import Settings
@@ -353,6 +359,9 @@ def build_services(
     todos = TodosService(sessions)
     weekly = WeeklyReportService(sessions)
     provider_client = build_ai_provider_client(settings)
+    provider_v2_registry = AiProviderAdapterRegistry(
+        {ProviderType.DEEPSEEK_OFFICIAL: DeepSeekOfficialAdapter(cipher)}
+    )
     return {
         "auth_service": AuthService.from_settings(sessions, settings),
         "risks_service": risks,
@@ -366,6 +375,11 @@ def build_services(
         "admin_roles_service": AdminRolesService(sessions),
         "admin_options_service": AdminOptionsService(sessions),
         "ai_providers_service": AiProvidersService(sessions, cipher, provider_client),
+        "ai_provider_v2_service": AiProviderV2Service(
+            sessions,
+            cipher,
+            provider_v2_registry.adapter_for(ProviderType.DEEPSEEK_OFFICIAL),
+        ),
         "audit_query_service": AuditQueryService(sessions),
         "system_config_service": SystemConfigService(sessions),
         "mailbox_service": MailboxService(sessions, cipher),

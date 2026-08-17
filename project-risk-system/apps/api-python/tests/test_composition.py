@@ -46,6 +46,7 @@ EXPECTED_SERVICE_NAMES = frozenset(
         "admin_roles_service",
         "admin_options_service",
         "ai_providers_service",
+        "ai_provider_v2_service",
         "audit_query_service",
         "system_config_service",
         "mailbox_service",

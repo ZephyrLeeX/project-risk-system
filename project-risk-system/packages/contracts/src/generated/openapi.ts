@@ -4,6 +4,197 @@
  */
 
 export interface paths {
+    "/api/admin/ai-provider-v2/accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Accounts */
+        get: operations["list_accounts_api_admin_ai_provider_v2_accounts_get"];
+        put?: never;
+        /** Create Account */
+        post: operations["create_account_api_admin_ai_provider_v2_accounts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/ai-provider-v2/accounts/{account_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Account */
+        delete: operations["delete_account_api_admin_ai_provider_v2_accounts__account_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Account */
+        patch: operations["update_account_api_admin_ai_provider_v2_accounts__account_id__patch"];
+        trace?: never;
+    };
+    "/api/admin/ai-provider-v2/accounts/{account_id}/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Models */
+        get: operations["list_models_api_admin_ai_provider_v2_accounts__account_id__models_get"];
+        put?: never;
+        /** Create Model */
+        post: operations["create_model_api_admin_ai_provider_v2_accounts__account_id__models_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/ai-provider-v2/accounts/{account_id}/models/{model_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Model */
+        delete: operations["delete_model_api_admin_ai_provider_v2_accounts__account_id__models__model_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Model */
+        patch: operations["update_model_api_admin_ai_provider_v2_accounts__account_id__models__model_id__patch"];
+        trace?: never;
+    };
+    "/api/admin/ai-provider-v2/accounts/{account_id}/models/{model_id}/set-default": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Set Default Model */
+        post: operations["set_default_model_api_admin_ai_provider_v2_accounts__account_id__models__model_id__set_default_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/ai-provider-v2/accounts/{account_id}/models/{model_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Set Model Status */
+        post: operations["set_model_status_api_admin_ai_provider_v2_accounts__account_id__models__model_id__status_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/ai-provider-v2/accounts/{account_id}/models/{model_id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Model */
+        post: operations["test_model_api_admin_ai_provider_v2_accounts__account_id__models__model_id__test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/ai-provider-v2/accounts/{account_id}/models/discover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Discover Models */
+        get: operations["discover_models_api_admin_ai_provider_v2_accounts__account_id__models_discover_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/ai-provider-v2/accounts/{account_id}/rotate-key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Rotate Key */
+        post: operations["rotate_key_api_admin_ai_provider_v2_accounts__account_id__rotate_key_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/ai-provider-v2/accounts/{account_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Set Account Status */
+        post: operations["set_account_status_api_admin_ai_provider_v2_accounts__account_id__status_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/ai-provider-v2/accounts/{account_id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Account */
+        post: operations["test_account_api_admin_ai_provider_v2_accounts__account_id__test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/ai-services": {
         parameters: {
             query?: never;
@@ -2043,6 +2234,28 @@ export interface components {
             /** Traceid */
             traceId: string;
         };
+        /** ApiResponse[list[DiscoveredModelResponse]] */
+        ApiResponse_list_DiscoveredModelResponse__: {
+            /** Code */
+            code: string;
+            /** Data */
+            data: components["schemas"]["DiscoveredModelResponse"][];
+            /** Message */
+            message: string;
+            /** Traceid */
+            traceId: string;
+        };
+        /** ApiResponse[list[ModelConfigResponse]] */
+        ApiResponse_list_ModelConfigResponse__: {
+            /** Code */
+            code: string;
+            /** Data */
+            data: components["schemas"]["ModelConfigResponse"][];
+            /** Message */
+            message: string;
+            /** Traceid */
+            traceId: string;
+        };
         /** ApiResponse[list[PermissionResponse]] */
         ApiResponse_list_PermissionResponse__: {
             /** Code */
@@ -2060,6 +2273,17 @@ export interface components {
             code: string;
             /** Data */
             data: components["schemas"]["ProjectOption"][];
+            /** Message */
+            message: string;
+            /** Traceid */
+            traceId: string;
+        };
+        /** ApiResponse[list[ProviderAccountResponse]] */
+        ApiResponse_list_ProviderAccountResponse__: {
+            /** Code */
+            code: string;
+            /** Data */
+            data: components["schemas"]["ProviderAccountResponse"][];
             /** Message */
             message: string;
             /** Traceid */
@@ -2261,6 +2485,16 @@ export interface components {
             /** Traceid */
             traceId: string;
         };
+        /** ApiResponse[ModelConfigResponse] */
+        ApiResponse_ModelConfigResponse_: {
+            /** Code */
+            code: string;
+            data: components["schemas"]["ModelConfigResponse"];
+            /** Message */
+            message: string;
+            /** Traceid */
+            traceId: string;
+        };
         /** ApiResponse[NoneType] */
         ApiResponse_NoneType_: {
             /** Code */
@@ -2332,6 +2566,16 @@ export interface components {
             /** Traceid */
             traceId: string;
         };
+        /** ApiResponse[ProviderAccountResponse] */
+        ApiResponse_ProviderAccountResponse_: {
+            /** Code */
+            code: string;
+            data: components["schemas"]["ProviderAccountResponse"];
+            /** Message */
+            message: string;
+            /** Traceid */
+            traceId: string;
+        };
         /** ApiResponse[ProviderResponse] */
         ApiResponse_ProviderResponse_: {
             /** Code */
@@ -2347,6 +2591,16 @@ export interface components {
             /** Code */
             code: string;
             data: components["schemas"]["ProviderSummary"];
+            /** Message */
+            message: string;
+            /** Traceid */
+            traceId: string;
+        };
+        /** ApiResponse[ProviderV2ConnectionResult] */
+        ApiResponse_ProviderV2ConnectionResult_: {
+            /** Code */
+            code: string;
+            data: components["schemas"]["ProviderV2ConnectionResult"];
             /** Message */
             message: string;
             /** Traceid */
@@ -3020,6 +3274,49 @@ export interface components {
             /** Traceid */
             traceId: string;
         };
+        /** CreateModelConfigRequest */
+        CreateModelConfigRequest: {
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Isdefault
+             * @default false
+             */
+            isDefault: boolean;
+            /** Modelname */
+            modelName: string;
+            /**
+             * Priority
+             * @default 100
+             */
+            priority: number;
+            /**
+             * Timeoutseconds
+             * @default 60
+             */
+            timeoutSeconds: number;
+        };
+        /** CreateProviderAccountRequest */
+        CreateProviderAccountRequest: {
+            /** Apikey */
+            apiKey: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /** Name */
+            name: string;
+            /**
+             * Providertype
+             * @default DEEPSEEK_OFFICIAL
+             * @constant
+             */
+            providerType: "DEEPSEEK_OFFICIAL";
+        };
         /** CreateProviderRequest */
         CreateProviderRequest: {
             /** Apikey */
@@ -3182,6 +3479,11 @@ export interface components {
             totals: components["schemas"]["CollectionTotals"];
             /** Updatedat */
             updatedAt: string | null;
+        };
+        /** DiscoveredModelResponse */
+        DiscoveredModelResponse: {
+            /** Id */
+            id: string;
         };
         /** DraftTestRequest */
         DraftTestRequest: {
@@ -4215,6 +4517,41 @@ export interface components {
              */
             projectId: string;
         };
+        /** ModelConfigResponse */
+        ModelConfigResponse: {
+            /** Accountid */
+            accountId: string;
+            /** Createdat */
+            createdAt: string;
+            /** Enabled */
+            enabled: boolean;
+            /**
+             * Health
+             * @enum {string}
+             */
+            health: "UNTESTED" | "AVAILABLE" | "CONFIG_ERROR";
+            /** Id */
+            id: string;
+            /** Isdefault */
+            isDefault: boolean;
+            /** Lasthealthat */
+            lastHealthAt: string | null;
+            /** Lasthealtherrorcode */
+            lastHealthErrorCode: string | null;
+            /** Modelname */
+            modelName: string;
+            /** Priority */
+            priority: number;
+            /** Timeoutseconds */
+            timeoutSeconds: number;
+            /** Updatedat */
+            updatedAt: string;
+        };
+        /** ModelConfigStatusRequest */
+        ModelConfigStatusRequest: {
+            /** Enabled */
+            enabled: boolean;
+        };
         /** NextCollectionInfo */
         NextCollectionInfo: {
             /** Amountyuan */
@@ -4385,6 +4722,42 @@ export interface components {
             /** Projectids */
             projectIds: string[];
         };
+        /** ProviderAccountResponse */
+        ProviderAccountResponse: {
+            /** Createdat */
+            createdAt: string;
+            /** Enabled */
+            enabled: boolean;
+            /**
+             * Health
+             * @enum {string}
+             */
+            health: "UNTESTED" | "AVAILABLE" | "CREDENTIAL_ERROR";
+            /** Id */
+            id: string;
+            /** Lasthealthat */
+            lastHealthAt: string | null;
+            /** Lasthealtherrorcode */
+            lastHealthErrorCode: string | null;
+            /** Maskedkey */
+            maskedKey: string;
+            /** Modelcount */
+            modelCount: number;
+            /** Name */
+            name: string;
+            /**
+             * Providertype
+             * @constant
+             */
+            providerType: "DEEPSEEK_OFFICIAL";
+            /** Updatedat */
+            updatedAt: string;
+        };
+        /** ProviderAccountStatusRequest */
+        ProviderAccountStatusRequest: {
+            /** Enabled */
+            enabled: boolean;
+        };
         /** ProviderResponse */
         ProviderResponse: {
             /** Createdat */
@@ -4464,6 +4837,21 @@ export interface components {
             sevenDaySuccessRate: number;
             /** Total */
             total: number;
+        };
+        /** ProviderV2ConnectionResult */
+        ProviderV2ConnectionResult: {
+            /** Accountid */
+            accountId: string;
+            /** Availablemodels */
+            availableModels: components["schemas"]["DiscoveredModelResponse"][];
+            /** Errorclassification */
+            errorClassification: string | null;
+            /** Latencyms */
+            latencyMs: number;
+            /** Modelconfigid */
+            modelConfigId: string | null;
+            /** Success */
+            success: boolean;
         };
         /** PublishRequest */
         PublishRequest: {
@@ -5092,6 +5480,11 @@ export interface components {
             /** Expiresat */
             expiresAt?: string | null;
         };
+        /** RotateProviderAccountKeyRequest */
+        RotateProviderAccountKeyRequest: {
+            /** Apikey */
+            apiKey: string;
+        };
         /** SameProjectRisk */
         SameProjectRisk: {
             /** Categoryname */
@@ -5362,6 +5755,38 @@ export interface components {
              */
             section: "health" | "attention" | "recentAudit";
         };
+        /** UpdateModelConfigRequest */
+        UpdateModelConfigRequest: {
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Isdefault
+             * @default false
+             */
+            isDefault: boolean;
+            /** Modelname */
+            modelName: string;
+            /**
+             * Priority
+             * @default 100
+             */
+            priority: number;
+            /**
+             * Timeoutseconds
+             * @default 60
+             */
+            timeoutSeconds: number;
+        };
+        /** UpdateProviderAccountRequest */
+        UpdateProviderAccountRequest: {
+            /** Enabled */
+            enabled: boolean;
+            /** Name */
+            name: string;
+        };
         /** UpdateProviderRequest */
         UpdateProviderRequest: {
             /** Enabled */
@@ -5627,6 +6052,491 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    list_accounts_api_admin_ai_provider_v2_accounts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_list_ProviderAccountResponse__"];
+                };
+            };
+        };
+    };
+    create_account_api_admin_ai_provider_v2_accounts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateProviderAccountRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ProviderAccountResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_account_api_admin_ai_provider_v2_accounts__account_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_account_api_admin_ai_provider_v2_accounts__account_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateProviderAccountRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ProviderAccountResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_models_api_admin_ai_provider_v2_accounts__account_id__models_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_list_ModelConfigResponse__"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_model_api_admin_ai_provider_v2_accounts__account_id__models_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateModelConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ModelConfigResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_model_api_admin_ai_provider_v2_accounts__account_id__models__model_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+                model_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_model_api_admin_ai_provider_v2_accounts__account_id__models__model_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+                model_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateModelConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ModelConfigResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_default_model_api_admin_ai_provider_v2_accounts__account_id__models__model_id__set_default_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+                model_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ModelConfigResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_model_status_api_admin_ai_provider_v2_accounts__account_id__models__model_id__status_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+                model_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelConfigStatusRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ModelConfigResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_model_api_admin_ai_provider_v2_accounts__account_id__models__model_id__test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+                model_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ProviderV2ConnectionResult_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discover_models_api_admin_ai_provider_v2_accounts__account_id__models_discover_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_list_DiscoveredModelResponse__"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rotate_key_api_admin_ai_provider_v2_accounts__account_id__rotate_key_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RotateProviderAccountKeyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ProviderAccountResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_account_status_api_admin_ai_provider_v2_accounts__account_id__status_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderAccountStatusRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ProviderAccountResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_account_api_admin_ai_provider_v2_accounts__account_id__test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                account_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ProviderV2ConnectionResult_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_providers_api_admin_ai_services_get: {
         parameters: {
             query?: {

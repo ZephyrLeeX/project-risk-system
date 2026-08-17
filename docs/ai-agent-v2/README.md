@@ -1,6 +1,6 @@
 # AI Agent V2 实施入口
 
-本目录是 AI Agent V2 重构的长期执行与交接入口。本轮只建立计划，尚未开始任何功能开发。
+本目录是 AI Agent V2 重构的长期执行与交接入口。Task 1 已完成并通过独立 Review；Task 2–5 尚未开始。
 
 ## Authority 与文档索引
 
@@ -28,15 +28,15 @@
 
 ## 当前 Task
 
-当前阶段：`PLANNED`
+当前阶段：`IN_PROGRESS — Task 1 COMPLETED`
 
-下一 Task：`Task 1 — Provider V2 + DeepSeek Official Adapter`
+下一 Task：`Task 2 — Agent Core + Scope Guard + Native Tool Loop`
 
-进入文件：[`task-01-provider-v2.md`](task-01-provider-v2.md)
+进入文件：[`task-02-agent-core.md`](task-02-agent-core.md)
 
-Task 1 尚未标记 `IN_PROGRESS`。开始实现前必须先满足该文件的 prerequisites 和 ADR reconciliation gate。
+Task 2 保持 `NOT_STARTED`。开始实现前必须由用户明确要求继续，并满足该文件的 prerequisites 与 native Tool Loop / Scope Guard ADR reconciliation gate。
 
-此外，仓库 `AGENTS.md` 要求所有 implementation 只能由 `docs/implementation/TASK_GRAPH.md` 中的 assigned `Txxx` 驱动。本轮按用户要求不修改 Task Graph。开始功能实现前，Orchestrator 必须把本目录恰好 5 个主 Task 一一登记/映射为 5 个 assigned `Txxx`（不得再拆成更多主要 Task），并遵守既有 task/report/review/integration 规范。未完成登记时，任何 V2 Task 都必须标记 `BLOCKED`，不得编码。
+仓库 `AGENTS.md` 要求所有 implementation 只能由 `docs/implementation/TASK_GRAPH.md` 中的 assigned `Txxx` 驱动。五个主 Task 已一一登记为 T048–T052；T048 为 `REVIEW_PASSED`，T049 为下一 eligible Task 但仍是 `READY / NOT_STARTED`，不得自动推进。
 
 激活后，`TASK_GRAPH.md`、assigned `Txxx`、`EXECUTION_STATE.md` 和正式 Task report 是正式调度与机器执行 authority；本目录 `progress.md`、各 Task `# Status` 和本 README 的当前 Task 是 V2 详细交接镜像。Orchestrator 在 review/checkpoint 后同步两侧；Implementer 不得自行修改或推进官方状态。两者不一致时停止并按正式 execution state 核对，不能选择较“先进”的状态继续执行。
 

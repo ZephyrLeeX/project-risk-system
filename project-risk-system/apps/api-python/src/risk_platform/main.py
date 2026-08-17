@@ -14,6 +14,7 @@ from risk_platform.admin.roles.api import router as admin_roles_router
 from risk_platform.admin.users.api import router as admin_users_router
 from risk_platform.agent.api import router as agent_router
 from risk_platform.ai_providers.api import router as ai_providers_router
+from risk_platform.ai_providers.v2_api import router as ai_provider_v2_router
 from risk_platform.app import AppComposition, create_app
 from risk_platform.audit.api import router as audit_router
 from risk_platform.auth.api import router as auth_router
@@ -75,6 +76,7 @@ app = create_app(
             admin_roles_router,
             admin_options_router,
             ai_providers_router,
+            ai_provider_v2_router,
             audit_router,
             system_config_router,
             retention_router,

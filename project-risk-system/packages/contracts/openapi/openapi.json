@@ -1495,6 +1495,34 @@
         "title": "ApiResponse[ManagerTodoListResponse]",
         "type": "object"
       },
+      "ApiResponse_ModelConfigResponse_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ModelConfigResponse"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "traceId": {
+            "title": "Traceid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ],
+        "title": "ApiResponse[ModelConfigResponse]",
+        "type": "object"
+      },
       "ApiResponse_NoneType_": {
         "additionalProperties": false,
         "properties": {
@@ -1692,6 +1720,34 @@
         "title": "ApiResponse[ProjectScopesResponse]",
         "type": "object"
       },
+      "ApiResponse_ProviderAccountResponse_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ProviderAccountResponse"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "traceId": {
+            "title": "Traceid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ],
+        "title": "ApiResponse[ProviderAccountResponse]",
+        "type": "object"
+      },
       "ApiResponse_ProviderResponse_": {
         "additionalProperties": false,
         "properties": {
@@ -1746,6 +1802,34 @@
           "traceId"
         ],
         "title": "ApiResponse[ProviderSummary]",
+        "type": "object"
+      },
+      "ApiResponse_ProviderV2ConnectionResult_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ProviderV2ConnectionResult"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "traceId": {
+            "title": "Traceid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ],
+        "title": "ApiResponse[ProviderV2ConnectionResult]",
         "type": "object"
       },
       "ApiResponse_ReleaseDetail_": {
@@ -2348,6 +2432,70 @@
         "title": "ApiResponse[list[DepartmentResponse]]",
         "type": "object"
       },
+      "ApiResponse_list_DiscoveredModelResponse__": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/DiscoveredModelResponse"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "traceId": {
+            "title": "Traceid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ],
+        "title": "ApiResponse[list[DiscoveredModelResponse]]",
+        "type": "object"
+      },
+      "ApiResponse_list_ModelConfigResponse__": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/ModelConfigResponse"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "traceId": {
+            "title": "Traceid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ],
+        "title": "ApiResponse[list[ModelConfigResponse]]",
+        "type": "object"
+      },
       "ApiResponse_list_PermissionResponse__": {
         "additionalProperties": false,
         "properties": {
@@ -2410,6 +2558,38 @@
           "traceId"
         ],
         "title": "ApiResponse[list[ProjectOption]]",
+        "type": "object"
+      },
+      "ApiResponse_list_ProviderAccountResponse__": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/ProviderAccountResponse"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "traceId": {
+            "title": "Traceid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ],
+        "title": "ApiResponse[list[ProviderAccountResponse]]",
         "type": "object"
       },
       "ApiResponse_list_ProviderResponse__": {
@@ -3995,6 +4175,80 @@
         "title": "ConnectionResult",
         "type": "object"
       },
+      "CreateModelConfigRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "isDefault": {
+            "default": false,
+            "title": "Isdefault",
+            "type": "boolean"
+          },
+          "modelName": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Modelname",
+            "type": "string"
+          },
+          "priority": {
+            "default": 100,
+            "maximum": 1000000.0,
+            "minimum": 0.0,
+            "title": "Priority",
+            "type": "integer"
+          },
+          "timeoutSeconds": {
+            "default": 60,
+            "maximum": 300.0,
+            "minimum": 1.0,
+            "title": "Timeoutseconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "modelName"
+        ],
+        "title": "CreateModelConfigRequest",
+        "type": "object"
+      },
+      "CreateProviderAccountRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "apiKey": {
+            "maxLength": 500,
+            "minLength": 8,
+            "title": "Apikey",
+            "type": "string"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 2,
+            "title": "Name",
+            "type": "string"
+          },
+          "providerType": {
+            "const": "DEEPSEEK_OFFICIAL",
+            "default": "DEEPSEEK_OFFICIAL",
+            "title": "Providertype",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "apiKey"
+        ],
+        "title": "CreateProviderAccountRequest",
+        "type": "object"
+      },
       "CreateProviderRequest": {
         "additionalProperties": false,
         "properties": {
@@ -4582,6 +4836,20 @@
           "dataScope"
         ],
         "title": "DepartmentCollectionSummary",
+        "type": "object"
+      },
+      "DiscoveredModelResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "DiscoveredModelResponse",
         "type": "object"
       },
       "DraftTestRequest": {
@@ -7781,6 +8049,108 @@
         "title": "MatchSupplementalRequest",
         "type": "object"
       },
+      "ModelConfigResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "title": "Accountid",
+            "type": "string"
+          },
+          "createdAt": {
+            "title": "Createdat",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "health": {
+            "enum": [
+              "UNTESTED",
+              "AVAILABLE",
+              "CONFIG_ERROR"
+            ],
+            "title": "Health",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "isDefault": {
+            "title": "Isdefault",
+            "type": "boolean"
+          },
+          "lastHealthAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lasthealthat"
+          },
+          "lastHealthErrorCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lasthealtherrorcode"
+          },
+          "modelName": {
+            "title": "Modelname",
+            "type": "string"
+          },
+          "priority": {
+            "title": "Priority",
+            "type": "integer"
+          },
+          "timeoutSeconds": {
+            "title": "Timeoutseconds",
+            "type": "integer"
+          },
+          "updatedAt": {
+            "title": "Updatedat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "accountId",
+          "modelName",
+          "enabled",
+          "isDefault",
+          "priority",
+          "timeoutSeconds",
+          "health",
+          "lastHealthAt",
+          "lastHealthErrorCode",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "ModelConfigResponse",
+        "type": "object"
+      },
+      "ModelConfigStatusRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "ModelConfigStatusRequest",
+        "type": "object"
+      },
       "NextCollectionInfo": {
         "properties": {
           "amountYuan": {
@@ -8272,6 +8642,104 @@
         "title": "ProjectScopesResponse",
         "type": "object"
       },
+      "ProviderAccountResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "title": "Createdat",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "health": {
+            "enum": [
+              "UNTESTED",
+              "AVAILABLE",
+              "CREDENTIAL_ERROR"
+            ],
+            "title": "Health",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "lastHealthAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lasthealthat"
+          },
+          "lastHealthErrorCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lasthealtherrorcode"
+          },
+          "maskedKey": {
+            "title": "Maskedkey",
+            "type": "string"
+          },
+          "modelCount": {
+            "title": "Modelcount",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "providerType": {
+            "const": "DEEPSEEK_OFFICIAL",
+            "title": "Providertype",
+            "type": "string"
+          },
+          "updatedAt": {
+            "title": "Updatedat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "providerType",
+          "maskedKey",
+          "enabled",
+          "health",
+          "lastHealthAt",
+          "lastHealthErrorCode",
+          "modelCount",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "ProviderAccountResponse",
+        "type": "object"
+      },
+      "ProviderAccountStatusRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "ProviderAccountStatusRequest",
+        "type": "object"
+      },
       "ProviderResponse": {
         "additionalProperties": false,
         "properties": {
@@ -8499,6 +8967,62 @@
           "sevenDaySuccessRate"
         ],
         "title": "ProviderSummary",
+        "type": "object"
+      },
+      "ProviderV2ConnectionResult": {
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "title": "Accountid",
+            "type": "string"
+          },
+          "availableModels": {
+            "items": {
+              "$ref": "#/components/schemas/DiscoveredModelResponse"
+            },
+            "title": "Availablemodels",
+            "type": "array"
+          },
+          "errorClassification": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Errorclassification"
+          },
+          "latencyMs": {
+            "title": "Latencyms",
+            "type": "integer"
+          },
+          "modelConfigId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modelconfigid"
+          },
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "accountId",
+          "modelConfigId",
+          "success",
+          "latencyMs",
+          "errorClassification",
+          "availableModels"
+        ],
+        "title": "ProviderV2ConnectionResult",
         "type": "object"
       },
       "PublishRequest": {
@@ -10214,6 +10738,22 @@
         "title": "RotateKeyRequest",
         "type": "object"
       },
+      "RotateProviderAccountKeyRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "apiKey": {
+            "maxLength": 500,
+            "minLength": 8,
+            "title": "Apikey",
+            "type": "string"
+          }
+        },
+        "required": [
+          "apiKey"
+        ],
+        "title": "RotateProviderAccountKeyRequest",
+        "type": "object"
+      },
       "SameProjectRisk": {
         "properties": {
           "categoryName": {
@@ -11069,6 +11609,67 @@
           "code"
         ],
         "title": "UnavailableSection",
+        "type": "object"
+      },
+      "UpdateModelConfigRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "isDefault": {
+            "default": false,
+            "title": "Isdefault",
+            "type": "boolean"
+          },
+          "modelName": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Modelname",
+            "type": "string"
+          },
+          "priority": {
+            "default": 100,
+            "maximum": 1000000.0,
+            "minimum": 0.0,
+            "title": "Priority",
+            "type": "integer"
+          },
+          "timeoutSeconds": {
+            "default": 60,
+            "maximum": 300.0,
+            "minimum": 1.0,
+            "title": "Timeoutseconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "modelName"
+        ],
+        "title": "UpdateModelConfigRequest",
+        "type": "object"
+      },
+      "UpdateProviderAccountRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 2,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "enabled"
+        ],
+        "title": "UpdateProviderAccountRequest",
         "type": "object"
       },
       "UpdateProviderRequest": {
@@ -12088,6 +12689,729 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/admin/ai-provider-v2/accounts": {
+      "get": {
+        "operationId": "list_accounts_api_admin_ai_provider_v2_accounts_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_ProviderAccountResponse__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Accounts",
+        "tags": [
+          "ai-provider-v2"
+        ]
+      },
+      "post": {
+        "operationId": "create_account_api_admin_ai_provider_v2_accounts_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProviderAccountRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ProviderAccountResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Account",
+        "tags": [
+          "ai-provider-v2"
+        ]
+      }
+    },
+    "/api/admin/ai-provider-v2/accounts/{account_id}": {
+      "delete": {
+        "operationId": "delete_account_api_admin_ai_provider_v2_accounts__account_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Account Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_NoneType_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Account",
+        "tags": [
+          "ai-provider-v2"
+        ]
+      },
+      "patch": {
+        "operationId": "update_account_api_admin_ai_provider_v2_accounts__account_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Account Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProviderAccountRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ProviderAccountResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Account",
+        "tags": [
+          "ai-provider-v2"
+        ]
+      }
+    },
+    "/api/admin/ai-provider-v2/accounts/{account_id}/models": {
+      "get": {
+        "operationId": "list_models_api_admin_ai_provider_v2_accounts__account_id__models_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Account Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_ModelConfigResponse__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Models",
+        "tags": [
+          "ai-provider-v2"
+        ]
+      },
+      "post": {
+        "operationId": "create_model_api_admin_ai_provider_v2_accounts__account_id__models_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Account Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateModelConfigRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ModelConfigResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Model",
+        "tags": [
+          "ai-provider-v2"
+        ]
+      }
+    },
+    "/api/admin/ai-provider-v2/accounts/{account_id}/models/discover": {
+      "get": {
+        "operationId": "discover_models_api_admin_ai_provider_v2_accounts__account_id__models_discover_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Account Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_DiscoveredModelResponse__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Discover Models",
+        "tags": [
+          "ai-provider-v2"
+        ]
+      }
+    },
+    "/api/admin/ai-provider-v2/accounts/{account_id}/models/{model_id}": {
+      "delete": {
+        "operationId": "delete_model_api_admin_ai_provider_v2_accounts__account_id__models__model_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Account Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_NoneType_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Model",
+        "tags": [
+          "ai-provider-v2"
+        ]
+      },
+      "patch": {
+        "operationId": "update_model_api_admin_ai_provider_v2_accounts__account_id__models__model_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Account Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateModelConfigRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ModelConfigResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Model",
+        "tags": [
+          "ai-provider-v2"
+        ]
+      }
+    },
+    "/api/admin/ai-provider-v2/accounts/{account_id}/models/{model_id}/set-default": {
+      "post": {
+        "operationId": "set_default_model_api_admin_ai_provider_v2_accounts__account_id__models__model_id__set_default_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Account Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ModelConfigResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Default Model",
+        "tags": [
+          "ai-provider-v2"
+        ]
+      }
+    },
+    "/api/admin/ai-provider-v2/accounts/{account_id}/models/{model_id}/status": {
+      "post": {
+        "operationId": "set_model_status_api_admin_ai_provider_v2_accounts__account_id__models__model_id__status_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Account Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelConfigStatusRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ModelConfigResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Model Status",
+        "tags": [
+          "ai-provider-v2"
+        ]
+      }
+    },
+    "/api/admin/ai-provider-v2/accounts/{account_id}/models/{model_id}/test": {
+      "post": {
+        "operationId": "test_model_api_admin_ai_provider_v2_accounts__account_id__models__model_id__test_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Account Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "model_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Model Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ProviderV2ConnectionResult_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Test Model",
+        "tags": [
+          "ai-provider-v2"
+        ]
+      }
+    },
+    "/api/admin/ai-provider-v2/accounts/{account_id}/rotate-key": {
+      "post": {
+        "operationId": "rotate_key_api_admin_ai_provider_v2_accounts__account_id__rotate_key_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Account Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RotateProviderAccountKeyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ProviderAccountResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rotate Key",
+        "tags": [
+          "ai-provider-v2"
+        ]
+      }
+    },
+    "/api/admin/ai-provider-v2/accounts/{account_id}/status": {
+      "post": {
+        "operationId": "set_account_status_api_admin_ai_provider_v2_accounts__account_id__status_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Account Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProviderAccountStatusRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ProviderAccountResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Account Status",
+        "tags": [
+          "ai-provider-v2"
+        ]
+      }
+    },
+    "/api/admin/ai-provider-v2/accounts/{account_id}/test": {
+      "post": {
+        "operationId": "test_account_api_admin_ai_provider_v2_accounts__account_id__test_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Account Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ProviderV2ConnectionResult_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Test Account",
+        "tags": [
+          "ai-provider-v2"
+        ]
+      }
+    },
     "/api/admin/ai-services": {
       "get": {
         "operationId": "list_providers_api_admin_ai_services_get",

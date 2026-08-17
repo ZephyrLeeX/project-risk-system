@@ -15,6 +15,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     text,
 )
 from sqlalchemy.dialects.postgresql import TIMESTAMP
@@ -56,7 +57,7 @@ class AiProviderConfig(Base):
     protocol: Mapped[AiProviderProtocol] = mapped_column(
         Enum(AiProviderProtocol, name="AiProviderProtocol", native_enum=True),
         nullable=False,
-        server_default=text("'OPENAI_CHAT_COMPLETIONS'"),
+        default=AiProviderProtocol.OPENAI_CHAT_COMPLETIONS,
     )
     model: Mapped[str] = mapped_column(String(128), nullable=False)
     encryptedApiKey: Mapped[str] = mapped_column(Text, nullable=False)
@@ -151,6 +152,162 @@ class AiCallLog(Base):
         ForeignKey("users.id", ondelete="SET NULL", onupdate="CASCADE"),
         nullable=True,
     )
+    createdAt: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True, precision=3),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+
+
+class AiProviderType(StrEnum):
+    DEEPSEEK_OFFICIAL = "DEEPSEEK_OFFICIAL"
+
+
+class AiProviderAccountHealth(StrEnum):
+    UNTESTED = "UNTESTED"
+    AVAILABLE = "AVAILABLE"
+    CREDENTIAL_ERROR = "CREDENTIAL_ERROR"
+
+
+class AiModelHealth(StrEnum):
+    UNTESTED = "UNTESTED"
+    AVAILABLE = "AVAILABLE"
+    CONFIG_ERROR = "CONFIG_ERROR"
+
+
+class AiProviderAccount(Base):
+    __tablename__ = "ai_provider_accounts"
+    __table_args__ = (
+        Index("ai_provider_accounts_name_key", "name", unique=True),
+        Index("ai_provider_accounts_enabled_health_idx", "enabled", "health"),
+    )
+    id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True), primary_key=True, nullable=False, default=new_uuid
+    )
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    providerType: Mapped[AiProviderType] = mapped_column(
+        Enum(AiProviderType, name="AiProviderType", native_enum=True), nullable=False
+    )
+    encryptedApiKey: Mapped[str] = mapped_column(Text, nullable=False)
+    keyLast4: Mapped[str] = mapped_column(String(16), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("TRUE"))
+    health: Mapped[AiProviderAccountHealth] = mapped_column(
+        Enum(AiProviderAccountHealth, name="AiProviderAccountHealth", native_enum=True),
+        nullable=False,
+        server_default=text("'UNTESTED'"),
+    )
+    lastHealthAt: Mapped[datetime | None] = mapped_column(
+        TIMESTAMP(timezone=True, precision=3), nullable=True
+    )
+    lastHealthErrorCode: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    createdById: Mapped[UUID | None] = mapped_column(
+        UUIDType(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL", onupdate="CASCADE"),
+        nullable=True,
+    )
+    updatedById: Mapped[UUID | None] = mapped_column(
+        UUIDType(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL", onupdate="CASCADE"),
+        nullable=True,
+    )
+    createdAt: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True, precision=3),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updatedAt: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True, precision=3),
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
+    )
+
+
+class AiModelConfig(Base):
+    __tablename__ = "ai_model_configs"
+    __table_args__ = (
+        UniqueConstraint("accountId", "modelName", name="ai_model_configs_account_model_key"),
+        Index(
+            "ai_model_configs_candidate_idx",
+            "enabled",
+            "health",
+            "isDefault",
+            "priority",
+            "id",
+        ),
+        Index(
+            "ai_model_configs_one_enabled_default_per_account_key",
+            "accountId",
+            unique=True,
+            postgresql_where=text('"isDefault" = TRUE AND enabled = TRUE'),
+        ),
+    )
+    id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True), primary_key=True, nullable=False, default=new_uuid
+    )
+    accountId: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True),
+        ForeignKey("ai_provider_accounts.id", ondelete="CASCADE", onupdate="CASCADE"),
+        nullable=False,
+    )
+    modelName: Mapped[str] = mapped_column(String(128), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("TRUE"))
+    isDefault: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("FALSE"))
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("100"))
+    timeoutSeconds: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("60"))
+    health: Mapped[AiModelHealth] = mapped_column(
+        Enum(AiModelHealth, name="AiModelHealth", native_enum=True),
+        nullable=False,
+        server_default=text("'UNTESTED'"),
+    )
+    lastHealthAt: Mapped[datetime | None] = mapped_column(
+        TIMESTAMP(timezone=True, precision=3), nullable=True
+    )
+    lastHealthErrorCode: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    createdAt: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True, precision=3),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updatedAt: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True, precision=3),
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
+    )
+
+
+class AiProviderV2CallLog(Base):
+    __tablename__ = "ai_provider_v2_call_logs"
+    __table_args__ = (
+        Index("ai_provider_v2_call_logs_account_created_idx", "accountId", "createdAt"),
+        Index("ai_provider_v2_call_logs_model_created_idx", "modelConfigId", "createdAt"),
+    )
+    id: Mapped[UUID] = mapped_column(
+        UUIDType(as_uuid=True), primary_key=True, nullable=False, default=new_uuid
+    )
+    accountId: Mapped[UUID | None] = mapped_column(
+        UUIDType(as_uuid=True),
+        ForeignKey("ai_provider_accounts.id", ondelete="SET NULL", onupdate="CASCADE"),
+        nullable=True,
+    )
+    modelConfigId: Mapped[UUID | None] = mapped_column(
+        UUIDType(as_uuid=True),
+        ForeignKey("ai_model_configs.id", ondelete="SET NULL", onupdate="CASCADE"),
+        nullable=True,
+    )
+    accountNameSnapshot: Mapped[str] = mapped_column(String(128), nullable=False)
+    modelNameSnapshot: Mapped[str] = mapped_column(String(128), nullable=False)
+    httpStatus: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    durationMs: Mapped[int] = mapped_column(Integer, nullable=False)
+    inputTokens: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    outputTokens: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    totalTokens: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    result: Mapped[AiCallResult] = mapped_column(
+        Enum(AiCallResult, name="AiCallResult", native_enum=True, create_type=False),
+        nullable=False,
+    )
+    errorClassification: Mapped[str | None] = mapped_column(String(64), nullable=True)
     createdAt: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True, precision=3),
         nullable=False,

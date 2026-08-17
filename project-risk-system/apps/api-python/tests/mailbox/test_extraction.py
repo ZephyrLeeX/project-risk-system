@@ -23,7 +23,11 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from risk_platform.admin.models import Department, User
 from risk_platform.ai_providers.client import AiProviderClient, ProviderRequestError
-from risk_platform.ai_providers.models import AiConnectionStatus, AiProviderConfig
+from risk_platform.ai_providers.models import (
+    AiConnectionStatus,
+    AiProviderConfig,
+    AiProviderProtocol,
+)
 from risk_platform.audit.models import AuditActorType, AuditLog
 from risk_platform.audit.service import AuditService
 from risk_platform.auth.schemas import AuthenticatedUser, DataScope
@@ -324,8 +328,9 @@ class _FakeProvider:
         api_key: str,
         timeout_seconds: int,
         payload: dict[str, object],
+        protocol: AiProviderProtocol,
     ) -> tuple[str, dict[str, int], int]:
-        del endpoint, model, api_key, timeout_seconds
+        del endpoint, model, api_key, timeout_seconds, protocol
         self.calls += 1
         assert payload["schema_version"] == "MAIL_PROVIDER_DERIVED_CONTENT_V2"
         if self.outcome == "timeout":

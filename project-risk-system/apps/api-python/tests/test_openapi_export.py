@@ -127,6 +127,23 @@ def test_operations_are_unique_and_path_prefixed() -> None:
     assert len(operations) == len(set(operations)), "duplicate (method, path) operation"
 
 
+def test_provider_v2_additive_surface_and_secret_boundary() -> None:
+    schema = build_openapi()
+    paths = schema["paths"]
+    assert "/api/admin/ai-services" in paths
+    assert "/api/admin/ai-provider-v2/accounts" in paths
+    assert "/api/admin/ai-provider-v2/accounts/{account_id}/models" in paths
+    assert "/api/admin/ai-provider-v2/accounts/{account_id}/models/discover" in paths
+    components = schema["components"]["schemas"]
+    account = components["ProviderAccountResponse"]["properties"]
+    assert "maskedKey" in account
+    assert "apiKey" not in account
+    assert "encryptedApiKey" not in account
+    create = components["CreateProviderAccountRequest"]["properties"]
+    assert create["providerType"]["const"] == "DEEPSEEK_OFFICIAL"
+    assert "endpoint" not in create
+
+
 def test_write_openapi_emits_canonical_file(tmp_path: Path) -> None:
     target = tmp_path / "openapi.json"
 
@@ -286,8 +303,8 @@ def test_contract_datetime_runtime_json_is_utc_milliseconds_with_z() -> None:
     assert isinstance(item.model_dump()["checkedAt"], datetime)
 
 
-def test_openapi_surface_remains_93_paths() -> None:
-    """The fidelity fix adds field types only; the API surface is unchanged."""
+def test_openapi_surface_contains_provider_v2_additive_paths() -> None:
+    """T048 adds exactly eleven Provider V2 paths to the frozen 93-path surface."""
     schema = build_openapi()
-    assert len(schema["paths"]) == 93
-    assert len(schema["components"]["schemas"]) == 243
+    assert len(schema["paths"]) == 104
+    assert len(schema["components"]["schemas"]) == 260
