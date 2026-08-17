@@ -14,24 +14,81 @@ from sqlalchemy import select
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from risk_platform.admin.models import UserStatus
 from risk_platform.audit.models import AuditActorType
 from risk_platform.audit.service import AuditService
-from risk_platform.auth.service import SessionIdentity
+from risk_platform.auth.repository import AuthRepository
+from risk_platform.auth.service import AuthService, SessionIdentity
 from risk_platform.db import transaction
+from risk_platform.model_types import JSONValue
+from risk_platform.projects.models import Project
 from risk_platform.rbac.models import DataScopeType
-from risk_platform.rbac.scopes import get_scoped_project
+from risk_platform.rbac.scopes import get_scoped_project, project_scope_predicate
 from risk_platform.risks.models import ProjectRiskLevel, Risk, RiskCategory, RiskSourceType
 from risk_platform.risks.schemas import LifecycleRequest
 from risk_platform.risks.service import RiskCreate, RisksService
 from risk_platform.shared.errors import ApiError
 from risk_platform.todos.service import TodoProcessCommand, TodosService
 
-from .execution import AgentExecutionWorker
 from .models import (
     AgentConfirmationOperation,
     AgentConfirmationToken,
     AgentConversation,
 )
+
+
+def _canonical(value: object) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _timestamp(value: datetime) -> str:
+    return value.astimezone(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def _category_binding(category: RiskCategory) -> str:
+    value = {
+        "categoryId": str(category.id),
+        "updatedAt": _timestamp(category.updatedAt),
+        "name": category.name,
+        "description": category.description,
+        "defaultLevel": category.defaultLevel.value if category.defaultLevel else None,
+    }
+    return hashlib.sha256(_canonical(value).encode()).hexdigest()
+
+
+async def _identity(session: AsyncSession, user_id: UUID) -> SessionIdentity:
+    repository = AuthRepository(session)
+    user = await repository.user_by_id(user_id, for_update=False)
+    if user is None or user.status is not UserStatus.ACTIVE:
+        raise ApiError(409, "AGENT_CONFIRMATION_CONTENT_MISMATCH", "确认内容或当前授权已变化")
+    access = await repository.user_access(user_id)
+    return SessionIdentity(
+        session_id=UUID(int=0),
+        expires_at=datetime.max.replace(tzinfo=UTC),
+        user=AuthService._authenticated_user(user, access),
+    )
+
+
+async def _scope_fact(session: AsyncSession, identity: SessionIdentity) -> dict[str, JSONValue]:
+    project_ids = list(
+        (
+            await session.scalars(
+                select(Project.id)
+                .where(
+                    project_scope_predicate(
+                        UUID(identity.user.id), DataScopeType(identity.user.dataScope)
+                    )
+                )
+                .order_by(Project.id)
+            )
+        ).all()
+    )
+    return {
+        "actorUserId": identity.user.id,
+        "permissionCodes": cast(list[JSONValue], sorted(identity.user.permissions)),
+        "projectScopeMode": identity.user.dataScope,
+        "allowedProjectIds": cast(list[JSONValue], [str(value) for value in project_ids]),
+    }
 
 
 class _CanonicalContent(BaseModel):
@@ -135,8 +192,8 @@ class AgentConfirmationService:
                 )
                 if conversation_owner != UUID(identity.user.id):
                     raise self._mismatch()
-                current = await AgentExecutionWorker._identity(session, UUID(identity.user.id))
-                scope_fact = await AgentExecutionWorker._scope_fact(session, current)
+                current = await _identity(session, UUID(identity.user.id))
+                scope_fact = await _scope_fact(session, current)
                 if self._scope_digest(scope_fact) != token.scopeDigest:
                     raise self._mismatch()
                 permission = (
@@ -200,7 +257,7 @@ class AgentConfirmationService:
             content = _CanonicalContent.model_validate(raw)
         except (json.JSONDecodeError, ValidationError, TypeError, ValueError):
             raise AgentConfirmationService._mismatch() from None
-        canonical = AgentExecutionWorker._canonical(content.model_dump(mode="json"))
+        canonical = _canonical(content.model_dump(mode="json"))
         if (
             canonical != token.canonicalContent
             or hashlib.sha256(canonical.encode()).hexdigest() != token.contentDigest
@@ -275,7 +332,7 @@ class AgentConfirmationService:
         )
         if (
             category is None
-            or AgentExecutionWorker._category_binding(category)
+            or _category_binding(category)
             != content.categoryBindingDigest
         ):
             raise self._mismatch()
@@ -336,7 +393,7 @@ class AgentConfirmationService:
 
     @staticmethod
     def _scope_digest(value: object) -> str:
-        return hashlib.sha256(AgentExecutionWorker._canonical(value).encode()).hexdigest()
+        return hashlib.sha256(_canonical(value).encode()).hexdigest()
 
     @staticmethod
     def _result(token: AgentConfirmationToken) -> dict[str, object]:

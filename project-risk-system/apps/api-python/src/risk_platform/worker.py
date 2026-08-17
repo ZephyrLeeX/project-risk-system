@@ -5,7 +5,6 @@ from __future__ import annotations
 from risk_platform.composition import (
     CompositionError,
     build_ai_provider_client,
-    build_provider,
     build_tool_registry,
     import_storage_root,
     load_cipher,
@@ -34,13 +33,11 @@ def register_production_worker(*, owner: str = "risk-platform-worker") -> None:
     if cipher is None:
         raise CompositionError("DATA_ENCRYPTION_KEY 未配置或无效，无法启动 worker")  # noqa: RUF001
     settings = Settings.from_env()
-    provider = build_provider(cipher, settings)
     tool_registry = build_tool_registry(sessions)
     handlers = merge_worker_handlers(
         sessions,
         cipher,
         import_storage_root(),
-        provider,
         tool_registry,
         build_ai_provider_client(settings),
     )

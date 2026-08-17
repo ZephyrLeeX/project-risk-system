@@ -10,13 +10,10 @@ mappings and registers the shared executor exactly once.
 from __future__ import annotations
 
 import base64
-import json
-import logging
 import os
 import tempfile
 from collections.abc import Awaitable, Callable, Mapping
 from pathlib import Path
-from typing import cast
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -25,17 +22,10 @@ from risk_platform.admin.overview.service import AdminOverviewService
 from risk_platform.admin.roles.service import AdminRolesService
 from risk_platform.admin.users.service import AdminUsersService
 from risk_platform.agent.core import ReadOnlyAgentCore
-from risk_platform.agent.execution import AgentProviderError, Provider, ProviderTransportResponse
-from risk_platform.agent.models import AgentExecutionConfig
 from risk_platform.agent.service import AgentConversationService
 from risk_platform.agent.tools import AgentToolRegistry
 from risk_platform.agent.v2_execution import native_agent_execution_handlers
-from risk_platform.ai_providers.client import (
-    AGENT_RESPONSE_TRANSPORT_RETRY_COUNT,
-    AiProviderClient,
-    ProviderRequestError,
-)
-from risk_platform.ai_providers.models import AiProviderProtocol
+from risk_platform.ai_providers.client import AiProviderClient
 from risk_platform.ai_providers.service import AiProvidersService
 from risk_platform.ai_providers.v2_adapter import (
     AiProviderAdapterRegistry,
@@ -57,7 +47,6 @@ from risk_platform.mailbox.parse_worker import MailParseWorker
 from risk_platform.mailbox.service import MailboxService
 from risk_platform.mailbox.sync import MailboxSyncService
 from risk_platform.mailbox.sync_results import MailSyncResultsService
-from risk_platform.model_types import JSONValue
 from risk_platform.reliability.core import TaskHandler
 from risk_platform.retention import tasks as retention_tasks
 from risk_platform.retention.cleanup import RetentionCleanupService
@@ -99,205 +88,6 @@ def import_storage_root(environ: Mapping[str, str] | None = None) -> Path:
     return Path(source.get("IMPORT_STORAGE_DIR", "storage/excel")).resolve()
 
 
-class AgentProviderAdapter:
-    """Production OpenAI-compatible transport for one Agent execution.
-
-    The adapter is a ``Provider``: it receives an immutable
-    ``AgentExecutionConfig`` snapshot and the validated request body, then
-    returns only a raw ``ProviderTransportResponse``.  No request/response
-    content or secret is persisted here; the worker performs all protocol
-    validation.
-    """
-
-    def __init__(self, cipher: SecretCipher, guard: OutboundEndpointGuard | None = None) -> None:
-        self._cipher = cipher
-        self._client = AiProviderClient(guard or OutboundEndpointGuard())
-
-    async def __call__(
-        self, config: AgentExecutionConfig, request: dict[str, JSONValue]
-    ) -> ProviderTransportResponse:
-        snapshot = config.encryptedApiKeySnapshot
-        endpoint = config.endpointSnapshot
-        model = config.modelSnapshot
-        if snapshot is None or endpoint is None or model is None:
-            raise AgentProviderError()
-        api_key = self._cipher.decrypt(snapshot)
-        try:
-            protocol = AiProviderProtocol(config.protocolSnapshot or "OPENAI_CHAT_COMPLETIONS")
-            if protocol is AiProviderProtocol.OPENAI_RESPONSES:
-                return await self._responses(config, request, api_key)
-            result = await self._client.complete(
-                endpoint, protocol, model, api_key, request, config.timeoutSeconds, 0
-            )
-        except ProviderRequestError as error:
-            if error.code == "PROVIDER_INVALID_OUTPUT":
-                raise AgentProviderError(
-                    code="AGENT_PROVIDER_INVALID_OUTPUT", retryable=False
-                ) from None
-            if error.status_code is not None and 400 <= error.status_code < 500:
-                raise AgentProviderError(
-                    code="AGENT_PROVIDER_REQUEST_REJECTED", retryable=False
-                ) from None
-            status = {
-                "UPSTREAM_TIMEOUT": 408,
-                "AUTHENTICATION_FAILED": 401,
-                "MODEL_NOT_FOUND": 404,
-                "INVALID_REQUEST": 400,
-            }.get(error.code)
-            raise AgentProviderError(status_code=status) from None
-        except (TimeoutError, ValueError):
-            raise AgentProviderError() from None
-        return ProviderTransportResponse(200, result.text.encode())
-
-    async def _responses(
-        self,
-        config: AgentExecutionConfig,
-        request: dict[str, JSONValue],
-        api_key: str,
-    ) -> ProviderTransportResponse:
-        """Normalize Responses items; never require transport JSON to be Agent V2."""
-        phase_value = request.get("phase")
-        if not isinstance(phase_value, str) or phase_value not in {"PLAN", "RESPOND"}:
-            raise AgentProviderError(code="AGENT_PROVIDER_INVALID_OUTPUT", retryable=False)
-        phase = phase_value
-        native_request = dict(request)
-        native_request["_responsesNativeTools"] = cast(JSONValue, self._native_tools(request))
-        try:
-            result = await self._client.complete_response(
-                config.endpointSnapshot or "",
-                config.modelSnapshot or "",
-                api_key,
-                native_request,
-                config.timeoutSeconds,
-                phase=phase,
-            )
-            normalized = self._normalize_responses(result.value, phase)
-            return ProviderTransportResponse(
-                200, json.dumps(normalized, ensure_ascii=False).encode()
-            )
-        except ProviderRequestError as error:
-            # Native fallback is permitted only after the transport positively
-            # classified this request's tool capability as unsupported.  A generic
-            # 5xx stays retryable upstream failure and cannot change protocols.
-            if error.code == "NATIVE_TOOLS_UNSUPPORTED":
-                fallback = dict(request)
-                fallback["systemInstruction"] = (
-                    str(request.get("systemInstruction", ""))
-                    + "\nCompatibility mode: output one strict JSON object conforming to "
-                    + "AGENT_PROVIDER_EXECUTION_V2; no Markdown or code fences."
-                )
-                text = await self._client.complete(
-                    config.endpointSnapshot or "",
-                    AiProviderProtocol.OPENAI_RESPONSES,
-                    config.modelSnapshot or "",
-                    api_key,
-                    fallback,
-                    config.timeoutSeconds,
-                    AGENT_RESPONSE_TRANSPORT_RETRY_COUNT,
-                    phase=phase,
-                    backoff=True,
-                )
-                logging.getLogger(__name__).info(
-                    "agent provider capability phase=%s native_tools=unsupported "
-                    "fallback=text_json upstream_status=%s",
-                    phase,
-                    error.status_code,
-                )
-                return ProviderTransportResponse(200, text.text.encode())
-            raise
-
-    @staticmethod
-    def _native_tools(request: dict[str, JSONValue]) -> list[dict[str, object]]:
-        values = request.get("tools", [])
-        if not isinstance(values, list):
-            return []
-        return [
-            {
-                "type": "function",
-                "name": item["name"],
-                "description": item["description"],
-                "parameters": item["argumentsSchema"],
-            }
-            for item in values
-            if isinstance(item, dict)
-            and isinstance(item.get("name"), str)
-            and isinstance(item.get("description"), str)
-            and isinstance(item.get("argumentsSchema"), dict)
-        ]
-
-    @classmethod
-    def _normalize_responses(cls, value: dict[str, object], phase: str) -> dict[str, object]:
-        output = value.get("output")
-        if not isinstance(output, list):
-            cls._diagnostic(phase, "EMPTY_PROVIDER_OUTPUT", ())
-            raise ProviderRequestError("PROVIDER_INVALID_OUTPUT", retryable=False)
-        item_types = tuple(str(item.get("type")) for item in output if isinstance(item, dict))
-        calls = [
-            item
-            for item in output
-            if isinstance(item, dict) and item.get("type") == "function_call"
-        ]
-        text = "".join(
-            str(block["text"])
-            for item in output
-            if isinstance(item, dict) and item.get("type") == "message"
-            for block in item.get("content", [])
-            if isinstance(block, dict)
-            and block.get("type") == "output_text"
-            and isinstance(block.get("text"), str)
-        )
-        if phase == "PLAN" and calls:
-            actions: list[dict[str, object]] = []
-            for call in calls:
-                name, arguments = call.get("name"), call.get("arguments")
-                try:
-                    decoded = json.loads(arguments) if isinstance(arguments, str) else None
-                except json.JSONDecodeError:
-                    decoded = None
-                if not isinstance(name, str) or not isinstance(decoded, dict):
-                    cls._diagnostic(phase, "SCHEMA_VALIDATION_FAILED", item_types)
-                    raise ProviderRequestError("PROVIDER_INVALID_OUTPUT", retryable=False)
-                actions.append({"type": "tool_call", "name": name, "arguments": decoded})
-            cls._diagnostic(phase, "native_function_call", item_types)
-            logging.getLogger(__name__).info(
-                "agent provider plan tools=%s",
-                ",".join(str(action["name"]) for action in actions),
-            )
-            return {
-                "protocol": "AGENT_PROVIDER_EXECUTION_V2",
-                "phase": phase,
-                "grounded": True,
-                "actions": actions,
-            }
-        if phase == "RESPOND" and text:
-            cls._diagnostic(phase, "message_text", item_types)
-            return {
-                "protocol": "AGENT_PROVIDER_EXECUTION_V2",
-                "phase": phase,
-                "grounded": True,
-                "actions": [{"type": "text_delta", "text": text}],
-            }
-        outcome = (
-            "NO_TOOL_ACTION"
-            if phase == "PLAN" and not calls
-            else "NO_TEXT_ACTION"
-            if phase == "RESPOND" and not text
-            else "UNSUPPORTED_PROVIDER_RESPONSE_ITEM"
-        )
-        cls._diagnostic(phase, outcome, item_types)
-        raise ProviderRequestError("PROVIDER_INVALID_OUTPUT", retryable=False)
-
-    @staticmethod
-    def _diagnostic(phase: str, outcome: str, item_types: tuple[str, ...]) -> None:
-        logging.getLogger(__name__).info(
-            "agent provider normalized phase=%s transport=OPENAI_RESPONSES "
-            "outcome=%s item_types=%s",
-            phase,
-            outcome,
-            ",".join(item_types) or "none",
-        )
-
-
 def build_ai_outbound_policy(settings: Settings) -> OutboundPolicy:
     """Create the AI-only private-network exception policy.
 
@@ -315,12 +105,6 @@ def build_ai_provider_client(settings: Settings) -> AiProviderClient:
     """Inject the validated AI policy through the provider client boundary."""
 
     return AiProviderClient(OutboundEndpointGuard(build_ai_outbound_policy(settings)))
-
-
-def build_provider(cipher: SecretCipher, settings: Settings) -> Provider:
-    """Construct the production Agent Provider adapter from the secret boundary."""
-
-    return AgentProviderAdapter(cipher, OutboundEndpointGuard(build_ai_outbound_policy(settings)))
 
 
 def build_tool_registry(sessions: async_sessionmaker[AsyncSession]) -> AgentToolRegistry:
@@ -394,7 +178,6 @@ def merge_worker_handlers(
     sessions: async_sessionmaker[AsyncSession],
     cipher: SecretCipher,
     import_root: Path,
-    provider: Provider,
     tool_registry: AgentToolRegistry,
     ai_provider_client: AiProviderClient,
 ) -> Mapping[str, TaskHandler]:
@@ -419,7 +202,6 @@ def merge_worker_handlers(
             )
         )
     )
-    del provider  # V2 Agent execution exclusively uses the ADR 0034 runtime.
     runtime = ProviderV2Runtime(sessions, DeepSeekOfficialAdapter(cipher))
     merged.update(
         native_agent_execution_handlers(sessions, ReadOnlyAgentCore(runtime, tool_registry))
@@ -428,11 +210,9 @@ def merge_worker_handlers(
 
 
 __all__ = [
-    "AgentProviderAdapter",
     "CompositionError",
     "build_ai_outbound_policy",
     "build_ai_provider_client",
-    "build_provider",
     "build_services",
     "build_tool_registry",
     "import_storage_root",

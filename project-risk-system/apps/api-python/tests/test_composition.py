@@ -16,7 +16,6 @@ from risk_platform.ai_providers.service import AiProvidersService
 from risk_platform.auth.service import AuthService
 from risk_platform.composition import (
     build_ai_provider_client,
-    build_provider,
     build_services,
     build_tool_registry,
     merge_worker_handlers,
@@ -125,7 +124,6 @@ def test_worker_handlers_cover_every_task_kind(tmp_path: Path) -> None:
         sessions,
         cipher,
         tmp_path,
-        build_provider(cipher, _settings(tmp_path)),
         build_tool_registry(sessions),
         build_ai_provider_client(_settings(tmp_path)),
     )

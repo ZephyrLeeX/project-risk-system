@@ -229,7 +229,7 @@ class AgentToolRegistry:
             validated = tool.request_model.model_validate(arguments)
         except ValidationError:
             raise ApiError(422, "VALIDATION_ERROR", "Agent 工具参数不符合约束") from None
-        logger.info("agent tool invoke tool=%s phase=PLAN status=start", name)
+        logger.info("agent tool invoke tool=%s status=start", name)
         if name in proposal_tool_names():
             if mutation_context is None:
                 raise ApiError(
@@ -262,14 +262,14 @@ class AgentToolRegistry:
             response = tool.response_adapter(data)
         except Exception as error:
             logger.info(
-                "agent tool invoke tool=%s phase=PLAN result_type=%s status=failure error_class=%s",
+                "agent tool invoke tool=%s result_type=%s status=failure error_class=%s",
                 name,
                 type(data).__name__ if completed_call else "unavailable",
                 type(error).__name__,
             )
             raise
         logger.info(
-            "agent tool invoke tool=%s phase=PLAN result_type=%s status=success",
+            "agent tool invoke tool=%s result_type=%s status=success",
             name,
             type(data).__name__,
         )

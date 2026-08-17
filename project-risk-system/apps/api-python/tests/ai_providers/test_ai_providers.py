@@ -4,18 +4,14 @@ import asyncio
 import json
 from datetime import UTC, datetime
 from typing import cast
-from uuid import uuid4
 
 import pytest
 from pydantic import ValidationError
 
-from risk_platform.agent.execution import AgentProviderError
-from risk_platform.agent.models import AgentExecutionConfig
 from risk_platform.ai_providers.client import (
     AiProviderClient,
     ConnectionOutcome,
     HttpResult,
-    ProviderCompletionResult,
     ProviderRequestError,
     ProviderResponseResult,
 )
@@ -26,8 +22,6 @@ from risk_platform.ai_providers.models import (
 )
 from risk_platform.ai_providers.schemas import CreateProviderRequest, DraftTestRequest
 from risk_platform.ai_providers.service import AiProvidersService
-from risk_platform.composition import AgentProviderAdapter
-from risk_platform.model_types import JSONValue
 from risk_platform.shared.crypto import KeyRing, SecretCipher
 from risk_platform.shared.outbound import OutboundEndpointGuard
 
@@ -471,194 +465,6 @@ def test_non_connection_change_or_identical_save_keeps_health() -> None:
     assert row.lastTestStatus is AiConnectionStatus.HEALTHY
 
 
-def test_agent_adapter_keeps_invalid_2xx_output_distinct_from_upstream_rejection() -> None:
-    cipher = SecretCipher(KeyRing(active_version="v1", keys={"v1": b"0" * 32}))
-    adapter = AgentProviderAdapter(cipher)
-    config = AgentExecutionConfig(
-        taskId=uuid4(),
-        conversationId=uuid4(),
-        userMessageId=uuid4(),
-        requestedByUserId=uuid4(),
-        providerConfigId=uuid4(),
-        providerNameSnapshot="provider",
-        endpointSnapshot="https://provider.example.test/v1",
-        protocolSnapshot=AiProviderProtocol.OPENAI_CHAT_COMPLETIONS.value,
-        modelSnapshot="model",
-        encryptedApiKeySnapshot=cipher.encrypt("secret-key").envelope,
-        timeoutSeconds=90,
-    )
-
-    async def invalid_output(*_args: object, **_kwargs: object) -> ProviderCompletionResult:
-        raise ProviderRequestError("PROVIDER_INVALID_OUTPUT", retryable=False)
-
-    async def rejected(*_args: object, **_kwargs: object) -> ProviderCompletionResult:
-        raise ProviderRequestError("RATE_LIMITED", retryable=True, status_code=429)
-
-    async def run() -> None:
-        adapter._client.complete = invalid_output  # type: ignore[method-assign]
-        with pytest.raises(AgentProviderError) as invalid:
-            await adapter(config, {"protocol": "AGENT_PROVIDER_EXECUTION_V2"})
-        assert invalid.value.code == "AGENT_PROVIDER_INVALID_OUTPUT"
-        assert invalid.value.status_code is None
-        assert not invalid.value.retryable
-
-        adapter._client.complete = rejected  # type: ignore[method-assign]
-        with pytest.raises(AgentProviderError) as upstream:
-            await adapter(config, {"protocol": "AGENT_PROVIDER_EXECUTION_V2"})
-        assert upstream.value.code == "AGENT_PROVIDER_REQUEST_REJECTED"
-        assert not upstream.value.retryable
-
-    asyncio.run(run())
-
-
-def test_responses_agent_adapter_normalizes_reasoning_then_native_tool_call() -> None:
-    cipher = SecretCipher(KeyRing(active_version="v1", keys={"v1": b"0" * 32}))
-    adapter = AgentProviderAdapter(cipher)
-    config = _agent_responses_config(cipher)
-
-    async def native(*_args: object, **_kwargs: object) -> ProviderResponseResult:
-        return ProviderResponseResult(
-            {
-                "output": [
-                    {"type": "reasoning", "summary": []},
-                    {"type": "function_call", "name": "project_list", "arguments": "{}"},
-                ]
-            },
-            {"input": 1, "output": 1, "total": 2},
-            1,
-        )
-
-    async def run() -> dict[str, JSONValue]:
-        adapter._client.complete_response = native  # type: ignore[method-assign]
-        result = await adapter(config, _agent_request("PLAN"))
-        return cast(dict[str, JSONValue], json.loads(result.body))
-
-    assert asyncio.run(run()) == {
-        "protocol": "AGENT_PROVIDER_EXECUTION_V2",
-        "phase": "PLAN",
-        "grounded": True,
-        "actions": [{"type": "tool_call", "name": "project_list", "arguments": {}}],
-    }
-
-
-def test_responses_agent_adapter_normalizes_message_text_after_tools() -> None:
-    cipher = SecretCipher(KeyRing(active_version="v1", keys={"v1": b"0" * 32}))
-    adapter = AgentProviderAdapter(cipher)
-    config = _agent_responses_config(cipher)
-
-    async def native(*_args: object, **_kwargs: object) -> ProviderResponseResult:
-        return ProviderResponseResult(
-            {
-                "output": [
-                    {"type": "reasoning", "summary": []},
-                    {
-                        "type": "message",
-                        "content": [{"type": "output_text", "text": "有 1 个项目。"}],
-                    },
-                ]
-            },
-            {"input": 1, "output": 1, "total": 2},
-            1,
-        )
-
-    async def run() -> dict[str, JSONValue]:
-        adapter._client.complete_response = native  # type: ignore[method-assign]
-        result = await adapter(config, _agent_request("RESPOND"))
-        return cast(dict[str, JSONValue], json.loads(result.body))
-
-    assert asyncio.run(run())["actions"] == [{"type": "text_delta", "text": "有 1 个项目。"}]
-
-
-def test_responses_agent_adapter_falls_back_only_for_explicit_tool_capability_failure() -> None:
-    cipher = SecretCipher(KeyRing(active_version="v1", keys={"v1": b"0" * 32}))
-    adapter = AgentProviderAdapter(cipher)
-    config = _agent_responses_config(cipher)
-    native_calls = 0
-    fallback_calls = 0
-
-    async def native(*_args: object, **_kwargs: object) -> ProviderResponseResult:
-        nonlocal native_calls
-        native_calls += 1
-        raise ProviderRequestError(
-            "NATIVE_TOOLS_UNSUPPORTED", retryable=False, status_code=500
-        )
-
-    async def fallback(*_args: object, **kwargs: object) -> ProviderCompletionResult:
-        nonlocal fallback_calls
-        fallback_calls += 1
-        assert kwargs["phase"] == "PLAN"
-        assert kwargs["backoff"] is True
-        assert _args[6] == 2
-        return ProviderCompletionResult(
-            '{"protocol":"AGENT_PROVIDER_EXECUTION_V2","phase":"PLAN",'
-            '"grounded":true,"actions":[{"type":"tool_call",'
-            '"name":"project_list","arguments":{}}]}',
-            {"input": 1, "output": 1, "total": 2},
-            1,
-        )
-
-    async def run() -> dict[str, JSONValue]:
-        adapter._client.complete_response = native  # type: ignore[method-assign]
-        adapter._client.complete = fallback  # type: ignore[method-assign]
-        result = await adapter(config, _agent_request("PLAN"))
-        return cast(dict[str, JSONValue], json.loads(result.body))
-
-    assert asyncio.run(run()) == {
-        "protocol": "AGENT_PROVIDER_EXECUTION_V2",
-        "phase": "PLAN",
-        "grounded": True,
-        "actions": [{"type": "tool_call", "name": "project_list", "arguments": {}}],
-    }
-    assert (native_calls, fallback_calls) == (1, 1)
-
-
-def test_responses_agent_adapter_keeps_generic_5xx_retryable() -> None:
-    cipher = SecretCipher(KeyRing(active_version="v1", keys={"v1": b"0" * 32}))
-    adapter = AgentProviderAdapter(cipher)
-    config = _agent_responses_config(cipher)
-
-    async def generic_failure(*_args: object, **_kwargs: object) -> ProviderResponseResult:
-        raise ProviderRequestError("HTTP_5XX", retryable=True, status_code=500)
-
-    async def run() -> None:
-        adapter._client.complete_response = generic_failure  # type: ignore[method-assign]
-        with pytest.raises(AgentProviderError) as failure:
-            await adapter(config, _agent_request("PLAN"))
-        assert failure.value.retryable
-        assert failure.value.code is None
-
-    asyncio.run(run())
-
-
-def _agent_responses_config(cipher: SecretCipher) -> AgentExecutionConfig:
-    return AgentExecutionConfig(
-        taskId=uuid4(),
-        conversationId=uuid4(),
-        userMessageId=uuid4(),
-        requestedByUserId=uuid4(),
-        providerConfigId=uuid4(),
-        providerNameSnapshot="provider",
-        endpointSnapshot="https://provider.example.test/v1",
-        protocolSnapshot=AiProviderProtocol.OPENAI_RESPONSES.value,
-        modelSnapshot="model",
-        encryptedApiKeySnapshot=cipher.encrypt("secret-key").envelope,
-        timeoutSeconds=90,
-    )
-
-
-def _agent_request(phase: str) -> dict[str, JSONValue]:
-    return {
-        "protocol": "AGENT_PROVIDER_EXECUTION_V2",
-        "phase": phase,
-        "systemInstruction": "policy",
-        "tools": [
-            {
-                "name": "project_list",
-                "description": "list",
-                "argumentsSchema": {"type": "object", "properties": {}},
-            }
-        ],
-    }
 
 
 def _healthy_provider() -> AiProviderConfig:

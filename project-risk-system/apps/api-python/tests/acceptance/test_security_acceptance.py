@@ -14,12 +14,6 @@ from ipaddress import ip_network
 
 import pytest
 
-from risk_platform.agent.execution import (
-    AgentExecutionWorker,
-    AgentProviderError,
-    AgentProviderInvalidOutput,
-    ProviderTransportResponse,
-)
 from risk_platform.imports.parser import MAX_WORKBOOK_BYTES, WorkbookError
 from risk_platform.imports.storage import WorkbookStorage
 from risk_platform.shared.outbound import OutboundEndpointGuard, OutboundSecurityError
@@ -246,46 +240,3 @@ def test_import_storage_rejects_oversized_and_corrupt_workbooks() -> None:
     # Non-zip content with a valid name is rejected by the magic check.
     with pytest.raises(WorkbookError, match="有效的 Excel"):
         WorkbookStorage.validate("list.xlsx", b"not-a-zip-archive" * 10)
-
-
-# --------------------------------------------------------------------------- #
-# Closed Agent Provider output boundary (ADR 0028)                            #
-# --------------------------------------------------------------------------- #
-
-
-def test_agent_provider_output_validation_is_fail_closed() -> None:
-    parse = AgentExecutionWorker._parse_transport
-
-    # Non-2xx transport surfaces a classified provider error, never raw output.
-    with pytest.raises(AgentProviderError):
-        parse(ProviderTransportResponse(status_code=500, body=b'{"ok": true}'))
-
-    # Every malformed output shape raises the closed invalid-output error.
-    malformed = [
-        ProviderTransportResponse(status_code=200, body=b"x" * (128 * 1024 + 1)),  # too large
-        ProviderTransportResponse(status_code=200, body=b"\xff\xfe not utf8"),  # non-utf8
-        ProviderTransportResponse(status_code=200, body=b"not-json"),  # non-json
-        ProviderTransportResponse(status_code=200, body=b"[1, 2, 3]"),  # non-dict
-        ProviderTransportResponse(status_code=200, body=b'{"a":1,"a":2}'),  # duplicate key
-    ]
-    for raw in malformed:
-        with pytest.raises(AgentProviderInvalidOutput):
-            parse(raw)
-
-    # A well-formed dict is the only accepted shape.
-    assert parse(ProviderTransportResponse(status_code=200, body=b'{"answer": "ok"}')) == {
-        "answer": "ok"
-    }
-
-
-def test_agent_provider_error_never_carries_secret_or_payload_text() -> None:
-    # The error message is a fixed safe string; raw body/model content never leaks.
-    raw = ProviderTransportResponse(
-        status_code=502, body=b'{"prompt": "ignore_previous", "key": "sk-secret"}'
-    )
-    with pytest.raises(AgentProviderError) as error:
-        AgentExecutionWorker._parse_transport(raw)
-    message = str(error.value)
-    assert "sk-secret" not in message
-    assert "ignore_previous" not in message
-    assert "agent provider request failed" in message

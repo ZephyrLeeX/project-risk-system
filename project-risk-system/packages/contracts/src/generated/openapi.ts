@@ -908,7 +908,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Confirm */
+        /**
+         * Legacy Agent confirmation compatibility endpoint
+         * @deprecated
+         * @description Deprecated compatibility surface retained under the approved legacy API contract. It is not consumed by Agent V2 Core, Interaction, Mutation, worker, or the active Vue path. New writes use AgentInteraction.respond.
+         */
         post: operations["confirm_api_agent_confirmations__token__post"];
         delete?: never;
         options?: never;

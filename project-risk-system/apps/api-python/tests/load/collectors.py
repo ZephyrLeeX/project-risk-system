@@ -450,7 +450,7 @@ async def probe_sse(
     is still bounded below by the ADR 0030 outbox-drain cadence (5s), so p95
     exceeds the §6 2s ceiling structurally. The §9 bounded deterministic fake
     provider is not wireable without a production-code change
-    (``build_provider`` is unconditional), so the no-provider path is the only
+    (the V2 provider path is configured unconditionally), so the no-provider path is the only
     measurable condition in T038's write-set; the finding holds a fortiori
     under any real provider.
 
