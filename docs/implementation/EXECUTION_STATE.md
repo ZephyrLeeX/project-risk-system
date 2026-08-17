@@ -6,8 +6,8 @@ Plan baseline: <commit>
 AI Agent V2 activation:
 - Mapping: Task 1→T048, Task 2→T049, Task 3→T050, Task 4→T051, Task 5→T052（恰好 5 个主 Task，一一对应）。
 - T048: `REVIEW_PASSED`（Task 1 implementation、quality gates 与独立 Review 完成；start SHA `09d189dbb83610dd0ee7b16b2fefd8caac3afef0`；checkpoint `31e84f1e9dcecee51f6ded41ef9307c4dfe49960`）。
-- Current assigned Task: none。下一 eligible Task 是 T049，但保持 `READY / NOT_STARTED`，本轮不得自动推进。
-- T049–T052: `READY / TODO`，未开始；线性依赖 `T048 → T049 → T050 → T051 → T052`。
+- Current assigned Task: T049 `IN_PROGRESS`。用户于 2026-08-17 明确启动；ADR 0035 已完成最小 reconciliation。当前仅实施 T049，未开始 T050。
+- T050–T052: `READY / TODO`，未开始；线性依赖 `T048 → T049 → T050 → T051 → T052`。
 - Provider V2 ADR gate: ADR 0034 已由本轮用户明确授权建立并批准；仅替代 ADR 0005/0028 中与 T048 冲突的 Provider 边界。
 - Historical Task/Wave conclusions remain unchanged, including T038 `REVIEW_FAILED` and T039 `DEFERRED`.
 

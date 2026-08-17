@@ -28,13 +28,13 @@
 
 ## 当前 Task
 
-当前阶段：`IN_PROGRESS — Task 1 COMPLETED`
+当前阶段：`IN_PROGRESS — Task 2 activation`
 
 下一 Task：`Task 2 — Agent Core + Scope Guard + Native Tool Loop`
 
 进入文件：[`task-02-agent-core.md`](task-02-agent-core.md)
 
-Task 2 保持 `NOT_STARTED`。开始实现前必须由用户明确要求继续，并满足该文件的 prerequisites 与 native Tool Loop / Scope Guard ADR reconciliation gate。
+Task 2 的 ADR 0035 reconciliation 已完成，当前为 `IN_PROGRESS`；本轮只实施 Task 2，不得开始 Task 3。
 
 仓库 `AGENTS.md` 要求所有 implementation 只能由 `docs/implementation/TASK_GRAPH.md` 中的 assigned `Txxx` 驱动。五个主 Task 已一一登记为 T048–T052；T048 为 `REVIEW_PASSED`，T049 为下一 eligible Task 但仍是 `READY / NOT_STARTED`，不得自动推进。
 

@@ -13,7 +13,7 @@ Task 1 已完成并通过独立 Review；Task 2–5 尚未开始。
 | Task | Status | Task file |
 |---|---|---|
 | Task 1 | `COMPLETED` | [`task-01-provider-v2.md`](task-01-provider-v2.md) |
-| Task 2 | `NOT_STARTED` | [`task-02-agent-core.md`](task-02-agent-core.md) |
+| Task 2 | `IN_PROGRESS` | [`task-02-agent-core.md`](task-02-agent-core.md) |
 | Task 3 | `NOT_STARTED` | [`task-03-interactions.md`](task-03-interactions.md) |
 | Task 4 | `NOT_STARTED` | [`task-04-mutations.md`](task-04-mutations.md) |
 | Task 5 | `NOT_STARTED` | [`task-05-integration-cleanup.md`](task-05-integration-cleanup.md) |
@@ -31,6 +31,13 @@ Checkpoint 核对规则：开始 Task 时，最近 checkpoint 必须等于当前
 激活后的状态 authority：`docs/implementation/TASK_GRAPH.md`、assigned `Txxx`、`EXECUTION_STATE.md` 和正式 Task report 决定正式 assigned Task 和机器状态；本文件、各 V2 task `# Status` 与 README current task 只保存详细交接镜像，由 Orchestrator 在 review/checkpoint 后同步。发现不一致时停止并记录 repository state conflict，Implementer 不得自行修改官方状态或选择较先进状态继续。
 
 ## Completed Work
+
+### Task 2 activation — 2026-08-17
+
+- status：`IN_PROGRESS` / mapped T049 `IN_PROGRESS`
+- ADR：新增 ADR 0035，冻结只读 Scope Policy、native Tool Loop、limits、grounding、Provider/Core、error taxonomy 与 durable/SSE 边界；没有设计 Interaction 或 mutation。
+- toolchain：已使用环境中已安装的 `uv@0.12.3` 与 `python@3.12.13` 执行 focused Ruff，结果 PASS；未下载或改变依赖。
+- implementation/tests/checkpoint：实施进行中 / focused Ruff PASS / 无 checkpoint；尚未开始后续 Task。
 
 ### Planning — 2026-08-17
 
