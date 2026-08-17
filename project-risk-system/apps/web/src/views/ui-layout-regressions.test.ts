@@ -11,6 +11,8 @@ const systemConfigView = readFileSync(
   new URL("./admin/SystemConfigView.vue", import.meta.url),
   "utf8",
 );
+const adminShell = readFileSync(new URL("../components/AdminShell.vue", import.meta.url), "utf8");
+const businessHeader = readFileSync(new URL("../components/BusinessHeader.vue", import.meta.url), "utf8");
 const prototypePageStyles = readFileSync(
   new URL("../styles/prototype-pages.css", import.meta.url),
   "utf8",
@@ -56,4 +58,12 @@ describe("live UI layout regressions", () => {
     expect(mailboxSettingsView).toContain("counter-reset:flow-step");
     expect(mailboxSettingsView).toContain("content:counter(flow-step)");
   });
+
+  it("does not expose an inactive notification placeholder or a fake unread count", () => {
+    expect(adminShell).not.toContain('aria-label="查看后台通知"');
+    expect(adminShell).not.toContain("<b>2</b>");
+    expect(businessHeader).not.toContain('class="notice-tool"');
+    expect(businessHeader).not.toContain("<b>3</b>");
+  });
+
 });

@@ -175,9 +175,6 @@ async function logout(): Promise<void> {
         </div>
         <div class="topbar-tools">
           <div class="secure-status"><span aria-hidden="true"></span>安全连接</div>
-          <button class="top-icon-button" type="button" aria-label="查看后台通知">
-            <span class="bell-icon" aria-hidden="true"></span><b>2</b>
-          </button>
           <button
             class="admin-profile"
             type="button"
