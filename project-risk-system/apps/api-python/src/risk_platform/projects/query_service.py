@@ -9,7 +9,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from risk_platform.auth.service import SessionIdentity
-from risk_platform.projects.models import Project, ProjectAlias
+from risk_platform.projects.models import Project, ProjectAlias, ProjectStatus
 from risk_platform.rbac.models import DataScopeType
 from risk_platform.rbac.scopes import project_scope_predicate
 from risk_platform.shared.errors import ApiError
@@ -19,6 +19,7 @@ class ProjectSearchQuery(BaseModel):
     keyword: str | None = Field(default=None, max_length=100)
     page: int = Field(default=1, ge=1)
     pageSize: int = Field(default=20, ge=1, le=100)
+    status: ProjectStatus | None = None
 
 
 class ProjectQueryItem(BaseModel):
@@ -46,6 +47,8 @@ class ProjectsQueryService:
             UUID(identity.user.id), DataScopeType(identity.user.dataScope)
         )
         filters = [scope]
+        if query.status is not None:
+            filters.append(Project.status == query.status)
         if query.keyword:
             pattern = f"%{query.keyword}%"
             filters.append(

@@ -253,7 +253,11 @@ class AgentToolRegistry:
     @staticmethod
     def _project_search(service: ProjectsQueryService) -> ToolCallable:
         async def call(identity: SessionIdentity, arguments: Mapping[str, object]) -> object:
-            result = await service.search(identity, ProjectSearchQuery.model_validate(arguments))
+            try:
+                query = ProjectSearchQuery.model_validate(arguments)
+            except ValidationError:
+                raise ApiError(422, "VALIDATION_ERROR", "Agent 工具参数不符合约束") from None
+            result = await service.search(identity, query)
             return ProjectListToolResponse(
                 items=[
                     ProjectListToolItem(id=item.id, name=item.name, status=item.status)
@@ -279,11 +283,11 @@ class AgentToolRegistry:
     @staticmethod
     def _risk_category_list(service: RisksService) -> ToolCallable:
         async def call(identity: SessionIdentity, _: Mapping[str, object]) -> object:
-            options = await service.filter_options(identity)
+            categories = await service.list_categories(identity)
             return RiskCategoryListToolResponse(
                 items=[
                     {"id": str(item.id), "code": item.code, "name": item.name}
-                    for item in options.categories
+                    for item in categories
                 ]
             )
 

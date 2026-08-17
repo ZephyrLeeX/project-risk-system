@@ -24,15 +24,12 @@ from risk_platform.admin.options.service import AdminOptionsService
 from risk_platform.admin.overview.service import AdminOverviewService
 from risk_platform.admin.roles.service import AdminRolesService
 from risk_platform.admin.users.service import AdminUsersService
-from risk_platform.agent.execution import (
-    AgentProviderError,
-    Provider,
-    ProviderTransportResponse,
-    agent_execution_handlers,
-)
+from risk_platform.agent.core import ReadOnlyAgentCore
+from risk_platform.agent.execution import AgentProviderError, Provider, ProviderTransportResponse
 from risk_platform.agent.models import AgentExecutionConfig
 from risk_platform.agent.service import AgentConversationService
 from risk_platform.agent.tools import AgentToolRegistry
+from risk_platform.agent.v2_execution import native_agent_execution_handlers
 from risk_platform.ai_providers.client import (
     AGENT_RESPONSE_TRANSPORT_RETRY_COUNT,
     AiProviderClient,
@@ -45,7 +42,7 @@ from risk_platform.ai_providers.v2_adapter import (
     DeepSeekOfficialAdapter,
     ProviderType,
 )
-from risk_platform.ai_providers.v2_service import AiProviderV2Service
+from risk_platform.ai_providers.v2_service import AiProviderV2Service, ProviderV2Runtime
 from risk_platform.audit.http import AuditQueryService
 from risk_platform.auth.service import AuthService
 from risk_platform.config import Settings
@@ -422,7 +419,11 @@ def merge_worker_handlers(
             )
         )
     )
-    merged.update(agent_execution_handlers(sessions, provider, tool_registry))
+    del provider  # V2 Agent execution exclusively uses the ADR 0034 runtime.
+    runtime = ProviderV2Runtime(sessions, DeepSeekOfficialAdapter(cipher))
+    merged.update(
+        native_agent_execution_handlers(sessions, ReadOnlyAgentCore(runtime, tool_registry))
+    )
     return merged
 
 

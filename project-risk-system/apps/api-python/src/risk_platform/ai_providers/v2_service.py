@@ -111,7 +111,12 @@ class ProviderV2Runtime:
             )
 
     async def chat(self, request: ProviderChatRequest) -> ProviderChatResponse:
-        candidates = await self.candidate_snapshot()
+        return await self.chat_snapshot(await self.candidate_snapshot(), request)
+
+    async def chat_snapshot(
+        self, candidates: tuple[ProviderCandidate, ...], request: ProviderChatRequest
+    ) -> ProviderChatResponse:
+        """Run against the immutable candidates captured by one Agent execution."""
         if not candidates:
             raise ProviderError(
                 ProviderErrorClassification.CREDENTIAL_UNAVAILABLE,

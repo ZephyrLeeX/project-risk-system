@@ -360,14 +360,8 @@ class RisksService:
         return _detail(row, same_project)
 
     async def filter_options(self, identity: SessionIdentity) -> RiskFilterOptions:
+        categories = await self.list_categories(identity)
         async with self._session_factory() as session:
-            categories = (
-                await session.scalars(
-                    select(RiskCategory)
-                    .where(RiskCategory.isActive.is_(True))
-                    .order_by(RiskCategory.sortOrder, RiskCategory.name)
-                )
-            ).all()
             owners = (
                 await session.scalars(
                     select(Project.deliveryOwnerName)
@@ -382,12 +376,22 @@ class RisksService:
                 )
             ).all()
         return RiskFilterOptions(
-            categories=[
-                RiskCategoryOption(id=item.id, code=item.code, name=item.name)
-                for item in categories
-            ],
+            categories=categories,
             owners=[item for item in owners if item is not None],
         )
+
+    async def list_categories(self, identity: SessionIdentity) -> list[RiskCategoryOption]:
+        """Return the approved active risk taxonomy through a typed read boundary."""
+        del identity
+        async with self._session_factory() as session:
+            rows = (
+                await session.scalars(
+                    select(RiskCategory)
+                    .where(RiskCategory.isActive.is_(True))
+                    .order_by(RiskCategory.sortOrder, RiskCategory.name)
+                )
+            ).all()
+        return [RiskCategoryOption(id=item.id, code=item.code, name=item.name) for item in rows]
 
     async def list(
         self,
