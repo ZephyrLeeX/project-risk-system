@@ -1556,6 +1556,7 @@ def test_postgresql_sse_resume_cursor_and_asgi_framing(
             retry_task_row.nextRetryAt = datetime.now(UTC) + timedelta(seconds=60)
             now = datetime.now(UTC)
             retry_task_row.status = DurableTaskStatus.RUNNING
+            retry_task_row.nextRetryAt = None
             retry_task_row.leaseToken = uuid.uuid4()
             retry_task_row.leaseOwner = "retry-completion-test"
             retry_task_row.heartbeatAt = now
