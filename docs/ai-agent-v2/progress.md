@@ -24,7 +24,7 @@
 - planning start HEAD SHA：`749371c7697af0869a571fb6456daa5053dc7888`
 - date：`2026-08-17`（Asia/Shanghai）
 - working tree at planning start：需求文档 `docs/AI Agent 重构需求说明书 v1.0.md` 已存在但未跟踪；除此之外无已报告改动
-- planning checkpoint SHA：将在本轮只包含规划文档的 commit 完成后记录于本节或最终交接
+- planning content checkpoint SHA：`d9e93c49d4989aab6f6a3f5838f502366dd32bd0`
 
 Checkpoint 核对规则：开始 Task 时，最近 checkpoint 必须等于当前 `HEAD` 或是当前 `HEAD` 的祖先；若只是祖先，必须审计其后的 commits 与工作区 diff。不得因 SHA 不完全相等而删除或覆盖用户改动。
 
@@ -37,7 +37,7 @@ Checkpoint 核对规则：开始 Task 时，最近 checkpoint 必须等于当前
 - status：`COMPLETED`
 - started：`2026-08-17`
 - completed：`2026-08-17`
-- checkpoint SHA：`PENDING_COMMIT`
+- checkpoint SHA：`d9e93c49d4989aab6f6a3f5838f502366dd32bd0`
 - summary：完成现有 Provider、Agent Core/Tool Registry、Durable Task/SSE、confirmation、RBAC/data scope、Risk/Todo/Project、Admin、Agent frontend、OpenAPI/contracts、migrations 与相关 ADR 的只读审计；建立恰好 5 个串行 Task 的实施文档。
 - architecture decisions：记录 Provider/Core 解耦、DeepSeek-only/native Tool Calls、Interaction 等待状态、proposal/commit 隔离、Risk 1:N Todo 与 partial success 的固定边界。
 - DB changes：无。
