@@ -53,7 +53,7 @@ Checkpoint 核对规则：开始 Task 时，最近 checkpoint 必须等于当前
 
 - status：`COMPLETED` / mapped T048 `REVIEW_PASSED`
 - started/completed：`2026-08-17` / `2026-08-17`
-- checkpoint SHA：由紧随 Task 1 code/report checkpoint 的 metadata-only commit 回填
+- checkpoint SHA：`31e84f1e9dcecee51f6ded41ef9307c4dfe49960`（由紧随 checkpoint 的 metadata-only commit 回填）
 - summary：建立 DeepSeek-only Provider V2；Provider Account 1:N Model Config；厂商无关 adapter/DTO/typed errors；唯一 production `DeepSeekOfficialAdapter`；immutable candidate snapshot；bounded retry/failover；Account/Model health 分离；additive Admin V2/OpenAPI。
 - architecture decisions：ADR 0034 批准并替代 ADR 0005/0028 中与 V2 Provider 冲突的部分；固定 `https://api.deepseek.com`、`/models`、`/chat/completions`，实际 socket 固定到 outbound guard revalidated IP，同时保留官方 Host/TLS SNI/证书校验名；不实现 Company adapter 或业务默认 model。
 - DB changes：Alembic head `20260817_0010` 新增 `ai_provider_accounts`、`ai_model_configs`、`ai_provider_v2_call_logs` 与三个 enum；旧 Provider 数据保留，无 backfill/dual-write。

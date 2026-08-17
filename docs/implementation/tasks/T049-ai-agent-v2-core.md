@@ -7,4 +7,3 @@
 - **Authority / scope / acceptance:** `docs/AI Agent 重构需求说明书 v1.0.md`、`docs/ai-agent-v2/task-02-agent-core.md` 及其未来批准 ADR gate。
 - **Report:** `docs/implementation/reports/T049.md`
 - **Scheduling:** 未开始；T048 完成后仍需用户/Orchestrator 明确启动，不自动执行。
-

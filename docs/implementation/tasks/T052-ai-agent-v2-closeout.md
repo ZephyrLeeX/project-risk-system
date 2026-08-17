@@ -7,4 +7,3 @@
 - **Authority / scope / acceptance:** `docs/AI Agent 重构需求说明书 v1.0.md`、`docs/ai-agent-v2/task-05-integration-cleanup.md` 及其 references。
 - **Report:** `docs/implementation/reports/T052.md`
 - **Scheduling:** 未开始；不得在 T048 中提前实现。
-
