@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1
 #
 # Shared production image for the FastAPI API, Celery worker and the ADR 0030
 # scheduler process. The per-service command is selected in docker-compose;

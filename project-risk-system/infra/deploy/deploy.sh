@@ -82,7 +82,7 @@ compose config --quiet || die "docker compose config failed (check ${ENV_FILE})"
 
 # --- 2. build production images ---------------------------------------------
 log "building production images (api + web)"
-compose build --pull api web || die "image build failed"
+compose build api web || die "image build failed"
 
 # --- 3. start durable layer first -------------------------------------------
 log "starting postgres + redis"

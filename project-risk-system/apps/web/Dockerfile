@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1
 #
 # Production frontend image: build the Vue SPA from source (consuming the
 # generated OpenAPI contract from @risk-platform/contracts), then serve the
