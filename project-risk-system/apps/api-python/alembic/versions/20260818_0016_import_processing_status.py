@@ -11,10 +11,14 @@ depends_on: Final = None
 
 
 def upgrade() -> None:
-    op.execute(
-        'ALTER TYPE "ImportBatchStatus" ADD VALUE IF NOT EXISTS '
-        "'PROCESSING' BEFORE 'PREVIEWED'"
-    )
+    # PostgreSQL cannot use an enum value as a default until the transaction
+    # adding that value has committed. Alembic's autocommit block provides the
+    # required boundary before altering the column default.
+    with op.get_context().autocommit_block():
+        op.execute(
+            'ALTER TYPE "ImportBatchStatus" ADD VALUE IF NOT EXISTS '
+            "'PROCESSING' BEFORE 'PREVIEWED'"
+        )
     op.execute('ALTER TABLE "import_batches" ALTER COLUMN "status" SET DEFAULT \'PROCESSING\'')
 
 
