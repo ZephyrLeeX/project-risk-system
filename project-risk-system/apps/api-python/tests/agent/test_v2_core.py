@@ -9,6 +9,7 @@ import pytest
 
 from risk_platform.agent.core import AgentLoopError, AgentLoopLimits, ReadOnlyAgentCore
 from risk_platform.agent.schemas import AgentToolResult, CandidateRisk, CandidateRiskBasisType
+from risk_platform.agent.scope import ScopePolicy
 from risk_platform.agent.tools import AgentToolRegistry
 from risk_platform.ai_providers.v2_adapter import (
     ProviderCandidate,
@@ -131,6 +132,46 @@ def test_out_of_scope_never_calls_provider_or_tool() -> None:
     )
     assert result.out_of_scope is True
     assert runtime.calls == tools.invocations == 0
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "我要上报一个ERP系统的风险",
+        "新增一个项目风险",
+        "修改这个风险的描述",
+        "给这个风险新增待办",
+        "完成这个待办",
+    ),
+)
+def test_mutation_intent_stays_in_system_data_scope(message: str) -> None:
+    assert ScopePolicy().decide(message).value == "ALLOWED"
+
+
+@pytest.mark.parametrize("message", ("帮我写 Python", "写一篇文章", "创建一个网页"))
+def test_general_chat_stays_out_of_scope(message: str) -> None:
+    assert ScopePolicy().decide(message).value == "OUT_OF_SCOPE"
+
+
+def test_realistic_risk_report_reaches_provider_and_tool_loop() -> None:
+    runtime, tools = (
+        _Runtime(
+            [
+                _response(ProviderToolCall("proposal-1", "risk_create_proposal", {})),
+                _response(text="我已准备好风险上报草稿"),
+            ]
+        ),
+        _Tools(),
+    )
+    result = asyncio.run(
+        ReadOnlyAgentCore(cast(ProviderV2Runtime, runtime), cast(AgentToolRegistry, tools)).run(
+            _identity(),
+            "我要上报一个erp系统的风险\uFF0C甲方临近付款期也一直没有付项目款",
+        )
+    )
+    assert result.out_of_scope is False
+    assert runtime.calls == 2
+    assert tools.invocations == 1
 
 
 def test_native_tool_call_is_correlated_then_finalized() -> None:

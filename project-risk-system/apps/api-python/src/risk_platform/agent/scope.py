@@ -14,14 +14,19 @@ OUT_OF_SCOPE_MESSAGE = "我只能协助查询和分析当前系统中的项目�
 
 
 class ScopePolicy:
-    """Reject general-chat and mutation requests before a provider or tool is used."""
+    """Classify whether a request belongs to the system-data domain.
+
+    Mutation intent is deliberately not a scope decision.  In-scope write
+    requests may reach the closed proposal-tool catalogue; the proposal,
+    confirmation, permission and server-only commit boundaries own mutation
+    safety.
+    """
 
     _SYSTEM_TERMS = ("项目", "风险", "待办", "周报", "看板", "项目状态", "风险状态")
-    _MUTATION_TERMS = ("上报", "创建", "新增", "修改", "调整", "解除", "删除", "确认", "完成")
 
     def decide(self, message: str) -> ScopeDecision:
         text = message.strip()
-        if not text or any(term in text for term in self._MUTATION_TERMS):
+        if not text:
             return ScopeDecision.OUT_OF_SCOPE
         return (
             ScopeDecision.ALLOWED
