@@ -85,6 +85,9 @@ services:
       SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-project_risk_session}
       SESSION_SECRET_FILE: /run/secrets/project_risk_session_key
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      WECHAT_USER_INFO_URL: "${WECHAT_USER_INFO_URL:-}"
+      WECHAT_USER_INFO_TIMEOUT_SECONDS: "${WECHAT_USER_INFO_TIMEOUT_SECONDS:-5}"
+      WECHAT_USER_INFO_MAX_RETRIES: "${WECHAT_USER_INFO_MAX_RETRIES:-2}"
     secrets:
       - project_risk_session_key
     volumes:

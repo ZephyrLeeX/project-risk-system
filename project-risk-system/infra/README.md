@@ -51,6 +51,15 @@ This permits `https://token.longshine.com:18443` only when DNS resolves in
 remain blocked even if listed. API, worker and scheduler receive the same
 values; only AI calls consume them, so IMAP is not widened.
 
+## WeChat mini-program SSO
+
+WeChat SSO is optional and is consumed only by the API container. Set the
+environment-specific `WECHAT_USER_INFO_URL` in the gitignored `.env.production`
+file; do not hard-code a test or production endpoint in the repository. The
+timeout and retry defaults are `5` seconds and `2` retries. The worker and
+scheduler do not receive these settings because they do not construct the
+WeChat authentication client.
+
 ## Networking and trust
 
 - `project-risk-backend` (fixed subnet `10.30.0.0/24`) is the internal app

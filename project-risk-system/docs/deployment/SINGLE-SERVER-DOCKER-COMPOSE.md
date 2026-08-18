@@ -167,6 +167,9 @@ chmod 600 .env.production
 | `CELERY_WORKER_CONCURRENCY` | 可选 | 默认 `2` |
 | `SCHEDULER_*` | 可选 | 调度节奏（操作默认值，非 SLO） |
 | `LOG_LEVEL` / `SCHEDULER_LOG_LEVEL` | 可选 | 日志级别 |
+| `WECHAT_USER_INFO_URL` | 可选 | 微信用户信息接口 HTTPS 地址；测试和生产分别填写对应环境地址，留空表示关闭微信 SSO |
+| `WECHAT_USER_INFO_TIMEOUT_SECONDS` | 可选 | 微信用户信息接口超时，默认 `5` 秒 |
+| `WECHAT_USER_INFO_MAX_RETRIES` | 可选 | 网络/超时/5xx 的最大重试次数，默认 `2` |
 
 要点：
 

@@ -8,7 +8,22 @@ import ssl
 from dataclasses import dataclass
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
-from urllib.request import Request as UrlRequest, urlopen
+from urllib.request import (
+    HTTPRedirectHandler,
+    HTTPSHandler,
+    Request as UrlRequest,
+    build_opener,
+)
+
+
+class _RedirectBlockedError(RuntimeError):
+    """The fixed user-info endpoint must never follow an HTTP redirect."""
+
+
+class _NoRedirectHandler(HTTPRedirectHandler):
+    def redirect_request(self, request: UrlRequest, *args: object, **kwargs: object) -> None:
+        del request, args, kwargs
+        raise _RedirectBlockedError
 
 
 class WechatUserInfoError(RuntimeError):
@@ -52,10 +67,13 @@ class WechatUserInfoClient:
             method="POST",
         )
         try:
-            with urlopen(
+            opener = build_opener(
+                _NoRedirectHandler(),
+                HTTPSHandler(context=ssl.create_default_context()),
+            )
+            with opener.open(
                 request,
                 timeout=self.timeout_seconds,
-                context=ssl.create_default_context(),
             ) as response:
                 status = response.status
                 raw = response.read(64 * 1024 + 1)
@@ -63,7 +81,7 @@ class WechatUserInfoClient:
             if 500 <= exc.code <= 599:
                 raise WechatUserInfoError("WECHAT_USER_INFO_UNAVAILABLE") from None
             raise WechatUserInfoError("WECHAT_TOKEN_INVALID") from None
-        except (TimeoutError, URLError, OSError):
+        except (_RedirectBlockedError, TimeoutError, URLError, OSError):
             raise WechatUserInfoError("WECHAT_USER_INFO_UNAVAILABLE") from None
         if status >= 500:
             raise WechatUserInfoError("WECHAT_USER_INFO_UNAVAILABLE")
