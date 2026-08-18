@@ -1,4 +1,4 @@
-"""Deterministic project-name matching for sanitized mail text only."""
+"""Compatibility adapter for the shared bounded project-resolution query."""
 
 from __future__ import annotations
 
@@ -7,13 +7,12 @@ from dataclasses import dataclass
 from typing import Final
 from uuid import UUID
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from risk_platform.mailbox.models import MailProjectMatchType
-from risk_platform.projects.models import Project, ProjectAlias, ProjectStatus
+from risk_platform.projects.resolution_service import ProjectResolutionService
+from risk_platform.rbac.models import DataScopeType
 
-MAX_MATCHES: Final = 20
 MAX_MATCH_TEXT: Final = 500
 MIN_CANDIDATE_LENGTH: Final = 4
 
@@ -36,42 +35,23 @@ class MailProjectMatcher:
         haystack = normalize(f"{subject}\n{text[:20_000]}")
         if not haystack:
             return []
-        rows = (
-            await session.execute(
-                select(Project, ProjectAlias)
-                .outerjoin(
-                    ProjectAlias,
-                    (ProjectAlias.projectId == Project.id) & ProjectAlias.isActive.is_(True),
-                )
-                .where(Project.status != ProjectStatus.ARCHIVED)
-                .order_by(Project.name.asc(), ProjectAlias.alias.asc())
-            )
-        ).all()
-        candidates: dict[UUID, list[tuple[str, MailProjectMatchType]]] = {}
-        names: dict[UUID, str] = {}
-        for project, alias in rows:
-            names[project.id] = project.name
-            candidates.setdefault(project.id, []).append((project.name, MailProjectMatchType.EXACT))
-            if project.alias:
-                candidates[project.id].append((project.alias, MailProjectMatchType.ALIAS))
-            if alias is not None:
-                candidates[project.id].append((alias.alias, MailProjectMatchType.ALIAS))
+        candidates = await ProjectResolutionService().retrieve_candidates(
+            session, subject, text, UUID(int=0), DataScopeType.ALL
+        )
         matches: list[ProjectMatch] = []
-        for project_id, values in candidates.items():
-            for candidate, kind in sorted(values, key=lambda item: len(item[0]), reverse=True):
-                normalized = normalize(candidate)
-                if len(normalized) >= MIN_CANDIDATE_LENGTH and normalized in haystack:
-                    matches.append(
-                        ProjectMatch(
-                            project_id,
-                            names[project_id],
-                            kind,
-                            98 if kind is MailProjectMatchType.EXACT else 95,
-                            candidate[:MAX_MATCH_TEXT],
-                        )
+        for candidate in candidates:
+            normalized = normalize(candidate.name)
+            if len(normalized) >= MIN_CANDIDATE_LENGTH and normalized in haystack:
+                matches.append(
+                    ProjectMatch(
+                        candidate.project_id,
+                        candidate.name,
+                        MailProjectMatchType.EXACT,
+                        98,
+                        candidate.name[:MAX_MATCH_TEXT],
                     )
-                    break
-        return matches[:MAX_MATCHES]
+                )
+        return matches
 
 
 __all__ = ["MailProjectMatcher", "ProjectMatch", "normalize"]

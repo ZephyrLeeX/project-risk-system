@@ -2,25 +2,31 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from typing import cast
 from uuid import UUID
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from risk_platform.admin.models import User
+from risk_platform.ai_providers.client import AiProviderClient, ProviderRequestError
+from risk_platform.ai_providers.models import AiConnectionStatus, AiProviderConfig
 from risk_platform.mailbox.connection import MailboxConnection, MailSourceUnavailable
-from risk_platform.mailbox.matching import MailProjectMatcher
 from risk_platform.mailbox.models import (
     MailboxConfig,
     MailMessage,
     MailMessageProjectMatch,
     MailMessageStatus,
+    MailProjectMatchType,
+    MailProjectResolutionStatus,
     MailSourceHandoff,
     MailStageStatus,
 )
 from risk_platform.mailbox.parsing import MailParseError, cleanup_stale_temp_directories, parse_mail
 from risk_platform.model_types import JSONValue
+from risk_platform.projects.resolution_service import ProjectResolutionService
+from risk_platform.rbac.models import DataScopeType, Role, UserRole
 from risk_platform.reliability.core import enqueue_task
 from risk_platform.reliability.models import DurableTask, DurableTaskKind
 from risk_platform.shared.crypto import LegacySecretFields, SecretCipher, SecretCryptoError
@@ -33,11 +39,13 @@ class MailParseWorker:
         session_factory: async_sessionmaker[AsyncSession],
         cipher: SecretCipher,
         connection: MailboxConnection | None = None,
+        provider_client: AiProviderClient | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._cipher = cipher
         self._connection = connection or MailboxConnection()
-        self._matcher = MailProjectMatcher()
+        self._resolution = ProjectResolutionService()
+        self._provider_client = provider_client or AiProviderClient()
         cleanup_stale_temp_directories()
 
     async def handle(self, payload: Mapping[str, object]) -> None:
@@ -109,32 +117,127 @@ class MailParseWorker:
                     MailMessageProjectMatch.messageId == message.id
                 )
             )
-            matches = await self._matcher.match(session, parsed.subject, parsed.text)
+            mailbox_config = await session.get(MailboxConfig, mailbox_id)
+            user = await session.get(User, mailbox_config.userId) if mailbox_config else None
+            scope = await self._scope(session, user.id if user else None)
+            try:
+                resolution = await self._resolution.resolve(
+                    session,
+                    parsed.subject,
+                    parsed.text,
+                    user.id if user else mailbox_id,
+                    scope,
+                    self._provider(session),
+                )
+            except ProviderRequestError as error:
+                if error.code != "PROVIDER_UNAVAILABLE":
+                    raise
+                resolution = await self._resolution.resolve(
+                    session, parsed.subject, parsed.text, user.id if user else mailbox_id, scope
+                )
+            matches = resolution.candidates
             for match in matches:
                 session.add(
                     MailMessageProjectMatch(
                         messageId=message.id,
                         projectId=match.project_id,
-                        matchType=match.match_type,
-                        confidence=match.confidence,
-                        matchedText=match.matched_text,
+                        matchType=MailProjectMatchType.FUZZY
+                        if resolution.source == "AI"
+                        else MailProjectMatchType.EXACT,
+                        confidence=resolution.confidence or 0,
+                        matchedText=match.name[:500],
                     )
                 )
+            message.projectResolutionStatus = (
+                MailProjectResolutionStatus.AUTO_MATCH
+                if resolution.project_id is not None
+                else MailProjectResolutionStatus.WAITING_CONFIRMATION
+            )
+            message.resolvedProjectId = resolution.project_id
+            message.projectResolutionConfidence = resolution.confidence
+            message.projectResolutionCandidates = cast(
+                JSONValue,
+                [
+                    {
+                        "optionId": item.option_id,
+                        "projectId": str(item.project_id),
+                        "name": item.name,
+                        "externalCode": item.external_code,
+                        "alias": item.alias,
+                        "status": item.status,
+                    }
+                    for item in resolution.candidates
+                ],
+            )
+            if resolution.project_id is None:
+                message.failureCode = message.failureSummary = "WAITING_PROJECT_CONFIRMATION"
             affected_projects = old_project_ids | {match.project_id for match in matches}
             for project_id in sorted(affected_projects, key=str):
                 await invalidate_message_project(session, message, project_id)
             handoff.parseStatus = MailStageStatus.SUCCEEDED
             handoff.failureCode = handoff.failureSummary = None
-            await enqueue_task(
-                session,
-                DurableTaskKind.MAIL_AI_REVIEW_PUBLISH,
-                f"mail-ai:{mailbox_id}:{uid_validity}:{imap_uid}",
-                {
-                    "mailbox_config_id": str(mailbox_id),
-                    "uid_validity": uid_validity,
-                    "imap_uid": imap_uid,
-                },
+            if resolution.project_id is not None:
+                await enqueue_task(
+                    session,
+                    DurableTaskKind.MAIL_AI_REVIEW_PUBLISH,
+                    f"mail-ai:{mailbox_id}:{uid_validity}:{imap_uid}",
+                    {
+                        "mailbox_config_id": str(mailbox_id),
+                        "uid_validity": uid_validity,
+                        "imap_uid": imap_uid,
+                    },
+                )
+
+    async def _scope(self, session: AsyncSession, user_id: UUID | None) -> DataScopeType:
+        if user_id is None:
+            return DataScopeType.NONE
+        scopes = list(
+            await session.scalars(
+                select(UserRole.dataScope)
+                .join(Role, Role.id == UserRole.roleId)
+                .where(UserRole.userId == user_id, Role.enabled.is_(True))
             )
+        )
+        order = {
+            DataScopeType.ALL: 5,
+            DataScopeType.OWNED_OR_ASSIGNED: 4,
+            DataScopeType.OWNED: 3,
+            DataScopeType.ASSIGNED: 2,
+            DataScopeType.NONE: 1,
+        }
+        return max(scopes, key=lambda item: order[DataScopeType(item)], default=DataScopeType.NONE)
+
+    def _provider(self, session: AsyncSession) -> Callable[[dict[str, object]], Awaitable[str]]:
+        async def call(payload: dict[str, object]) -> str:
+            provider = await session.scalar(
+                select(AiProviderConfig)
+                .where(
+                    AiProviderConfig.enabled.is_(True),
+                    AiProviderConfig.lastTestStatus == AiConnectionStatus.HEALTHY,
+                )
+                .order_by(AiProviderConfig.isDefault.desc(), AiProviderConfig.priority)
+            )
+            if provider is None:
+                raise ProviderRequestError("PROVIDER_UNAVAILABLE", retryable=False)
+            try:
+                key = self._cipher.decrypt_legacy(
+                    LegacySecretFields(
+                        provider.encryptedApiKey, provider.keyIv, provider.keyAuthTag, "v1"
+                    )
+                )
+            except SecretCryptoError:
+                raise ProviderRequestError("PROVIDER_UNAVAILABLE", retryable=False) from None
+            result = await self._provider_client.extract_risks(
+                provider.endpoint,
+                provider.model,
+                key,
+                provider.timeoutSeconds,
+                payload,
+                provider.protocol,
+            )
+            return result[0]
+
+        return call
 
     async def _refetch(
         self, mailbox_id: UUID, uid_validity: int, imap_uid: int
@@ -211,14 +314,17 @@ class MailParseWorker:
     async def _message(
         session: AsyncSession, mailbox_id: UUID, uid_validity: int, imap_uid: int
     ) -> MailMessage | None:
-        return await session.scalar(
-            select(MailMessage)
-            .where(
-                MailMessage.mailboxConfigId == mailbox_id,
-                MailMessage.uidValidity == uid_validity,
-                MailMessage.imapUid == imap_uid,
-            )
-            .with_for_update()
+        return cast(
+            MailMessage | None,
+            await session.scalar(
+                select(MailMessage)
+                .where(
+                    MailMessage.mailboxConfigId == mailbox_id,
+                    MailMessage.uidValidity == uid_validity,
+                    MailMessage.imapUid == imap_uid,
+                )
+                .with_for_update()
+            ),
         )
 
     async def _exhausted(self, mailbox_id: UUID, uid_validity: int, imap_uid: int) -> bool:

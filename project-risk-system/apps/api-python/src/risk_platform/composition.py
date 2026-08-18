@@ -44,6 +44,7 @@ from risk_platform.imports.service import ImportPreviewService
 from risk_platform.imports.worker import ImportPreviewWorker
 from risk_platform.mailbox import tasks as mailbox_tasks
 from risk_platform.mailbox.extraction import MailRiskCandidateService, MailRiskExtractionWorker
+from risk_platform.mailbox.resolution import MailProjectResolutionService
 from risk_platform.mailbox.parse_worker import MailParseWorker
 from risk_platform.mailbox.service import MailboxService
 from risk_platform.mailbox.sync import MailboxSyncService
@@ -166,6 +167,7 @@ def build_services(
         "system_config_service": SystemConfigService(sessions),
         "mailbox_service": MailboxService(sessions, cipher),
         "mail_risk_candidate_service": MailRiskCandidateService(sessions),
+        "mail_project_resolution_service": MailProjectResolutionService(sessions),
         "mail_sync_results_service": MailSyncResultsService(sessions),
         "import_preview_service": ImportPreviewService(sessions, import_root),
         "import_commit_service": ImportCommitService(sessions, import_root),
@@ -191,7 +193,7 @@ def merge_worker_handlers(
     merged.update(
         mailbox_tasks.handlers(
             MailboxSyncService(sessions, cipher),
-            MailParseWorker(sessions, cipher),
+            MailParseWorker(sessions, cipher, provider_client=ai_provider_client),
             MailRiskExtractionWorker(sessions, cipher, ai_provider_client),
         )
     )

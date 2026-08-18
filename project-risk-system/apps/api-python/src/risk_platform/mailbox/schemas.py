@@ -157,3 +157,7 @@ class MailRiskCandidateResponse(StrictRequestModel):
     status: Literal["PENDING", "CONFIRMED", "IGNORED"]
     confirmedRiskId: UUID | None
     reviewedAt: str | None
+
+
+class MailProjectResolutionConfirmRequest(StrictRequestModel):
+    projectId: UUID

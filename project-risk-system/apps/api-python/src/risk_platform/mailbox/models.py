@@ -255,6 +255,13 @@ class MailMessageStatus(StrEnum):
     FAILED = "FAILED"
 
 
+class MailProjectResolutionStatus(StrEnum):
+    PENDING = "PENDING"
+    AUTO_MATCH = "AUTO_MATCH"
+    WAITING_CONFIRMATION = "WAITING_CONFIRMATION"
+    CONFIRMED = "CONFIRMED"
+
+
 class MailStageStatus(StrEnum):
     PENDING = "PENDING"
     SUCCEEDED = "SUCCEEDED"
@@ -408,6 +415,27 @@ class MailMessage(Base):
     keyPoints: Mapped[JSONValue | None] = mapped_column(JSONB, nullable=True)
     attachmentMetadata: Mapped[JSONValue | None] = mapped_column(JSONB, nullable=True)
     processingTrace: Mapped[JSONValue | None] = mapped_column(JSONB, nullable=True)
+    projectResolutionStatus: Mapped[MailProjectResolutionStatus] = mapped_column(
+        Enum(
+            MailProjectResolutionStatus,
+            name="MailProjectResolutionStatus",
+            native_enum=True,
+        ),
+        nullable=False,
+        server_default=text("'PENDING'"),
+    )
+    resolvedProjectId: Mapped[UUID | None] = mapped_column(
+        UUIDType(as_uuid=True),
+        ForeignKey("projects.id", ondelete="SET NULL", onupdate="CASCADE"),
+        nullable=True,
+    )
+    projectResolutionCandidates: Mapped[JSONValue | None] = mapped_column(JSONB, nullable=True)
+    projectResolutionConfidence: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    projectResolutionConfirmedById: Mapped[UUID | None] = mapped_column(
+        UUIDType(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL", onupdate="CASCADE"),
+        nullable=True,
+    )
     retryCount: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     createdAt: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True, precision=3),

@@ -7,11 +7,13 @@ from fastapi import APIRouter, Depends, Request
 
 from risk_platform.auth.service import SessionIdentity
 from risk_platform.mailbox.extraction import MailRiskCandidateService
+from risk_platform.mailbox.resolution import MailProjectResolutionService
 from risk_platform.mailbox.schemas import (
     MailboxConfigRequest,
     MailboxConnectionTestResult,
     MailboxOverview,
     MailboxStatusRequest,
+    MailProjectResolutionConfirmRequest,
     MailRiskCandidateResponse,
     MailRiskCandidateUpdateRequest,
     MailSyncBatchResponse,
@@ -40,9 +42,28 @@ def get_candidate_service(request: Request) -> MailRiskCandidateService:
     return service
 
 
+def get_resolution_service(request: Request) -> MailProjectResolutionService:
+    service = getattr(request.app.state, "mail_project_resolution_service", None)
+    if not isinstance(service, MailProjectResolutionService):
+        raise RuntimeError("mail project resolution service is not configured")
+    return service
+
+
 CandidateIdentity = Annotated[
     SessionIdentity, Depends(require_permissions("mailbox.sync_self", "risk.resolve"))
 ]
+
+
+@candidate_router.post("/messages/{message_id}/project-resolution")
+async def confirm_project_resolution(
+    request: Request,
+    message_id: UUID,
+    payload: MailProjectResolutionConfirmRequest,
+    identity: CandidateIdentity,
+    service: Annotated[MailProjectResolutionService, Depends(get_resolution_service)],
+) -> ApiResponse[dict[str, str]]:
+    await service.confirm(message_id, payload.projectId, identity)
+    return ok(request, {"status": "RESUMED"}, "项目已确认: 邮件将继续进行风险识别")
 
 
 @candidate_router.patch(
@@ -149,4 +170,10 @@ async def sync(
     )
 
 
-__all__ = ["candidate_router", "get_candidate_service", "get_mailbox_service", "router"]
+__all__ = [
+    "candidate_router",
+    "get_candidate_service",
+    "get_mailbox_service",
+    "get_resolution_service",
+    "router",
+]

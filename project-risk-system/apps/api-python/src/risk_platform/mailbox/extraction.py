@@ -34,6 +34,7 @@ from risk_platform.mailbox.models import (
     MailMessageProjectMatch,
     MailMessageStatus,
     MailProjectMatchType,
+    MailProjectResolutionStatus,
     MailRiskCandidate,
     MailRiskCandidateStatus,
     MailSourceHandoff,
@@ -379,6 +380,11 @@ class MailRiskExtractionWorker:
                     )
                 ).all()
             )
+        if (
+            message is not None
+            and message.projectResolutionStatus is MailProjectResolutionStatus.WAITING_CONFIRMATION
+        ):
+            return
         if message is None or not matches:
             raise ValueError("NO_MATCHED_PROJECT")
         if provider is None:
@@ -395,6 +401,8 @@ class MailRiskExtractionWorker:
             )
             for i, x in enumerate(categories, 1)
         ]
+        if message.resolvedProjectId is not None:
+            matches = [item for item in matches if item.projectId == message.resolvedProjectId]
         project_map = {f"P{i}": item.projectId for i, item in enumerate(matches, 1)}
         request = _provider_payload(body, attachments, source_date, options)
         request["project_options"] = list(project_map)

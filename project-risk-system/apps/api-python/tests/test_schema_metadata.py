@@ -68,7 +68,18 @@ def test_metadata_has_final_prisma_tables_with_approved_audit_override() -> None
             "cursorAdvanced",
         }
     )
-    expected["mail_messages"].update({"uidValidity", "receivedAt", "receivedAtSource"})
+    expected["mail_messages"].update(
+        {
+            "uidValidity",
+            "receivedAt",
+            "receivedAtSource",
+            "projectResolutionStatus",
+            "resolvedProjectId",
+            "projectResolutionCandidates",
+            "projectResolutionConfidence",
+            "projectResolutionConfirmedById",
+        }
+    )
     expected["ai_provider_configs"].add("protocol")
     expected["action_items"].add("isDefaultForRisk")
     expected["ai_provider_accounts"] = {
