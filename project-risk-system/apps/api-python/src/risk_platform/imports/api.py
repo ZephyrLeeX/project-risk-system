@@ -68,6 +68,10 @@ async def preview(
         )
     except ValueError as exc:
         raise ApiError(400, "BAD_REQUEST", str(exc)) from exc
+    message = {
+        "PROCESSING": "相同内容已有解析中的批次",
+        "PREVIEWED": "相同内容已有待确认批次",
+    }.get(batch.status.value, "Excel 预检任务已创建")
     return ok(
         request,
         PreviewAcceptedResponse(
@@ -77,7 +81,7 @@ async def preview(
             fileHash=batch.fileHash,
             status=batch.status.value,
         ),
-        "Excel 预检任务已创建",
+        message,
     )
 
 

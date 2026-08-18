@@ -18,6 +18,7 @@ from risk_platform.audit.models import AuditActorType
 from risk_platform.audit.service import AuditService
 from risk_platform.auth.service import SessionIdentity
 from risk_platform.db import transaction
+from risk_platform.imports.duplicate_policy import lock_file_hash
 from risk_platform.imports.models import (
     ImportBatch,
     ImportBatchStatus,
@@ -276,6 +277,10 @@ class ImportCommitService:
         self, batch_id: UUID, acknowledge_warnings: bool, identity: SessionIdentity, trace_id: UUID
     ) -> ImportBatchDetail:
         async with transaction(self._session_factory) as session:
+            batch = await session.scalar(select(ImportBatch).where(ImportBatch.id == batch_id))
+            if batch is None:
+                raise ApiError(404, "NOT_FOUND", "导入批次不存在")
+            await lock_file_hash(session, batch.fileHash)
             batch = await session.scalar(
                 select(ImportBatch).where(ImportBatch.id == batch_id).with_for_update()
             )
@@ -292,6 +297,23 @@ class ImportCommitService:
             elif batch.status is not ImportBatchStatus.PREVIEWED:
                 raise ApiError(409, "CONFLICT", "只有预检完成的批次可以确认导入")
             else:
+                imported_duplicate = await session.scalar(
+                    select(ImportBatch)
+                    .where(
+                        ImportBatch.fileHash == batch.fileHash,
+                        ImportBatch.status == ImportBatchStatus.IMPORTED,
+                        ImportBatch.id != batch.id,
+                    )
+                    .order_by(ImportBatch.createdAt.desc(), ImportBatch.id.desc())
+                    .with_for_update()
+                )
+                if imported_duplicate is not None:
+                    raise ApiError(
+                        409,
+                        "IMPORT_FILE_ALREADY_IMPORTED",
+                        "相同内容的文件已经导入，请从导入历史查看",  # noqa: RUF001
+                        data={"existingBatchId": str(imported_duplicate.id)},
+                    )
                 source_meta = self._source_meta(batch)
                 if source_meta is None:
                     raise ApiError(
