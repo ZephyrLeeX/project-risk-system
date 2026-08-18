@@ -57,6 +57,28 @@ def test_parser_keeps_only_bounded_derived_text_and_attachment_metadata() -> Non
     assert "附件进度稳定" not in str(parsed.attachment_metadata)
 
 
+def test_parser_round_trips_rfc2047_subject_plain_and_html_multipart() -> None:
+    message = EmailMessage()
+    message["Subject"] = "[WSLDEMO][周报] ERP 系统升级本周进展与事项"
+    message["From"] = "sender@example.com"
+    message.set_content("纯文本正文：ERP 系统升级已完成。")
+    message.add_alternative(
+        "<html><body><p>HTML 正文：ERP 系统升级风险已跟进。</p></body></html>",
+        subtype="html",
+    )
+
+    parsed = parse_mail(message.as_bytes(), "<fallback>")
+
+    assert parsed.subject == "[WSLDEMO][周报] ERP 系统升级本周进展与事项"
+    assert "纯文本正文" in parsed.body_text
+
+    html_only = EmailMessage()
+    html_only["Subject"] = "HTML 周报"
+    html_only.set_content("<p>HTML 正文：ERP 系统升级风险已跟进。</p>", subtype="html")
+    html_parsed = parse_mail(html_only.as_bytes(), "<fallback-html>")
+    assert "HTML 正文" in html_parsed.body_text
+
+
 @pytest.mark.parametrize(
     ("name", "mime", "content", "status"),
     [

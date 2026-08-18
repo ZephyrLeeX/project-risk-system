@@ -6846,6 +6846,10 @@
             ],
             "title": "Errorsummary"
           },
+          "discoveredCount": {"title": "Discoveredcount", "type": "integer"},
+          "handedOffCount": {"title": "Handedoffcount", "type": "integer"},
+          "duplicateCount": {"title": "Duplicatecount", "type": "integer"},
+          "downstreamPendingCount": {"title": "Downstreampendingcount", "type": "integer"},
           "failedCount": {
             "title": "Failedcount",
             "type": "integer"
@@ -6947,6 +6951,10 @@
           "createdAt",
           "startedAt",
           "finishedAt",
+          "discoveredCount",
+          "handedOffCount",
+          "duplicateCount",
+          "downstreamPendingCount",
           "scannedCount",
           "newCount",
           "successCount",
@@ -6985,6 +6993,10 @@
             ],
             "title": "Errorsummary"
           },
+          "discoveredCount": {"title": "Discoveredcount", "type": "integer"},
+          "handedOffCount": {"title": "Handedoffcount", "type": "integer"},
+          "duplicateCount": {"title": "Duplicatecount", "type": "integer"},
+          "downstreamPendingCount": {"title": "Downstreampendingcount", "type": "integer"},
           "failedCount": {
             "title": "Failedcount",
             "type": "integer"
@@ -7064,6 +7076,10 @@
           "createdAt",
           "startedAt",
           "finishedAt",
+          "discoveredCount",
+          "handedOffCount",
+          "duplicateCount",
+          "downstreamPendingCount",
           "scannedCount",
           "newCount",
           "successCount",
@@ -7129,6 +7145,10 @@
             ],
             "title": "Errorsummary"
           },
+          "discoveredCount": {"title": "Discoveredcount", "type": "integer"},
+          "handedOffCount": {"title": "Handedoffcount", "type": "integer"},
+          "duplicateCount": {"title": "Duplicatecount", "type": "integer"},
+          "downstreamPendingCount": {"title": "Downstreampendingcount", "type": "integer"},
           "failedCount": {
             "title": "Failedcount",
             "type": "integer"
@@ -7208,6 +7228,10 @@
           "createdAt",
           "startedAt",
           "finishedAt",
+          "discoveredCount",
+          "handedOffCount",
+          "duplicateCount",
+          "downstreamPendingCount",
           "scannedCount",
           "newCount",
           "successCount",
@@ -7240,6 +7264,9 @@
               }
             ]
           },
+          "latestDiscoveredCount": {"title": "Latestdiscoveredcount", "type": "integer"},
+          "latestHandedOffCount": {"title": "Latesthandedoffcount", "type": "integer"},
+          "latestDownstreamPendingCount": {"title": "Latestdownstreampendingcount", "type": "integer"},
           "latestDuplicateCount": {
             "title": "Latestduplicatecount",
             "type": "integer"
@@ -7292,11 +7319,14 @@
           "configured",
           "maskedEmail",
           "latestBatch",
+          "latestDiscoveredCount",
+          "latestHandedOffCount",
+          "latestDuplicateCount",
+          "latestDownstreamPendingCount",
           "latestScannedCount",
           "latestNewCount",
           "latestSuccessCount",
           "latestSkippedCount",
-          "latestDuplicateCount",
           "latestRuleMismatchCount",
           "latestFailedCount",
           "latestRiskCandidateCount",

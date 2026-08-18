@@ -4299,6 +4299,14 @@ export interface components {
         };
         /** MailSyncBatchDetail */
         MailSyncBatchDetail: {
+            /** Discoveredcount */
+            discoveredCount: number;
+            /** Handedoffcount */
+            handedOffCount: number;
+            /** Duplicatecount */
+            duplicateCount: number;
+            /** Downstreampendingcount */
+            downstreamPendingCount: number;
             /** Code */
             code: string;
             /** Createdat */
@@ -4352,6 +4360,14 @@ export interface components {
             createdAt: string;
             /** Errorsummary */
             errorSummary: string | null;
+            /** Discoveredcount */
+            discoveredCount: number;
+            /** Handedoffcount */
+            handedOffCount: number;
+            /** Duplicatecount */
+            duplicateCount: number;
+            /** Downstreampendingcount */
+            downstreamPendingCount: number;
             /** Failedcount */
             failedCount: number;
             /** Finishedat */
@@ -4400,6 +4416,14 @@ export interface components {
             createdAt: string;
             /** Errorsummary */
             errorSummary: string | null;
+            /** Discoveredcount */
+            discoveredCount: number;
+            /** Handedoffcount */
+            handedOffCount: number;
+            /** Duplicatecount */
+            duplicateCount: number;
+            /** Downstreampendingcount */
+            downstreamPendingCount: number;
             /** Failedcount */
             failedCount: number;
             /** Finishedat */
@@ -4436,6 +4460,12 @@ export interface components {
             /** Historicalfailedcount */
             historicalFailedCount: number;
             latestBatch: components["schemas"]["MailSyncBatchItem"] | null;
+            /** Latestdiscoveredcount */
+            latestDiscoveredCount: number;
+            /** Latesthandedoffcount */
+            latestHandedOffCount: number;
+            /** Latestdownstreampendingcount */
+            latestDownstreamPendingCount: number;
             /** Latestduplicatecount */
             latestDuplicateCount: number;
             /** Latestfailedcount */

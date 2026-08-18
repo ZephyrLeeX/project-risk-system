@@ -270,6 +270,8 @@ class MailboxSyncService:
             )
         ).all()
         batch.handedOffCount = len(rows)
+        batch.scannedCount = batch.discoveredCount
+        batch.newCount = batch.handedOffCount
         batch.downstreamPendingCount = sum(
             1
             for row in rows

@@ -120,6 +120,10 @@ class MailSyncBatchResponse(StrictRequestModel):
     createdAt: str
     startedAt: str | None
     finishedAt: str | None
+    discoveredCount: int
+    handedOffCount: int
+    duplicateCount: int
+    downstreamPendingCount: int
     scannedCount: int
     newCount: int
     successCount: int

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+from email.message import EmailMessage
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, datetime
 from typing import cast
 
 from risk_platform.mailbox.connection import MailboxConnection
+from risk_platform.mailbox.connection import MailSourceUnavailable
+from risk_platform.mailbox.parsing import parse_mail
 from risk_platform.shared.outbound import OutboundEndpointGuard
 
 
@@ -76,6 +79,47 @@ def test_discover_returns_uid_only_envelopes_and_never_source_payload() -> None:
     assert snapshot.envelopes[0].sent_at == datetime(2026, 8, 11, 10, tzinfo=UTC)
     assert snapshot.envelopes[0].received_at == datetime(2026, 8, 11, 10, 30, tzinfo=UTC)
     assert not hasattr(snapshot.envelopes[0], "source")
+
+
+def test_fetch_source_uses_only_real_imaplib_tuple_payload_and_round_trips_mail() -> None:
+    message = EmailMessage()
+    message["Subject"] = "[WSLDEMO][周报] ERP 系统升级本周进展与事项"
+    message["From"] = "sender@example.com"
+    message.set_content("ERP 系统升级本周进展正常，风险事项已跟进。")
+    raw = message.as_bytes()
+
+    class FetchClient:
+        def uid(self, operation: str, uid: str, query: str) -> tuple[str, list[object]]:
+            assert (operation, uid, query) == ("fetch", "295", "(UID RFC822.SIZE BODY.PEEK[])")
+            return "OK", [(b"1 (UID 295 RFC822.SIZE BODY[] {%d}" % len(raw), raw), b")"]
+
+    source = MailboxConnection._fetch_source(FetchClient(), 295)
+    assert source == raw
+    parsed = parse_mail(source, "<fallback>")
+    assert parsed.subject == "[WSLDEMO][周报] ERP 系统升级本周进展与事项"
+    assert "ERP 系统升级本周进展正常" in parsed.body_text
+
+
+def test_fetch_source_rejects_empty_or_malformed_fetch() -> None:
+    class FetchClient:
+        def __init__(self, data: list[object], typ: str = "OK") -> None:
+            self.data, self.typ = data, typ
+
+        def uid(self, operation: str, uid: str, query: str) -> tuple[str, list[object]]:
+            return self.typ, self.data
+
+    for client in (
+        FetchClient([]),
+        FetchClient([b")"]),
+        FetchClient([(b"metadata", b"")]),
+        FetchClient([], typ="NO"),
+    ):
+        try:
+            MailboxConnection._fetch_source(client, 295)
+        except MailSourceUnavailable as error:
+            assert str(error) == "MAIL_SOURCE_MISSING"
+        else:
+            raise AssertionError("malformed FETCH must fail closed")
 
 
 def test_invalid_or_unknown_envelope_times_fail_closed() -> None:

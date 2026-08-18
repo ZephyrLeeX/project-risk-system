@@ -32,6 +32,7 @@ from risk_platform.mailbox.models import (
     MailboxConfig,
     MailMessage,
     MailMessageProjectMatch,
+    MailMessageStatus,
     MailProjectMatchType,
     MailRiskCandidate,
     MailRiskCandidateStatus,
@@ -42,6 +43,7 @@ from risk_platform.mailbox.models import (
 from risk_platform.mailbox.parse_worker import MailParseWorker
 from risk_platform.mailbox.parsing import MailParseError, parse_mail
 from risk_platform.mailbox.schemas import MailRiskCandidateResponse, MailRiskCandidateUpdateRequest
+from risk_platform.model_types import JSONValue
 from risk_platform.projects.models import Project
 from risk_platform.rbac.models import DataScopeType
 from risk_platform.rbac.scopes import get_scoped_project
@@ -466,6 +468,50 @@ class MailRiskExtractionWorker:
                     code,
                     code,
                 )
+                message = await session.scalar(
+                    select(MailMessage)
+                    .where(
+                        MailMessage.mailboxConfigId == mailbox_id,
+                        MailMessage.uidValidity == uid_validity,
+                        MailMessage.imapUid == imap_uid,
+                    )
+                    .with_for_update()
+                )
+                if message is not None:
+                    trace = (
+                        message.processingTrace
+                        if isinstance(message.processingTrace, list)
+                        else []
+                    )
+                    trace_status = (
+                        "COMPLETED"
+                        if status is MailStageStatus.SUCCEEDED
+                        else "FAILED"
+                        if status is MailStageStatus.PERMANENT_FAILURE
+                        else "RUNNING"
+                    )
+                    message.processingTrace = cast(
+                        JSONValue,
+                        [
+                            *trace,
+                            {
+                                "stage": "AI_REVIEW",
+                                "status": trace_status,
+                                "detail": code,
+                                "occurredAt": datetime.now(UTC).isoformat(),
+                            },
+                        ],
+                    )
+                    if status is MailStageStatus.SUCCEEDED:
+                        message.status = MailMessageStatus.COMPLETED
+                        message.processedAt = datetime.now(UTC)
+                        message.failureCode = message.failureSummary = None
+                    elif status is MailStageStatus.PERMANENT_FAILURE:
+                        message.status = MailMessageStatus.FAILED
+                        message.failureCode = message.failureSummary = code
+                    else:
+                        message.status = MailMessageStatus.ANALYZING
+                        message.failureCode = message.failureSummary = code
 
     async def _call_provider(
         self, provider: AiProviderConfig, key: str, payload: dict[str, object]

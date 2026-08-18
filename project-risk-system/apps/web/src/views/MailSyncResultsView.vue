@@ -19,6 +19,10 @@ const emptySummary: MailSyncSummary = {
   configured: false,
   maskedEmail: null,
   latestBatch: null,
+  latestDiscoveredCount: 0,
+  latestHandedOffCount: 0,
+  latestDuplicateCount: 0,
+  latestDownstreamPendingCount: 0,
   latestScannedCount: 0,
   latestNewCount: 0,
   latestSuccessCount: 0,
@@ -344,8 +348,8 @@ onMounted(() => { void refreshAll(); });
         </section>
 
         <section class="prototype-metric-grid sync-metrics" aria-label="最新同步指标">
-          <button class="prototype-metric tone-blue" type="button" @click="setStatus('all')"><span class="metric-glyph">邮</span><small>新增邮件</small><strong>{{ summary.latestNewCount }}<em>封</em></strong><p>本批次扫描{{ summary.latestScannedCount }}封</p></button>
-          <button class="prototype-metric tone-green" type="button" @click="setStatus('COMPLETED')"><span class="metric-glyph">✓</span><small>分析成功</small><strong>{{ summary.latestSuccessCount }}<em>封</em></strong><p>成功率{{ summary.latestNewCount ? Math.round(summary.latestSuccessCount / summary.latestNewCount * 100) : 0 }}%</p></button>
+          <button class="prototype-metric tone-blue" type="button" @click="setStatus('all')"><span class="metric-glyph">邮</span><small>发现邮件</small><strong>{{ summary.latestDiscoveredCount }}<em>封</em></strong><p>新建处理{{ summary.latestHandedOffCount }}封 · 已处理/去重{{ summary.latestDuplicateCount }}封</p></button>
+          <button class="prototype-metric tone-green" type="button" @click="setStatus('COMPLETED')"><span class="metric-glyph">✓</span><small>分析成功</small><strong>{{ summary.latestSuccessCount }}<em>封</em></strong><p>处理中{{ summary.latestDownstreamPendingCount }}封 · 失败{{ summary.latestFailedCount }}封</p></button>
           <button class="prototype-metric tone-violet" type="button" @click="setStatus('risk')"><span class="metric-glyph">险</span><small>提取风险线索</small><strong>{{ summary.latestRiskCandidateCount }}<em>项</em></strong><p>其中待确认{{ summary.latestPendingRiskCount }}项</p></button>
           <button class="prototype-metric tone-orange" type="button" @click="setStatus('SKIPPED')"><span class="metric-glyph">跳</span><small>跳过邮件</small><strong>{{ summary.latestSkippedCount }}<em>封</em></strong><p>重复{{ summary.latestDuplicateCount }} · 不符合规则{{ summary.latestRuleMismatchCount }}</p></button>
           <button class="prototype-metric tone-red" type="button" @click="setStatus('FAILED')"><span class="metric-glyph">!</span><small>处理失败</small><strong>{{ summary.latestFailedCount }}<em>封</em></strong><p>历史批次待重试{{ summary.historicalFailedCount }}封</p></button>
@@ -388,7 +392,7 @@ onMounted(() => { void refreshAll(); });
 
           <template v-else>
             <div class="prototype-panel-heading"><div><p>SYNC BATCH HISTORY</p><h2>同步批次记录</h2><span>记录手动、定时同步和失败重试的完整执行情况</span></div></div>
-            <div v-if="batches.length" class="admin-table-scroll"><table class="admin-table"><thead><tr><th>批次编号</th><th>触发方式</th><th>开始时间</th><th>执行用时</th><th>扫描 / 新增</th><th>风险线索</th><th>结果</th><th>操作</th></tr></thead><tbody><tr v-for="batch in batches" :key="batch.id"><td><strong>{{ batch.code }}</strong><small>{{ batch.errorSummary || "执行记录完整" }}</small></td><td>{{ triggerLabel(batch.trigger) }}</td><td>{{ formatDate(batch.startedAt || batch.createdAt) }}</td><td>{{ formatDuration(batch) }}</td><td>{{ batch.scannedCount }} / {{ batch.newCount }} 封</td><td>{{ batch.riskCandidateCount }}项</td><td><span class="result-status" :class="`is-${batch.status.toLowerCase()}`">{{ batchStatusLabel(batch.status) }}</span></td><td><button class="row-link" type="button" @click="openBatch(batch)">查看邮件</button></td></tr></tbody></table></div>
+            <div v-if="batches.length" class="admin-table-scroll"><table class="admin-table"><thead><tr><th>批次编号</th><th>触发方式</th><th>开始时间</th><th>执行用时</th><th>发现 / 新建 / 去重</th><th>处理中 / 失败</th><th>结果</th><th>操作</th></tr></thead><tbody><tr v-for="batch in batches" :key="batch.id"><td><strong>{{ batch.code }}</strong><small>{{ batch.errorSummary || "执行记录完整" }}</small></td><td>{{ triggerLabel(batch.trigger) }}</td><td>{{ formatDate(batch.startedAt || batch.createdAt) }}</td><td>{{ formatDuration(batch) }}</td><td>{{ batch.discoveredCount }} / {{ batch.handedOffCount }} / {{ batch.duplicateCount }} 封</td><td>{{ batch.downstreamPendingCount }} / {{ batch.failedCount }} 封</td><td><span class="result-status" :class="`is-${batch.status.toLowerCase()}`">{{ batchStatusLabel(batch.status) }}</span></td><td><button class="row-link" type="button" @click="openBatch(batch)">查看邮件</button></td></tr></tbody></table></div>
             <div v-else class="sync-empty-state"><span>批</span><strong>尚无同步批次</strong><p>完成邮箱配置后，点击“同步最新周报”开始首次增量同步。</p></div>
             <footer class="prototype-pagination"><span>共{{ batchTotal }}个同步批次</span><div><button type="button" :disabled="batchPage <= 1" @click="batchPage--">上一页</button><b>{{ batchPage }}</b><button type="button" :disabled="batchPage >= batchTotalPages" @click="batchPage++">下一页</button></div></footer>
           </template>

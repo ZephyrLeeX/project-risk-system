@@ -102,28 +102,20 @@ class MailSyncResultsService:
                     configured=True,
                     maskedEmail=masked,
                     latestBatch=None,
+                    latestDiscoveredCount=0,
+                    latestHandedOffCount=0,
+                    latestDuplicateCount=0,
+                    latestDownstreamPendingCount=0,
                     latestScannedCount=0,
                     latestNewCount=0,
                     latestSuccessCount=0,
                     latestSkippedCount=0,
-                    latestDuplicateCount=0,
                     latestRuleMismatchCount=0,
                     latestFailedCount=0,
                     latestRiskCandidateCount=0,
                     latestPendingRiskCount=0,
                     historicalFailedCount=0,
                 )
-            duplicate = (
-                await session.scalar(
-                    select(func.count())
-                    .select_from(MailMessage)
-                    .where(
-                        MailMessage.batchId == latest.id,
-                        MailMessage.skipReason == MailMessageSkipReason.DUPLICATE,
-                    )
-                )
-                or 0
-            )
             mismatch = (
                 await session.scalar(
                     select(func.count())
@@ -163,11 +155,14 @@ class MailSyncResultsService:
                 configured=True,
                 maskedEmail=masked,
                 latestBatch=self._batch_item(latest),
+                latestDiscoveredCount=latest.discoveredCount,
+                latestHandedOffCount=latest.handedOffCount,
+                latestDuplicateCount=max(latest.discoveredCount - latest.handedOffCount, 0),
+                latestDownstreamPendingCount=latest.downstreamPendingCount,
                 latestScannedCount=latest.scannedCount,
                 latestNewCount=latest.newCount,
                 latestSuccessCount=latest.successCount,
                 latestSkippedCount=latest.skippedCount,
-                latestDuplicateCount=int(duplicate),
                 latestRuleMismatchCount=int(mismatch),
                 latestFailedCount=latest.failedCount,
                 latestRiskCandidateCount=latest.riskCandidateCount,
@@ -369,8 +364,6 @@ class MailSyncResultsService:
             )
             if message is None:
                 raise ApiError(404, "NOT_FOUND", "邮件处理记录不存在")
-            if message.status is not MailMessageStatus.FAILED:
-                raise ApiError(400, "BAD_REQUEST", "仅处理失败的邮件可以重新处理")
             running = await session.scalar(
                 select(MailSyncBatch.id).where(
                     MailSyncBatch.mailboxConfigId == config.id,
@@ -391,6 +384,14 @@ class MailSyncResultsService:
                 )
                 .with_for_update()
             )
+            if message.status is not MailMessageStatus.FAILED and not (
+                handoff is not None
+                and (
+                    handoff.parseStatus in _FAILURE_STAGES
+                    or handoff.aiReviewStatus in _FAILURE_STAGES
+                )
+            ):
+                raise ApiError(400, "BAD_REQUEST", "仅处理失败的邮件可以重新处理")
             kind, reset_stage = self._retry_stage(handoff)
             task = await enqueue_task(
                 session,
@@ -409,6 +410,9 @@ class MailSyncResultsService:
                     handoff.parseStatus = MailStageStatus.PENDING
                 else:
                     handoff.aiReviewStatus = MailStageStatus.PENDING
+            message.status = MailMessageStatus.ANALYZING
+            message.processedAt = None
+            message.failureCode = message.failureSummary = None
             code = f"MAIL-RETRY-{datetime.now(UTC):%Y%m%d%H%M%S}-{uuid4().hex[:8].upper()}"
             batch = MailSyncBatch(
                 taskId=task.id,
@@ -584,6 +588,10 @@ class MailSyncResultsService:
             else datetime.now(UTC).isoformat(),
             startedAt=batch.startedAt.isoformat() if batch.startedAt else None,
             finishedAt=batch.finishedAt.isoformat() if batch.finishedAt else None,
+            discoveredCount=batch.discoveredCount,
+            handedOffCount=batch.handedOffCount,
+            duplicateCount=max(batch.discoveredCount - batch.handedOffCount, 0),
+            downstreamPendingCount=batch.downstreamPendingCount,
             scannedCount=batch.scannedCount,
             newCount=batch.newCount,
             successCount=batch.successCount,
@@ -721,7 +729,7 @@ class MailSyncResultsService:
         if handoff.parseStatus in _FAILURE_STAGES:
             return DurableTaskKind.ATTACHMENT_PARSE, "parse"
         if handoff.aiReviewStatus in _FAILURE_STAGES:
-            return DurableTaskKind.MAIL_AI_REVIEW_PUBLISH, "ai"
+            return DurableTaskKind.ATTACHMENT_PARSE, "parse"
         return DurableTaskKind.ATTACHMENT_PARSE, "parse"
 
 

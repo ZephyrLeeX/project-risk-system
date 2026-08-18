@@ -34,6 +34,10 @@ class MailSyncBatchItem(StrictRequestModel):
     createdAt: str
     startedAt: str | None
     finishedAt: str | None
+    discoveredCount: int
+    handedOffCount: int
+    duplicateCount: int
+    downstreamPendingCount: int
     scannedCount: int
     newCount: int
     successCount: int
@@ -47,11 +51,14 @@ class MailSyncSummary(StrictRequestModel):
     configured: bool
     maskedEmail: str | None
     latestBatch: MailSyncBatchItem | None
+    latestDiscoveredCount: int
+    latestHandedOffCount: int
+    latestDuplicateCount: int
+    latestDownstreamPendingCount: int
     latestScannedCount: int
     latestNewCount: int
     latestSuccessCount: int
     latestSkippedCount: int
-    latestDuplicateCount: int
     latestRuleMismatchCount: int
     latestFailedCount: int
     latestRiskCandidateCount: int

@@ -1103,6 +1103,10 @@ export interface MailSyncBatchItem {
   createdAt: string;
   startedAt: string | null;
   finishedAt: string | null;
+  discoveredCount: number;
+  handedOffCount: number;
+  duplicateCount: number;
+  downstreamPendingCount: number;
   scannedCount: number;
   newCount: number;
   successCount: number;
@@ -1116,11 +1120,14 @@ export interface MailSyncSummary {
   configured: boolean;
   maskedEmail: string | null;
   latestBatch: MailSyncBatchItem | null;
+  latestDiscoveredCount: number;
+  latestHandedOffCount: number;
+  latestDuplicateCount: number;
+  latestDownstreamPendingCount: number;
   latestScannedCount: number;
   latestNewCount: number;
   latestSuccessCount: number;
   latestSkippedCount: number;
-  latestDuplicateCount: number;
   latestRuleMismatchCount: number;
   latestFailedCount: number;
   latestRiskCandidateCount: number;

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import UTC, datetime
 from typing import cast
 from uuid import UUID
 
@@ -95,8 +94,8 @@ class MailParseWorker:
             message.sanitizedSummary = parsed.summary
             message.keyPoints = cast(JSONValue, parsed.key_points)
             message.attachmentMetadata = cast(JSONValue, parsed.attachment_metadata)
-            message.status = MailMessageStatus.COMPLETED
-            message.processedAt = datetime.now(UTC)
+            message.status = MailMessageStatus.ANALYZING
+            message.processedAt = None
             message.failureCode = message.failureSummary = None
             old_project_ids = set(
                 await session.scalars(
@@ -190,6 +189,10 @@ class MailParseWorker:
             if handoff is not None:
                 handoff.parseStatus = MailStageStatus.PERMANENT_FAILURE
                 handoff.failureCode, handoff.failureSummary = code, code
+                message = await self._message(session, mailbox_id, uid_validity, imap_uid)
+                if message is not None:
+                    message.status = MailMessageStatus.FAILED
+                    message.failureCode, message.failureSummary = code, code
 
     async def _retryable(
         self, mailbox_id: UUID, uid_validity: int, imap_uid: int, code: str
@@ -199,6 +202,24 @@ class MailParseWorker:
             if handoff is not None:
                 handoff.parseStatus = MailStageStatus.RETRYABLE_FAILURE
                 handoff.failureCode, handoff.failureSummary = code, code
+                message = await self._message(session, mailbox_id, uid_validity, imap_uid)
+                if message is not None:
+                    message.status = MailMessageStatus.ANALYZING
+                    message.failureCode, message.failureSummary = code, code
+
+    @staticmethod
+    async def _message(
+        session: AsyncSession, mailbox_id: UUID, uid_validity: int, imap_uid: int
+    ) -> MailMessage | None:
+        return await session.scalar(
+            select(MailMessage)
+            .where(
+                MailMessage.mailboxConfigId == mailbox_id,
+                MailMessage.uidValidity == uid_validity,
+                MailMessage.imapUid == imap_uid,
+            )
+            .with_for_update()
+        )
 
     async def _exhausted(self, mailbox_id: UUID, uid_validity: int, imap_uid: int) -> bool:
         async with self._session_factory() as session:

@@ -183,7 +183,11 @@ class MailboxConnection:
         typ, data = client.uid("fetch", str(uid), "(UID RFC822.SIZE BODY.PEEK[])")  # type: ignore[attr-defined]
         if typ != "OK" or not data:
             raise MailSourceUnavailable("MAIL_SOURCE_MISSING")
-        source = b"".join(item for item in data if isinstance(item, bytes))
+        source = b"".join(
+            item[1]
+            for item in data
+            if isinstance(item, tuple) and len(item) >= 2 and isinstance(item[1], bytes)
+        )
         if not source:
             raise MailSourceUnavailable("MAIL_SOURCE_MISSING")
         return source

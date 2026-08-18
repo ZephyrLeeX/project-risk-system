@@ -128,7 +128,7 @@ def test_result_note_maps_each_terminal_state() -> None:
     assert note(_message(), 0) == "邮件分析完成"
 
 
-def test_retry_stage_targets_only_the_failed_downstream_stage() -> None:
+def test_retry_stage_reparses_source_before_ai_retry() -> None:
     stage = MailSyncResultsService._retry_stage
 
     def handoff(parse: MailStageStatus, ai: MailStageStatus) -> MailSourceHandoff:
@@ -141,10 +141,10 @@ def test_retry_stage_targets_only_the_failed_downstream_stage() -> None:
         DurableTaskKind.ATTACHMENT_PARSE,
         "parse",
     )
-    # Only the AI review stage failed: retry AI publish, parse stays succeeded.
+    # AI failure re-fetches and re-parses the source before AI review.
     assert stage(handoff(MailStageStatus.SUCCEEDED, MailStageStatus.PERMANENT_FAILURE)) == (
-        DurableTaskKind.MAIL_AI_REVIEW_PUBLISH,
-        "ai",
+        DurableTaskKind.ATTACHMENT_PARSE,
+        "parse",
     )
     # Both succeeded (no failure): default back to the parse stage.
     assert stage(handoff(MailStageStatus.SUCCEEDED, MailStageStatus.SUCCEEDED)) == (
