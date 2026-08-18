@@ -31,7 +31,6 @@ from risk_platform.mailbox.schemas import (
 from risk_platform.reliability.core import enqueue_task
 from risk_platform.reliability.models import DurableTaskKind
 from risk_platform.shared.crypto import (
-    EncryptedSecret,
     LegacySecretFields,
     SecretCipher,
     SecretCryptoError,
@@ -90,21 +89,21 @@ class MailboxService:
             if existing is None and not payload.authCode:
                 raise ApiError(400, "BAD_REQUEST", "首次配置邮箱时必须填写邮箱授权码")
             normalized = self._normalize(payload)
-            credential = (
-                self._cipher.encrypt(payload.authCode.strip()) if payload.authCode else None
+            auth_code = payload.authCode.strip() if payload.authCode else None
+            credential = self._cipher.encrypt_legacy(auth_code) if auth_code else None
+            legacy_fields = (
+                self._legacy_fields(credential, auth_code) if credential and auth_code else None
             )
             if existing is None:
-                assert credential is not None
-                config = MailboxConfig(
-                    userId=user_id, **normalized, **self._legacy_fields(credential)
-                )
+                assert legacy_fields is not None
+                config = MailboxConfig(userId=user_id, **normalized, **legacy_fields)
                 session.add(config)
             else:
                 changed = self._connection_changed(existing, normalized, credential)
                 for key, value in normalized.items():
                     setattr(existing, key, value)
-                if credential is not None:
-                    for key, value in self._legacy_fields(credential).items():
+                if legacy_fields is not None:
+                    for key, value in legacy_fields.items():
                         setattr(existing, key, value)
                 if changed:
                     existing.connectionStatus = MailboxConnectionStatus.UNTESTED
@@ -282,17 +281,12 @@ class MailboxService:
         )
 
     @staticmethod
-    def _legacy_fields(credential: EncryptedSecret) -> dict[str, str]:
-        from risk_platform.shared.crypto import SecretEnvelope
-
-        envelope = SecretEnvelope.parse(credential.envelope)
-        import base64
-
+    def _legacy_fields(credential: LegacySecretFields, plaintext: str) -> dict[str, str]:
         return {
-            "encryptedAuthCode": base64.b64encode(envelope.ciphertext[:-16]).decode(),
-            "authCodeIv": base64.b64encode(envelope.nonce).decode(),
-            "authCodeTag": base64.b64encode(envelope.ciphertext[-16:]).decode(),
-            "authCodeLast4": credential.masked[-4:],
+            "encryptedAuthCode": credential.ciphertext,
+            "authCodeIv": credential.iv,
+            "authCodeTag": credential.auth_tag,
+            "authCodeLast4": plaintext[-4:],
         }
 
     @staticmethod
@@ -318,7 +312,9 @@ class MailboxService:
 
     @staticmethod
     def _connection_changed(
-        existing: MailboxConfig, normalized: dict[str, object], credential: EncryptedSecret | None
+        existing: MailboxConfig,
+        normalized: dict[str, object],
+        credential: LegacySecretFields | None,
     ) -> bool:
         return credential is not None or any(
             getattr(existing, key) != value

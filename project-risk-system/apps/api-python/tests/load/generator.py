@@ -17,7 +17,6 @@ the dataset cannot drift from the approved reference set.
 
 from __future__ import annotations
 
-import base64
 import hashlib
 import random
 import uuid
@@ -53,7 +52,7 @@ from risk_platform.rbac.models import DataScopeType, Role, UserProjectScope, Use
 from risk_platform.reliability.models import DurableTask, DurableTaskKind, DurableTaskStatus
 from risk_platform.risks.models import Risk, RiskCategory, RiskSourceType, RiskStatus
 from risk_platform.seed import SeedSettings, seed_reference_data
-from risk_platform.shared.crypto import SecretCipher, SecretEnvelope
+from risk_platform.shared.crypto import SecretCipher
 from risk_platform.timeline.models import RiskTimelineEvent
 from risk_platform.todos.models import (
     ActionItem,
@@ -335,10 +334,8 @@ async def _seed_mailbox_and_weekly(
     config_rows: list[dict[str, object]] = []
     for i, uid in enumerate(mailbox_users):
         auth_code = f"authcode-{i:04d}"
-        # Produce the legacy AES-GCM triplet the app decrypts via decrypt_legacy
-        # (matches MailboxService._legacy_fields): standard base64 of ciphertext
-        # without the 16-byte GCM tag, the 12-byte nonce, and the tag separately.
-        envelope = SecretEnvelope.parse(cipher.encrypt(auth_code).envelope)
+        # Produce the no-AAD AES-GCM triplet consumed by decrypt_legacy.
+        legacy = cipher.encrypt_legacy(auth_code)
         config_rows.append(
             {
                 "id": _u(f"mbox:{i}"),
@@ -349,9 +346,9 @@ async def _seed_mailbox_and_weekly(
                 "imapPort": 993,
                 "encryption": MailboxEncryption.SSL,
                 "folder": "INBOX",
-                "encryptedAuthCode": base64.b64encode(envelope.ciphertext[:-16]).decode(),
-                "authCodeIv": base64.b64encode(envelope.nonce).decode(),
-                "authCodeTag": base64.b64encode(envelope.ciphertext[-16:]).decode(),
+                "encryptedAuthCode": legacy.ciphertext,
+                "authCodeIv": legacy.iv,
+                "authCodeTag": legacy.auth_tag,
                 "authCodeLast4": auth_code[-4:],
                 "subjectKeywords": [],
                 "initialSyncWeeks": 4,

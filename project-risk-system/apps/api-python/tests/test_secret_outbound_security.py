@@ -52,6 +52,29 @@ def test_secret_roundtrip_uses_random_nonce_and_safe_mask() -> None:
     assert len(parsed.nonce) == 12
 
 
+def test_legacy_secret_roundtrip_uses_no_aad_triplet() -> None:
+    cipher = _cipher(active="v1", v1=_key(9))
+
+    fields = cipher.encrypt_legacy("secret")
+
+    assert fields.key_version == "v1"
+    assert cipher.decrypt_legacy(fields) == "secret"
+    assert "secret" not in repr(fields)
+
+
+def test_legacy_wrong_key_fails_without_leaking_secret_or_key() -> None:
+    plaintext = "mailbox-secret-value"
+    fields = _cipher(active="v1", v1=_key(9)).encrypt_legacy(plaintext)
+
+    with pytest.raises(SecretCryptoError) as failure:
+        _cipher(active="v1", v1=_key(10)).decrypt_legacy(fields)
+
+    assert str(failure.value) == "SECRET_DECRYPTION_FAILED"
+    assert plaintext not in str(failure.value)
+    assert base64.b64encode(_key(9)).decode() not in str(failure.value)
+    assert fields.ciphertext not in str(failure.value)
+
+
 def test_rotation_reads_old_key_and_writes_only_active_version() -> None:
     old_cipher = _cipher(active="old", old=_key(1))
     old = old_cipher.encrypt("mail-auth-code-9921").envelope

@@ -91,7 +91,7 @@ class EncryptedSecret:
 
 @dataclass(frozen=True, slots=True)
 class LegacySecretFields:
-    """Read adapter for the legacy AES-GCM ciphertext/IV/tag database columns."""
+    """AES-GCM ciphertext/IV/tag values stored in legacy database columns."""
 
     ciphertext: str
     iv: str
@@ -177,6 +177,21 @@ class SecretCipher:
         """Re-encrypt using the active key; old keys remain decrypt-only."""
 
         return self.encrypt(self.decrypt(serialized))
+
+    def encrypt_legacy(self, plaintext: str) -> LegacySecretFields:
+        """Encrypt directly for the legacy ciphertext/IV/tag database columns."""
+
+        version = self._key_ring.active_version
+        nonce = os.urandom(_NONCE_BYTES)
+        combined = AESGCM(self._key_ring.key_for(version)).encrypt(
+            nonce, plaintext.encode("utf-8"), None
+        )
+        return LegacySecretFields(
+            ciphertext=base64.b64encode(combined[:-16]).decode("ascii"),
+            iv=base64.b64encode(nonce).decode("ascii"),
+            auth_tag=base64.b64encode(combined[-16:]).decode("ascii"),
+            key_version=version,
+        )
 
     def decrypt_legacy(self, fields: LegacySecretFields) -> str:
         """Decrypt the current NestJS AES-GCM triplet with an explicit key version."""
