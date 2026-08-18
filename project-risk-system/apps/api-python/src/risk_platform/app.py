@@ -71,6 +71,7 @@ def create_app(
         title="Project Risk Management API",
         version=version("risk-platform-api"),
         lifespan=resolved_composition.lifespan or _empty_lifespan,
+        redirect_slashes=False,
     )
     app.state.settings = resolved_settings
     if not resolved_settings.request_origin_validation_enabled:

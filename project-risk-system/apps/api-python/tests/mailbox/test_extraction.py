@@ -22,7 +22,7 @@ from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from risk_platform.admin.models import Department, User
-from risk_platform.ai_providers.client import AiProviderClient, ProviderRequestError
+from risk_platform.ai_providers.client import ProviderRequestError
 from risk_platform.ai_providers.models import (
     AiConnectionStatus,
     AiProviderConfig,
@@ -36,6 +36,7 @@ from risk_platform.auth.schemas import AuthenticatedUser, DataScope
 from risk_platform.auth.service import SessionIdentity
 from risk_platform.db import create_database_engine, create_session_factory, transaction
 from risk_platform.mailbox.ai import MailboxProviderV2
+from risk_platform.mailbox.dev_repair import repair_succeeded_analyzing_messages
 from risk_platform.mailbox.entrypoint import routers
 from risk_platform.mailbox.extraction import (
     MailRiskCandidateService,
@@ -51,6 +52,7 @@ from risk_platform.mailbox.models import (
     MailboxProvider,
     MailMessage,
     MailMessageProjectMatch,
+    MailMessageStatus,
     MailProjectMatchType,
     MailReceivedAtSource,
     MailRiskCandidate,
@@ -62,6 +64,7 @@ from risk_platform.mailbox.models import (
 )
 from risk_platform.mailbox.parse_worker import MailParseWorker
 from risk_platform.mailbox.schemas import MailRiskCandidateUpdateRequest
+from risk_platform.model_types import JSONValue
 from risk_platform.projects.models import Project
 from risk_platform.reliability.celery_app import create_celery_app
 from risk_platform.reliability.core import enqueue_task
@@ -84,6 +87,11 @@ def _options() -> list[_CategoryOption]:
             default_level="MEDIUM",
         )
     ]
+
+
+def _trace_dicts(message: MailMessage) -> list[dict[str, JSONValue]]:
+    trace = message.processingTrace
+    return cast("list[dict[str, JSONValue]]", trace if isinstance(trace, list) else [])
 
 
 def test_provider_payload_is_v2_bounded_and_redacted() -> None:
@@ -378,6 +386,8 @@ class _FakeProvider:
             raise ProviderRequestError("UPSTREAM_TIMEOUT", retryable=True)
         if self.outcome == "invalid":
             return "not-json", {"input": 0, "output": 0, "total": 0}, 1
+        if self.outcome == "zero":
+            return '{"risks":[]}', {"input": 10, "output": 2, "total": 12}, 1
         return (
             '{"risks":[{"project_option_id":"P1","category_option_id":"C1",'
             '"level":"HIGH","description":"交付风险",'
@@ -604,20 +614,79 @@ def test_postgresql_celery_fake_provider_success_and_duplicate_delivery(
         assert completed.dispatchGeneration == generation
         async with factory() as session:
             handoff = await session.get(MailSourceHandoff, seed["handoff"])
+            message = await session.get(MailMessage, seed["message"])
             assert completed is not None and completed.status is DurableTaskStatus.SUCCEEDED
             assert handoff is not None and handoff.aiReviewStatus is MailStageStatus.SUCCEEDED
+            assert message is not None and message.status is MailMessageStatus.COMPLETED
+            assert message.processedAt is not None
+            assert [
+                item
+                for item in _trace_dicts(message)
+                if item.get("stage") == "AI_REVIEW" and item.get("status") == "COMPLETED"
+            ] == [
+                {
+                    "stage": "AI_REVIEW",
+                    "status": "COMPLETED",
+                    "detail": "RISK_EXTRACTION_COMPLETED",
+                    "occurredAt": next(
+                        item["occurredAt"]
+                        for item in _trace_dicts(message)
+                        if item.get("stage") == "AI_REVIEW"
+                    ),
+                }
+            ]
             assert await session.scalar(select(func.count()).select_from(MailRiskCandidate)) == 1
+            assert provider.calls == 1
+        await extractor.handle(
+            {"mailbox_config_id": str(seed["mailbox"]), "uid_validity": 42, "imap_uid": 7}
+        )
+        async with factory() as session:
+            message = await session.get(MailMessage, seed["message"])
+            assert message is not None
+            assert sum(
+                1 for item in _trace_dicts(message)
+                if item.get("stage") == "AI_REVIEW" and item.get("status") == "COMPLETED"
+            ) == 1
             assert provider.calls == 1
 
     provider = _FakeProvider()
     extractor = MailRiskExtractionWorker(
         factory,
         cast("SecretCipher", _FakeCipher()),
-        cast(AiProviderClient, provider),
+            cast(ProviderV2Runtime, provider),
         cast(MailParseWorker, _FakeParser()),
     )
     with _real_t026_worker(schema, factory, extractor) as celery:
         asyncio.run(scenario())
+
+
+def test_postgresql_zero_risk_success_terminalizes_message(
+    t026_postgresql: tuple[str, AsyncEngine, async_sessionmaker[AsyncSession]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _schema, _engine, factory = t026_postgresql
+    monkeypatch.setattr("risk_platform.mailbox.extraction.parse_mail", _fake_parsed_mail)
+
+    async def scenario() -> None:
+        seed = await _seed(factory)
+        worker = MailRiskExtractionWorker(
+            factory,
+            cast("SecretCipher", _FakeCipher()),
+            cast(ProviderV2Runtime, _FakeProvider("zero")),
+            cast(MailParseWorker, _FakeParser()),
+        )
+        await worker.handle(
+            {"mailbox_config_id": str(seed["mailbox"]), "uid_validity": 42, "imap_uid": 7}
+        )
+        async with factory() as session:
+            message = await session.get(MailMessage, seed["message"])
+            handoff = await session.get(MailSourceHandoff, seed["handoff"])
+            assert message is not None and message.status is MailMessageStatus.COMPLETED
+            assert message.processedAt is not None
+            assert handoff is not None and handoff.aiReviewStatus is MailStageStatus.SUCCEEDED
+            assert await session.scalar(select(func.count()).select_from(MailRiskCandidate)) == 0
+
+    asyncio.run(scenario())
 
 
 @pytest.mark.parametrize(
@@ -659,14 +728,21 @@ def test_postgresql_fake_provider_negative_outcomes(
         await _wait_for_task(factory, task_id, expected)
         async with factory() as session:
             handoff = await session.get(MailSourceHandoff, seed["handoff"])
+            message = await session.get(MailMessage, seed["message"])
             assert handoff is not None
+            assert message is not None
             assert (handoff.aiReviewStatus, handoff.failureCode) == (stage, code)
+            assert message.status is (
+                MailMessageStatus.ANALYZING
+                if stage is MailStageStatus.RETRYABLE_FAILURE
+                else MailMessageStatus.FAILED
+            )
             assert await session.scalar(select(func.count()).select_from(MailRiskCandidate)) == 0
 
     extractor = MailRiskExtractionWorker(
         factory,
         cast("SecretCipher", _FakeCipher()),
-        cast(AiProviderClient, _FakeProvider(outcome)),
+        cast(ProviderV2Runtime, _FakeProvider(outcome)),
         cast(MailParseWorker, _FakeParser()),
     )
     with _real_t026_worker(schema, factory, extractor) as celery:
@@ -708,6 +784,11 @@ def test_candidate_mutations_and_metadata_audit_commit_and_rollback_atomically(
     async def scenario() -> None:
         nonlocal seed
         seed = await _seed(factory)
+        async with transaction(factory) as session:
+            message = await session.get(MailMessage, seed["message"])
+            assert message is not None
+            message.status = MailMessageStatus.COMPLETED
+            message.processedAt = datetime.now(UTC)
         candidate_id = await _candidate(factory, seed)
         identity = _identity(seed["owner"])
         service = MailRiskCandidateService(factory)
@@ -730,7 +811,9 @@ def test_candidate_mutations_and_metadata_audit_commit_and_rollback_atomically(
         await invoke(service, candidate_id, identity)
         async with factory() as session:
             candidate = await session.get(MailRiskCandidate, candidate_id)
+            message = await session.get(MailMessage, seed["message"])
             assert candidate is not None
+            assert message is not None and message.status is MailMessageStatus.COMPLETED
             assert candidate.reviewedAt is not None
             assert candidate.status is (
                 MailRiskCandidateStatus.CONFIRMED
@@ -745,6 +828,45 @@ def test_candidate_mutations_and_metadata_audit_commit_and_rollback_atomically(
             assert await session.scalar(select(func.count()).select_from(Risk)) == (
                 1 if operation == "confirm" else 0
             )
+
+    asyncio.run(scenario())
+
+
+def test_postgresql_dev_repair_only_repairs_succeeded_analyzing_rows(
+    t026_postgresql: tuple[str, AsyncEngine, async_sessionmaker[AsyncSession]],
+) -> None:
+    _schema, _engine, factory = t026_postgresql
+
+    async def scenario() -> None:
+        seed = await _seed(factory)
+        async with transaction(factory) as session:
+            handoff = await session.get(MailSourceHandoff, seed["handoff"])
+            message = await session.get(MailMessage, seed["message"])
+            assert handoff is not None and message is not None
+            handoff.aiReviewStatus = MailStageStatus.SUCCEEDED
+            message.status = MailMessageStatus.ANALYZING
+            message.processedAt = None
+            message.processingTrace = cast(
+                "JSONValue",
+                [
+                    {
+                        "stage": "AI_REVIEW",
+                        "status": "COMPLETED",
+                        "detail": "RISK_EXTRACTION_COMPLETED",
+                        "occurredAt": datetime.now(UTC).isoformat(),
+                    }
+                ],
+            )
+        assert await repair_succeeded_analyzing_messages(factory) == 1
+        assert await repair_succeeded_analyzing_messages(factory) == 0
+        async with factory() as session:
+            message = await session.get(MailMessage, seed["message"])
+            assert message is not None and message.status is MailMessageStatus.COMPLETED
+            assert message.processedAt is not None
+            assert sum(
+                1 for item in _trace_dicts(message)
+                if item.get("stage") == "AI_REVIEW" and item.get("status") == "COMPLETED"
+            ) == 1
 
     asyncio.run(scenario())
 

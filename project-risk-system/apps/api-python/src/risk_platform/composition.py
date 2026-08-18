@@ -36,6 +36,7 @@ from risk_platform.ai_providers.v2_adapter import (
 from risk_platform.ai_providers.v2_service import AiProviderV2Service, ProviderV2Runtime
 from risk_platform.audit.http import AuditQueryService
 from risk_platform.auth.service import AuthService
+from risk_platform.auth.wechat import WechatUserInfoClient
 from risk_platform.config import Settings
 from risk_platform.dashboard.service import DashboardService
 from risk_platform.imports import tasks as import_tasks
@@ -147,6 +148,15 @@ def build_services(
     )
     return {
         "auth_service": AuthService.from_settings(sessions, settings),
+        "wechat_user_info_client": (
+            WechatUserInfoClient(
+                settings.wechat_user_info_url,
+                settings.wechat_user_info_timeout_seconds,
+                settings.wechat_user_info_max_retries,
+            )
+            if settings.wechat_user_info_url is not None
+            else None
+        ),
         "risks_service": risks,
         "todos_service": todos,
         "dashboard_service": dashboard,

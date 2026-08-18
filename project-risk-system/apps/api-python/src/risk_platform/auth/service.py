@@ -23,8 +23,9 @@ from risk_platform.admin.models import User, UserStatus
 from risk_platform.audit.models import AuditActorType
 from risk_platform.audit.service import AuditService
 from risk_platform.auth.policy import password_policy_violations
+from risk_platform.auth.models import AuthMethod
 from risk_platform.auth.repository import AuthRepository, UserAccess
-from risk_platform.auth.schemas import AuthenticatedUser, DataScope, RoleCode
+from risk_platform.auth.schemas import AuthenticatedUser, AuthMethod as AuthMethodLiteral, DataScope, RoleCode
 from risk_platform.config import Settings
 from risk_platform.db import transaction
 from risk_platform.shared.errors import ApiError
@@ -130,6 +131,7 @@ class SessionIdentity:
     session_id: UUID
     expires_at: datetime
     user: AuthenticatedUser
+    auth_method: AuthMethod = AuthMethod.PASSWORD
 
 
 @dataclass(frozen=True, slots=True)
@@ -270,6 +272,54 @@ class AuthService:
             )
             return self._unauthorized("账号或密码错误")
 
+        return await self._issue_session(
+            repository, audit, user, context, trace_id, AuthMethod.PASSWORD, now
+        )
+
+    async def issue_wechat_session(
+        self, *, user_id: UUID, context: RequestContext, trace_id: UUID
+    ) -> LoginResult | ApiError:
+        async with transaction(self._session_factory) as session:
+            repository = AuthRepository(session)
+            audit = AuditService(session)
+            user = await repository.user_by_id(user_id, for_update=True)
+            now = self._utc_now_millis()
+            if user is None:
+                return self._unauthorized("登录失败")
+            status_error = self._account_status_error(user, now)
+            if status_error is not None:
+                return status_error
+            return await self._issue_session(
+                repository, audit, user, context, trace_id, AuthMethod.WECHAT, now
+            )
+
+    async def wechat_login(
+        self, *, mobile: str, context: RequestContext, trace_id: UUID
+    ) -> LoginResult | ApiError:
+        async with transaction(self._session_factory) as session:
+            repository = AuthRepository(session)
+            audit = AuditService(session)
+            user = await repository.user_by_mobile(mobile, for_update=True)
+            now = self._utc_now_millis()
+            if user is None:
+                return ApiError(404, "WECHAT_USER_NOT_BOUND", "微信用户未绑定系统账号")
+            status_error = self._account_status_error(user, now)
+            if status_error is not None:
+                return status_error
+            return await self._issue_session(
+                repository, audit, user, context, trace_id, AuthMethod.WECHAT, now
+            )
+
+    async def _issue_session(
+        self,
+        repository: AuthRepository,
+        audit: AuditService,
+        user: User,
+        context: RequestContext,
+        trace_id: UUID,
+        auth_method: AuthMethod,
+        now: datetime,
+    ) -> LoginResult:
         security = await self._runtime_security(repository)
         token = secrets.token_urlsafe(32)
         expires_at = now + timedelta(hours=security.session_hours)
@@ -283,19 +333,32 @@ class AuthService:
             expires_at=expires_at,
             client_ip_hash=self._hash_client_ip(context.client_ip),
             user_agent=context.user_agent[:500] if context.user_agent else None,
+            auth_method=auth_method,
         )
         access = await repository.user_access(user.id)
-        authenticated_user = self._authenticated_user(user, access)
+        authenticated_user = self._authenticated_user(user, access, auth_method)
         await audit.record_success(
             actor_id=user.id,
             actor_type=AuditActorType.USER,
             module="AUTH",
-            action="AUTH_LOGIN_SUCCESS",
+            action=(
+                "AUTH_WECHAT_LOGIN_SUCCESS"
+                if auth_method is AuthMethod.WECHAT
+                else "AUTH_PASSWORD_LOGIN_SUCCESS"
+            ),
             resource_type="SESSION",
             resource_id=str(session_row.id),
             trace_id=trace_id,
         )
         return LoginResult(token=token, expires_at=expires_at, user=authenticated_user)
+
+    @staticmethod
+    def _account_status_error(user: User, now: datetime) -> ApiError | None:
+        if user.status is UserStatus.DISABLED:
+            return ApiError(403, "ACCOUNT_DISABLED", "账号已停用")
+        if user.status is UserStatus.LOCKED and user.lockedUntil and user.lockedUntil > now:
+            return ApiError(423, "ACCOUNT_LOCKED", "账号已锁定")
+        return None
 
     async def authenticate(self, token: str, *, trace_id: UUID) -> SessionIdentity:
         async with transaction(self._session_factory) as session:
@@ -332,7 +395,8 @@ class AuthService:
                 outcome = SessionIdentity(
                     session_id=session_row.id,
                     expires_at=session_row.expiresAt,
-                    user=self._authenticated_user(user, access),
+                    user=self._authenticated_user(user, access, session_row.authMethod),
+                    auth_method=session_row.authMethod,
                 )
         if isinstance(outcome, ApiError):
             raise outcome
@@ -574,7 +638,9 @@ class AuthService:
         return f"{utc_value:%Y-%m-%dT%H:%M:%S}.{milliseconds:03d}Z"
 
     @staticmethod
-    def _authenticated_user(user: User, access: UserAccess) -> AuthenticatedUser:
+    def _authenticated_user(
+        user: User, access: UserAccess, auth_method: AuthMethod = AuthMethod.PASSWORD
+    ) -> AuthenticatedUser:
         roles = sorted({code for code, _scope in access.roles if code in _ROLE_CODES})
         scopes = {scope for _code, scope in access.roles}
         return AuthenticatedUser(
@@ -586,6 +652,7 @@ class AuthService:
             permissions=list(access.permissions),
             dataScope=AuthService._aggregate_data_scope(scopes),
             mustChangePassword=user.mustChangePassword,
+            authMethod=cast(AuthMethodLiteral, auth_method.value),
         )
 
     @staticmethod

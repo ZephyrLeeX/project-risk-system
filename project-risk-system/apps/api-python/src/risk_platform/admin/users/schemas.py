@@ -37,6 +37,7 @@ class AdminUserResponse(BaseModel):
     username: str
     displayName: str
     email: str | None
+    mobile: str | None
     department: DepartmentResponse | None
     status: UserStatus
     role: RoleResponse | None
@@ -72,6 +73,7 @@ class UserMutationRequest(StrictRequestModel):
         pattern=r"^[a-zA-Z][a-zA-Z0-9._-]{2,63}$",
     )
     email: str | None = Field(default=None, max_length=255)
+    mobile: str | None = Field(default=None, min_length=11, max_length=32)
     departmentId: str
     roleId: str
     dataScope: DataScopeType
@@ -105,6 +107,20 @@ class UserMutationRequest(StrictRequestModel):
         if value is not None and value.strip() and ("@" not in value or value.startswith("@")):
             raise ValueError("invalid email")
         return value
+
+    @field_validator("mobile")
+    @classmethod
+    def valid_mobile(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        normalized = value.strip()
+        if (
+            len(normalized) != 11
+            or not normalized.isdecimal()
+            or not normalized.startswith("1")
+        ):
+            raise ValueError("invalid mobile")
+        return normalized
 
 
 class UserMutationResponse(BaseModel):

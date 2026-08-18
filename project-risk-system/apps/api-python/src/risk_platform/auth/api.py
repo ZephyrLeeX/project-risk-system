@@ -5,8 +5,10 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi.responses import RedirectResponse
 
+from risk_platform.auth.models import AuthMethod
 from risk_platform.auth.schemas import (
     ChangePasswordRequest,
     ChangePasswordResponse,
@@ -14,6 +16,7 @@ from risk_platform.auth.schemas import (
     SessionResponse,
 )
 from risk_platform.auth.service import AuthService, RequestContext, SessionIdentity
+from risk_platform.auth.wechat import WechatUserInfoClient, WechatUserInfoError
 from risk_platform.config import Settings
 from risk_platform.shared.errors import ApiError
 from risk_platform.shared.http import ApiResponse, ok
@@ -22,12 +25,27 @@ from risk_platform.shared.tracing import get_trace_id
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+_WECHAT_ERROR_CODES = frozenset(
+    {
+        "WECHAT_TOKEN_INVALID",
+        "WECHAT_USER_NOT_BOUND",
+        "WECHAT_USER_INFO_UNAVAILABLE",
+        "ACCOUNT_DISABLED",
+        "ACCOUNT_LOCKED",
+    }
+)
+
 
 def get_auth_service(request: Request) -> AuthService:
     service = getattr(request.app.state, "auth_service", None)
     if not isinstance(service, AuthService):
         raise RuntimeError("authentication service is not configured")
     return service
+
+
+def get_wechat_user_info_client(request: Request) -> WechatUserInfoClient | None:
+    client = getattr(request.app.state, "wechat_user_info_client", None)
+    return client if isinstance(client, WechatUserInfoClient) else None
 
 
 def validate_request_origin(request: Request) -> None:
@@ -62,7 +80,7 @@ async def current_identity(
 async def require_password_changed(
     identity: Annotated[SessionIdentity, Depends(current_identity)],
 ) -> SessionIdentity:
-    if identity.user.mustChangePassword:
+    if identity.auth_method is AuthMethod.PASSWORD and identity.user.mustChangePassword:
         raise ApiError(403, "FORBIDDEN", "请先修改初始密码")
     return identity
 
@@ -104,6 +122,40 @@ async def login(
         ),
         message,
     )
+
+
+@router.get("/wechat-login", status_code=303, include_in_schema=True)
+async def wechat_login(
+    request: Request,
+    service: Annotated[AuthService, Depends(get_auth_service)],
+    client: Annotated[WechatUserInfoClient | None, Depends(get_wechat_user_info_client)],
+    person_token: str | None = Query(default=None, alias="personToken", max_length=2048),
+) -> RedirectResponse:
+    """Exchange the one-request bearer credential for the normal session cookie."""
+    if person_token is None or person_token == "":
+        return _wechat_redirect("WECHAT_TOKEN_INVALID")
+    if client is None:
+        return _wechat_redirect("WECHAT_USER_INFO_UNAVAILABLE")
+    try:
+        mobile = await client.fetch_mobile(person_token)
+    except WechatUserInfoError as exc:
+        return _wechat_redirect(exc.code)
+    result = await service.wechat_login(
+        mobile=mobile,
+        context=_request_context(request),
+        trace_id=UUID(get_trace_id(request)),
+    )
+    if isinstance(result, ApiError):
+        return _wechat_redirect(result.code)
+    settings: Settings = request.app.state.settings
+    response = _wechat_redirect(None)
+    response.set_cookie(
+        settings.session_cookie_name,
+        result.token,
+        expires=result.expires_at,
+        **session_cookie_options(settings),
+    )
+    return response
 
 
 @router.get("/session", response_model=ApiResponse[SessionResponse])
@@ -180,9 +232,25 @@ def _clear_cookie(request: Request, response: Response) -> None:
     )
 
 
+def _wechat_redirect(error_code: str | None) -> RedirectResponse:
+    safe_code = error_code if error_code in _WECHAT_ERROR_CODES else "WECHAT_USER_INFO_UNAVAILABLE"
+    location = "/" if error_code is None else f"/login?wechatError={safe_code}"
+    return RedirectResponse(
+        location=location,
+        status_code=303,
+        headers={
+            "Cache-Control": "no-store",
+            "Pragma": "no-cache",
+            "Referrer-Policy": "no-referrer",
+            "X-Robots-Tag": "noindex, nofollow",
+        },
+    )
+
+
 __all__ = [
     "current_identity",
     "get_auth_service",
+    "get_wechat_user_info_client",
     "require_password_changed",
     "router",
     "validate_request_origin",

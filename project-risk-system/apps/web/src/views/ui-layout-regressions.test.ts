@@ -19,11 +19,10 @@ const prototypePageStyles = readFileSync(
 );
 
 describe("live UI layout regressions", () => {
-  it("renders Agent capabilities as separate, wrappable chips", () => {
-    expect(dashboardView).toContain('class="agent-tool-list"');
-    expect(dashboardView).toContain('v-for="tool in agentHelp.tools"');
-    expect(prototypePageStyles).toContain(".agent-tool-list{display:flex");
-    expect(prototypePageStyles).toContain("flex-wrap:wrap");
+  it("does not expose the internal Agent capability directory", () => {
+    expect(dashboardView).not.toContain("可用能力：");
+    expect(dashboardView).not.toContain("agentHelp.tools");
+    expect(dashboardView).not.toContain("class=\"agent-tool-list\"");
   });
 
   it("keeps Agent suggestions content-sized instead of assigning them a viewport row", () => {

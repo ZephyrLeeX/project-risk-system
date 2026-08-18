@@ -67,6 +67,12 @@ class User(Base):
     __table_args__ = (
         Index("users_departmentId_idx", "departmentId"),
         Index("users_status_idx", "status"),
+        Index(
+            "users_mobile_key",
+            "mobile",
+            unique=True,
+            postgresql_where=text('"mobile" IS NOT NULL'),
+        ),
         Index("users_username_lower_key", text('lower("username")'), unique=True),
         Index("users_username_key", "username", unique=True),
     )
@@ -77,6 +83,7 @@ class User(Base):
     passwordHash: Mapped[str] = mapped_column(String(255), nullable=False)
     displayName: Mapped[str] = mapped_column(String(128), nullable=False)
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    mobile: Mapped[str | None] = mapped_column(String(32), nullable=True)
     status: Mapped[UserStatus] = mapped_column(
         Enum(UserStatus, name="UserStatus", native_enum=True),
         nullable=False,

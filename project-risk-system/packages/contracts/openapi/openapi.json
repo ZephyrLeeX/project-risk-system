@@ -184,6 +184,13 @@
             ],
             "title": "Email"
           },
+          "mobile": {
+            "anyOf": [
+              {"type": "string"},
+              {"type": "null"}
+            ],
+            "title": "Mobile"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -248,6 +255,7 @@
           "assignedProjectIds",
           "assignedProjectCount",
           "mustChangePassword",
+          "mobile",
           "lastLoginAt",
           "lockedUntil",
           "createdAt",
@@ -3670,6 +3678,12 @@
           "mustChangePassword": {
             "title": "Mustchangepassword",
             "type": "boolean"
+          },
+          "authMethod": {
+            "enum": ["PASSWORD", "WECHAT"],
+            "title": "Authmethod",
+            "type": "string",
+            "default": "PASSWORD"
           },
           "permissions": {
             "items": {
@@ -12369,6 +12383,13 @@
             ],
             "title": "Email"
           },
+          "mobile": {
+            "anyOf": [
+              {"maxLength": 32, "minLength": 11, "type": "string"},
+              {"type": "null"}
+            ],
+            "title": "Mobile"
+          },
           "enabled": {
             "title": "Enabled",
             "type": "boolean"
@@ -16433,6 +16454,38 @@
         "tags": [
           "auth"
         ]
+      }
+    },
+    "/api/auth/wechat-login": {
+      "get": {
+        "operationId": "wechat_login_api_auth_wechat_login_get",
+        "parameters": [
+          {
+            "name": "personToken",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                { "type": "string", "maxLength": 2048 },
+                { "type": "null" }
+              ],
+              "title": "Persontoken"
+            }
+          }
+        ],
+        "responses": {
+          "303": { "description": "Successful Response" },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Wechat Login",
+        "tags": ["auth"]
       }
     },
     "/api/auth/logout": {

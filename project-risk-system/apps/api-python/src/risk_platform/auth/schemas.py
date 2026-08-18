@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from risk_platform.shared.http import StrictRequestModel
 
 type RoleCode = Literal["SYSTEM_ADMIN", "RISK_ADMIN", "PROJECT_MANAGER", "VIEWER_AUDITOR"]
+type AuthMethod = Literal["PASSWORD", "WECHAT"]
 type DataScope = Literal["ALL", "OWNED", "ASSIGNED", "OWNED_OR_ASSIGNED", "NONE"]
 
 
@@ -34,6 +35,7 @@ class AuthenticatedUser(BaseModel):
     permissions: list[str]
     dataScope: DataScope
     mustChangePassword: bool
+    authMethod: AuthMethod = "PASSWORD"
 
 
 class SessionResponse(BaseModel):
@@ -51,6 +53,7 @@ class ChangePasswordResponse(BaseModel):
 
 __all__ = [
     "AuthenticatedUser",
+    "AuthMethod",
     "ChangePasswordRequest",
     "ChangePasswordResponse",
     "DataScope",

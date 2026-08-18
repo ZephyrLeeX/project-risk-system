@@ -133,6 +133,7 @@ class AdminUsersService:
                 username=normalized,
                 displayName=payload.displayName.strip(),
                 email=_normalize_optional(payload.email),
+                mobile=payload.mobile,
                 passwordHash=await asyncio.to_thread(self._password_hasher.hash, password),
                 departmentId=UUID(payload.departmentId),
                 status=UserStatus.ACTIVE if payload.enabled else UserStatus.DISABLED,
@@ -178,6 +179,7 @@ class AdminUsersService:
             user.username = normalized
             user.displayName = payload.displayName.strip()
             user.email = _normalize_optional(payload.email)
+            user.mobile = payload.mobile
             user.departmentId = UUID(payload.departmentId)
             user.status = UserStatus.ACTIVE if payload.enabled else UserStatus.DISABLED
             if not payload.enabled:
@@ -408,6 +410,7 @@ class AdminUsersService:
             username=user.username,
             displayName=user.displayName,
             email=user.email,
+            mobile=user.mobile,
             department=(
                 DepartmentResponse(
                     id=str(department.id), code=department.code, name=department.name

@@ -1057,6 +1057,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/auth/wechat-login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["wechat_login_api_auth_wechat_login_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auth/logout": {
         parameters: {
             query?: never;
@@ -1894,6 +1910,8 @@ export interface components {
             displayName: string;
             /** Email */
             email: string | null;
+            /** Mobile */
+            mobile: string | null;
             /** Id */
             id: string;
             /** Lastloginat */
@@ -1902,6 +1920,8 @@ export interface components {
             lockedUntil: string | null;
             /** Mustchangepassword */
             mustChangePassword: boolean;
+            /** Authmethod */
+            authMethod?: "PASSWORD" | "WECHAT";
             role: components["schemas"]["risk_platform__admin__users__schemas__RoleResponse"] | null;
             status: components["schemas"]["UserStatus"];
             /** Updatedat */
@@ -6054,6 +6074,8 @@ export interface components {
             displayName: string;
             /** Email */
             email?: string | null;
+            /** Mobile */
+            mobile?: string | null;
             /** Enabled */
             enabled: boolean;
             /** Projectids */
@@ -8415,6 +8437,35 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ApiResponse_SessionResponse_"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    wechat_login_api_auth_wechat_login_get: {
+        parameters: {
+            query?: {
+                personToken?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            303: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

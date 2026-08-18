@@ -12,7 +12,7 @@ from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from risk_platform.admin.models import Department, User
-from risk_platform.auth.models import Session
+from risk_platform.auth.models import AuthMethod, Session
 from risk_platform.model_types import JSONValue
 from risk_platform.rbac.models import Permission, Role, RolePermission, UserRole
 from risk_platform.system_config.models import SystemConfigRelease
@@ -39,6 +39,12 @@ class AuthRepository:
 
     async def user_by_id(self, user_id: UUID, *, for_update: bool) -> User | None:
         statement: Select[tuple[User]] = select(User).where(User.id == user_id)
+        if for_update:
+            statement = statement.with_for_update()
+        return cast(User | None, await self._session.scalar(statement))
+
+    async def user_by_mobile(self, mobile: str, *, for_update: bool) -> User | None:
+        statement: Select[tuple[User]] = select(User).where(User.mobile == mobile)
         if for_update:
             statement = statement.with_for_update()
         return cast(User | None, await self._session.scalar(statement))
@@ -82,6 +88,7 @@ class AuthRepository:
         expires_at: datetime,
         client_ip_hash: str | None,
         user_agent: str | None,
+        auth_method: AuthMethod = AuthMethod.PASSWORD,
     ) -> Session:
         row = Session(
             tokenHash=token_hash,
@@ -89,6 +96,7 @@ class AuthRepository:
             expiresAt=expires_at,
             clientIpHash=client_ip_hash,
             userAgent=user_agent,
+            authMethod=auth_method,
         )
         self._session.add(row)
         await self._session.flush()

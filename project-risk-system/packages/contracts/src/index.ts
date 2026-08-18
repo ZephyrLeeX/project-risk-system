@@ -61,6 +61,7 @@ export interface AuthenticatedUser {
   permissions: string[];
   dataScope: DataScopeType;
   mustChangePassword: boolean;
+  authMethod?: "PASSWORD" | "WECHAT";
 }
 
 export interface LoginResponse {
@@ -229,6 +230,7 @@ export interface AdminUserListItem {
   username: string;
   displayName: string;
   email: string | null;
+  mobile: string | null;
   department: DepartmentOption | null;
   status: "ACTIVE" | "DISABLED" | "LOCKED";
   role: RoleListItem | null;
@@ -253,6 +255,7 @@ export interface UserMutationRequest {
   displayName: string;
   username: string;
   email?: string | null;
+  mobile?: string | null;
   departmentId: string;
   roleId: string;
   dataScope: DataScopeType;

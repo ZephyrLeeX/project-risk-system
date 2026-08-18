@@ -458,11 +458,79 @@ class MailRiskExtractionWorker:
                         confidence=int(cast(int, risk["confidence"])),
                     )
                 )
-            handoff.aiReviewStatus, handoff.failureCode, handoff.failureSummary = (
-                MailStageStatus.SUCCEEDED,
-                None,
-                None,
+            message = await session.scalar(
+                select(MailMessage)
+                .where(
+                    MailMessage.mailboxConfigId == mailbox_id,
+                    MailMessage.uidValidity == uid_validity,
+                    MailMessage.imapUid == imap_uid,
+                )
+                .with_for_update()
             )
+            self._apply_ai_stage(
+                session,
+                handoff,
+                message,
+                MailStageStatus.SUCCEEDED,
+                "RISK_EXTRACTION_COMPLETED",
+            )
+
+    @staticmethod
+    def _apply_ai_stage(
+        session: AsyncSession,
+        handoff: MailSourceHandoff,
+        message: MailMessage | None,
+        status: MailStageStatus,
+        detail: str,
+        *,
+        parse_stage: str | None = None,
+    ) -> None:
+        """Apply handoff and message stage facts inside the caller's transaction."""
+
+        handoff.aiReviewStatus = status
+        handoff.failureCode = None if status is MailStageStatus.SUCCEEDED else detail
+        handoff.failureSummary = handoff.failureCode
+        if message is None:
+            return
+
+        occurred_at = datetime.now(UTC)
+        trace = message.processingTrace if isinstance(message.processingTrace, list) else []
+        trace_status = (
+            "COMPLETED"
+            if status is MailStageStatus.SUCCEEDED
+            else "FAILED"
+            if status is MailStageStatus.PERMANENT_FAILURE
+            else "RUNNING"
+        )
+        if not (
+            status is MailStageStatus.SUCCEEDED
+            and any(
+                isinstance(item, dict)
+                and item.get("stage") == "AI_REVIEW"
+                and item.get("status") == "COMPLETED"
+                for item in trace
+            )
+        ):
+            trace_item: dict[str, JSONValue] = {
+                "stage": "AI_REVIEW",
+                "status": trace_status,
+                "detail": detail,
+                "occurredAt": occurred_at.isoformat(),
+            }
+            if parse_stage:
+                trace_item["parseStage"] = parse_stage
+            message.processingTrace = cast(JSONValue, [*trace, trace_item])
+
+        if status is MailStageStatus.SUCCEEDED:
+            message.status = MailMessageStatus.COMPLETED
+            message.processedAt = occurred_at
+            message.failureCode = message.failureSummary = None
+        elif status is MailStageStatus.PERMANENT_FAILURE:
+            message.status = MailMessageStatus.FAILED
+            message.failureCode = message.failureSummary = detail
+        else:
+            message.status = MailMessageStatus.ANALYZING
+            message.failureCode = message.failureSummary = detail
 
     async def _stage(
         self,
@@ -485,11 +553,6 @@ class MailRiskExtractionWorker:
                 .with_for_update()
             )
             if handoff is not None:
-                handoff.aiReviewStatus, handoff.failureCode, handoff.failureSummary = (
-                    status,
-                    code,
-                    code,
-                )
                 message = await session.scalar(
                     select(MailMessage)
                     .where(
@@ -499,42 +562,9 @@ class MailRiskExtractionWorker:
                     )
                     .with_for_update()
                 )
-                if message is not None:
-                    trace = (
-                        message.processingTrace
-                        if isinstance(message.processingTrace, list)
-                        else []
-                    )
-                    trace_status = (
-                        "COMPLETED"
-                        if status is MailStageStatus.SUCCEEDED
-                        else "FAILED"
-                        if status is MailStageStatus.PERMANENT_FAILURE
-                        else "RUNNING"
-                    )
-                    message.processingTrace = cast(
-                        JSONValue,
-                        [
-                            *trace,
-                            {
-                                "stage": "AI_REVIEW",
-                                "status": trace_status,
-                                "detail": code,
-                                **({"parseStage": parse_stage} if parse_stage else {}),
-                                "occurredAt": datetime.now(UTC).isoformat(),
-                            },
-                        ],
-                    )
-                    if status is MailStageStatus.SUCCEEDED:
-                        message.status = MailMessageStatus.COMPLETED
-                        message.processedAt = datetime.now(UTC)
-                        message.failureCode = message.failureSummary = None
-                    elif status is MailStageStatus.PERMANENT_FAILURE:
-                        message.status = MailMessageStatus.FAILED
-                        message.failureCode = message.failureSummary = code
-                    else:
-                        message.status = MailMessageStatus.ANALYZING
-                        message.failureCode = message.failureSummary = code
+                self._apply_ai_stage(
+                    session, handoff, message, status, code, parse_stage=parse_stage
+                )
 
     async def _exhausted(self, mailbox_id: UUID, uid_validity: int, imap_uid: int) -> bool:
         async with self._sessions() as session:

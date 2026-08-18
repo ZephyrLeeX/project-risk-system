@@ -28,6 +28,7 @@ dependencies = [
 risk-platform-seed = "risk_platform.seed:main"
 risk-platform-demo-seed = "risk_platform.demo_seed:main"
 risk-platform-openapi = "risk_platform.openapi_export:main"
+risk-platform-mailbox-dev-repair = "risk_platform.mailbox.dev_repair:main"
 
 [dependency-groups]
 dev = [

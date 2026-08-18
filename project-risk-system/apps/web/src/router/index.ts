@@ -134,7 +134,8 @@ router.beforeEach(async (to) => {
     };
   }
   if (
-    auth.user?.mustChangePassword &&
+    auth.user?.authMethod === "PASSWORD" &&
+    auth.user.mustChangePassword &&
     to.path !== "/change-password"
   ) {
     return "/change-password";
@@ -149,7 +150,7 @@ router.beforeEach(async (to) => {
   if (
     to.meta.guestOnly &&
     auth.isAuthenticated &&
-    !auth.user?.mustChangePassword
+    !(auth.user?.authMethod === "PASSWORD" && auth.user.mustChangePassword)
   ) {
     return "/";
   }

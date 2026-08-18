@@ -17,6 +17,13 @@ const showPassword = ref(false);
 const submitting = ref(false);
 const errorMessage = ref("");
 const forgotOpen = ref(false);
+const wechatErrorMessages: Record<string, string> = {
+  WECHAT_TOKEN_INVALID: "微信登录凭证无效，请从小程序重新进入",
+  WECHAT_USER_NOT_BOUND: "微信手机号尚未绑定系统账号，请联系管理员",
+  WECHAT_USER_INFO_UNAVAILABLE: "微信用户信息服务暂不可用，请稍后重试",
+  ACCOUNT_DISABLED: "账号已停用，请联系管理员",
+  ACCOUNT_LOCKED: "账号已锁定，请稍后重试",
+};
 
 const redirectPath = computed(() => {
   const redirect = route.query.redirect;
@@ -26,6 +33,8 @@ const redirectPath = computed(() => {
 });
 
 onMounted(() => {
+  const code = route.query.wechatError;
+  if (typeof code === "string") errorMessage.value = wechatErrorMessages[code] ?? "微信登录失败，请稍后重试";
   const remembered = window.localStorage.getItem(REMEMBERED_ACCOUNT_KEY);
   if (remembered) {
     username.value = remembered;

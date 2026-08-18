@@ -46,6 +46,7 @@ const form = reactive<UserMutationRequest>({
   displayName: "",
   username: "",
   email: null,
+  mobile: null,
   departmentId: "",
   roleId: "",
   dataScope: "NONE",
@@ -195,6 +196,7 @@ function openCreate(): void {
     displayName: "",
     username: "",
     email: null,
+    mobile: null,
     departmentId: departments.value[0]?.id ?? "",
     roleId: roles.value.find((role) => role.enabled)?.id ?? "",
     dataScope:
@@ -212,6 +214,7 @@ function openEdit(user: AdminUserListItem): void {
     displayName: user.displayName,
     username: user.username,
     email: user.email,
+    mobile: user.mobile,
     departmentId: user.department?.id ?? "",
     roleId: user.role?.id ?? "",
     dataScope: user.dataScope,
@@ -231,6 +234,7 @@ async function saveUser(): Promise<void> {
       displayName: form.displayName.trim(),
       username: form.username.trim(),
       email: form.email?.trim() || null,
+      mobile: form.mobile?.trim() || null,
       projectIds: [...form.projectIds],
     };
     const result = editingUserId.value
@@ -623,6 +627,16 @@ function getErrorMessage(error: unknown): string {
                 type="email"
                 maxlength="255"
                 placeholder="选填，仅用于账号通知"
+              />
+            </label>
+            <label class="full-form-field">
+              <span>手机号（微信登录绑定）</span>
+              <input
+                v-model="form.mobile"
+                type="tel"
+                maxlength="11"
+                pattern="1[3-9][0-9]{9}"
+                placeholder="选填，例如 13800138000"
               />
             </label>
           </section>

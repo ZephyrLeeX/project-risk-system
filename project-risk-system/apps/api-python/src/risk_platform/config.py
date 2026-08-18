@@ -76,6 +76,9 @@ class Settings(BaseModel):
     ai_outbound_allowed_cidrs: tuple[IpNetwork, ...] = ()
     session_cookie_name: str = "project_risk_session"
     session_secret_file: Path | None = None
+    wechat_user_info_url: str | None = None
+    wechat_user_info_timeout_seconds: float = Field(default=3.0, gt=0, le=30)
+    wechat_user_info_max_retries: int = Field(default=2, ge=0, le=3)
 
     @field_validator("cors_origins")
     @classmethod
@@ -135,9 +138,14 @@ class Settings(BaseModel):
             "REQUEST_ORIGIN_VALIDATION_ENABLED": "request_origin_validation_enabled",
             "SESSION_COOKIE_NAME": "session_cookie_name",
             "SESSION_SECRET_FILE": "session_secret_file",
+            "WECHAT_USER_INFO_URL": "wechat_user_info_url",
+            "WECHAT_USER_INFO_TIMEOUT_SECONDS": "wechat_user_info_timeout_seconds",
+            "WECHAT_USER_INFO_MAX_RETRIES": "wechat_user_info_max_retries",
         }
         for env_name, field_name in scalar_names.items():
             if env_name in source:
+                if env_name == "WECHAT_USER_INFO_URL" and not source[env_name].strip():
+                    continue
                 raw[field_name] = source[env_name]
 
         if "CORS_ORIGIN" in source:

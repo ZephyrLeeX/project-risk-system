@@ -130,7 +130,7 @@ def test_latest_upgrade_has_one_head_and_capability_constraints(
     capability_schema: Connection,
 ) -> None:
     config = Config(ROOT / "alembic.ini")
-    assert ScriptDirectory.from_config(config).get_heads() == ["20260817_0013"]
+    assert ScriptDirectory.from_config(config).get_heads() == ["20260818_0015"]
     inspector = inspect(capability_schema)
     assert {
         "agent_conversations",

@@ -24,7 +24,6 @@ import type { OpenApi } from "@risk-platform/contracts";
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 
-import { agentApi, type AgentHelpResponse } from "@/api/agent";
 import { dashboardApi } from "@/api/dashboard";
 import {
   weeklyReportsApi,
@@ -107,7 +106,6 @@ const interactionFields = reactive<Record<string, string>>({});
 const interactionValidationError = ref("");
 const selectedInteractionCandidates = ref<string[]>([]);
 const manualProjectName = ref("");
-const agentHelp = ref<AgentHelpResponse | null>(null);
 const agentSuggestions = [
   "当前有哪些高风险？",
   "风险项目待回款是多少？",
@@ -392,7 +390,6 @@ function openMetricDetail(key: string): void {
 function openAgent(): void {
   agentOpen.value = true;
   profileMenuOpen.value = false;
-  void loadAgentHelp();
 }
 
 function closeAgent(): void {
@@ -404,15 +401,6 @@ function startNewAgentConversation(): void {
   if (agent.sending.value) return;
   agent.reset();
   agentInput.value = "";
-}
-
-async function loadAgentHelp(): Promise<void> {
-  if (agentHelp.value) return;
-  try {
-    agentHelp.value = await agentApi.help();
-  } catch {
-    // The tool directory is optional context; the drawer still works without it.
-  }
 }
 
 function sendAgent(prompt?: string): void {
@@ -2201,13 +2189,6 @@ onUnmounted(() => {
           <button type="button" aria-label="关闭" @click="closeAgent">×</button>
         </div>
       </header>
-
-      <div v-if="agentHelp && agentHelp.tools.length" class="agent-tools">
-        <small>可用能力：</small>
-        <div class="agent-tool-list">
-          <span v-for="tool in agentHelp.tools" :key="tool.name">{{ tool.name }}</span>
-        </div>
-      </div>
 
       <div v-if="!agent.state.messages.length && agent.state.status === 'idle'" class="agent-suggestions">
         <button

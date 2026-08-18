@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from datetime import datetime
+from enum import StrEnum
 from uuid import UUID
 
 from sqlalchemy import (
+    Enum,
     ForeignKey,
     Index,
     String,
@@ -19,6 +21,11 @@ from risk_platform.model_types import new_uuid
 from risk_platform.models import Base
 
 UUIDType = PG_UUID
+
+
+class AuthMethod(StrEnum):
+    PASSWORD = "PASSWORD"
+    WECHAT = "WECHAT"
 
 
 class Session(Base):
@@ -45,8 +52,16 @@ class Session(Base):
     )
     clientIpHash: Mapped[str | None] = mapped_column(String(128), nullable=True)
     userAgent: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    authMethod: Mapped[AuthMethod] = mapped_column(
+        Enum(AuthMethod, name="AuthMethod", native_enum=True),
+        nullable=False,
+        server_default="PASSWORD",
+    )
     createdAt: Mapped[datetime] = mapped_column(
         TIMESTAMP(timezone=True, precision=3),
         nullable=False,
         server_default=text("CURRENT_TIMESTAMP"),
     )
+
+
+__all__ = ["AuthMethod", "Session"]
