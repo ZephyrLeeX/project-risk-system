@@ -115,12 +115,12 @@ async function confirmProject(projectId: string) {
   try {
     await mailboxApi.confirmProject(selected.value.id, projectId);
     selected.value = await mailboxApi.message(selected.value.id);
-    await loadMessages();
+    await loadMails();
     notify("项目已确认，邮件已继续风险识别");
   } catch (error) {
     notify(failureMessage(error));
   } finally {
-    actionBusy.value = null;
+    actionBusy.value = "";
   }
 }
 
