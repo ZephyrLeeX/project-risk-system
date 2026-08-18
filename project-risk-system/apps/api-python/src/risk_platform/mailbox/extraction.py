@@ -52,6 +52,13 @@ from risk_platform.weekly_reports.service import invalidate_candidate
 
 SCHEMA_VERSION = "MAIL_PROVIDER_DERIVED_CONTENT_V2"
 CATEGORY_OPTIONS_VERSION = "RISK_CATEGORY_OPTIONS_V1"
+PARSE_STAGE_JSON_DECODE_FAILED = "JSON_DECODE_FAILED"
+PARSE_STAGE_TOP_LEVEL_SCHEMA_INVALID = "TOP_LEVEL_SCHEMA_INVALID"
+PARSE_STAGE_ITEM_SCHEMA_INVALID = "ITEM_SCHEMA_INVALID"
+PARSE_STAGE_PROJECT_OPTION_INVALID = "PROJECT_OPTION_INVALID"
+PARSE_STAGE_CATEGORY_OPTION_INVALID = "CATEGORY_OPTION_INVALID"
+PARSE_STAGE_LEVEL_INVALID = "LEVEL_INVALID"
+PARSE_STAGE_FIELD_VALUE_INVALID = "FIELD_VALUE_INVALID"
 _EMAIL = re.compile(r"\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b")
 _URL = re.compile(r"https?://\S+", re.I)
 _NUMBER = re.compile(r"(?<!\d)\d{7,20}(?!\d)")
@@ -68,6 +75,14 @@ class _CategoryOption:
     name: str
     description: str | None
     default_level: str | None
+
+
+class ProviderOutputError(ValueError):
+    """Strict provider-output failure with metadata-only classification."""
+
+    def __init__(self, stage: str) -> None:
+        super().__init__("PROVIDER_INVALID_OUTPUT")
+        self.stage = stage
 
 
 def _ai_extraction_disabled(mailbox: MailboxConfig | None) -> bool:
@@ -149,13 +164,13 @@ def _parse_output(
     try:
         value = json.loads(raw)
     except json.JSONDecodeError:
-        raise ValueError("PROVIDER_INVALID_OUTPUT") from None
+        raise ProviderOutputError(PARSE_STAGE_JSON_DECODE_FAILED) from None
     if (
         not isinstance(value, dict)
         or set(value) != {"risks"}
         or not isinstance(value["risks"], list)
     ):
-        raise ValueError("PROVIDER_INVALID_OUTPUT")
+        raise ProviderOutputError(PARSE_STAGE_TOP_LEVEL_SCHEMA_INVALID)
     risks: list[dict[str, object]] = []
     for item in value["risks"]:
         required = {
@@ -168,27 +183,27 @@ def _parse_output(
             "confidence",
         }
         if not isinstance(item, dict) or set(item) != required:
-            raise ValueError("PROVIDER_INVALID_OUTPUT")
+            raise ProviderOutputError(PARSE_STAGE_ITEM_SCHEMA_INVALID)
         project, category, level = (
             item["project_option_id"],
             item["category_option_id"],
             item["level"],
         )
         if not isinstance(project, str) or project not in projects:
-            raise ValueError("PROVIDER_INVALID_OUTPUT")
+            raise ProviderOutputError(PARSE_STAGE_PROJECT_OPTION_INVALID)
         if not isinstance(category, str) or category not in categories:
-            raise ValueError("PROVIDER_INVALID_OUTPUT")
+            raise ProviderOutputError(PARSE_STAGE_CATEGORY_OPTION_INVALID)
         if not isinstance(level, str) or level not in {"HIGH", "MEDIUM", "LOW"}:
-            raise ValueError("PROVIDER_INVALID_OUTPUT")
+            raise ProviderOutputError(PARSE_STAGE_LEVEL_INVALID)
         fields = [item[x] for x in ("description", "evidence", "suggestion")]
         if not all(isinstance(x, str) and 2 <= len(x.strip()) <= 4000 for x in fields):
-            raise ValueError("PROVIDER_INVALID_OUTPUT")
+            raise ProviderOutputError(PARSE_STAGE_FIELD_VALUE_INVALID)
         if (
             isinstance(item["confidence"], bool)
             or not isinstance(item["confidence"], int)
             or not 0 <= item["confidence"] <= 100
         ):
-            raise ValueError("PROVIDER_INVALID_OUTPUT")
+            raise ProviderOutputError(PARSE_STAGE_FIELD_VALUE_INVALID)
         risks.append(
             {
                 "project_id": projects[project],
@@ -281,6 +296,15 @@ class MailRiskExtractionWorker:
                 "CATEGORY_MAPPING_STALE",
             )
             raise
+        except ProviderOutputError as error:
+            await self._stage(
+                mailbox_id,
+                uid_validity,
+                imap_uid,
+                MailStageStatus.PERMANENT_FAILURE,
+                "PROVIDER_INVALID_OUTPUT",
+                parse_stage=error.stage,
+            )
         except ValueError as error:
             await self._stage(
                 mailbox_id, uid_validity, imap_uid, MailStageStatus.PERMANENT_FAILURE, str(error)
@@ -391,7 +415,14 @@ class MailRiskExtractionWorker:
             matches = [item for item in matches if item.projectId == message.resolvedProjectId]
         project_map = {f"P{i}": item.projectId for i, item in enumerate(matches, 1)}
         request = _provider_payload(body, attachments, source_date, options)
-        request["project_options"] = list(project_map)
+        projects = (
+            await session.scalars(select(Project).where(Project.id.in_(project_map.values())))
+        ).all()
+        project_names = {project.id: project.name for project in projects}
+        request["project_options"] = [
+            {"option_id": option_id, "name": project_names[project_id]}
+            for option_id, project_id in project_map.items()
+        ]
         raw = await self._client.extract_risks(request)
         try:
             risks = _parse_output(raw, project_map, {x.option_id: x.category_id for x in options})
@@ -434,7 +465,14 @@ class MailRiskExtractionWorker:
             )
 
     async def _stage(
-        self, mailbox_id: UUID, uid_validity: int, imap_uid: int, status: MailStageStatus, code: str
+        self,
+        mailbox_id: UUID,
+        uid_validity: int,
+        imap_uid: int,
+        status: MailStageStatus,
+        code: str,
+        *,
+        parse_stage: str | None = None,
     ) -> None:
         async with transaction(self._sessions) as session:
             handoff = await session.scalar(
@@ -482,6 +520,7 @@ class MailRiskExtractionWorker:
                                 "stage": "AI_REVIEW",
                                 "status": trace_status,
                                 "detail": code,
+                                **({"parseStage": parse_stage} if parse_stage else {}),
                                 "occurredAt": datetime.now(UTC).isoformat(),
                             },
                         ],

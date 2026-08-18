@@ -28,11 +28,14 @@ from risk_platform.ai_providers.models import (
     AiProviderConfig,
     AiProviderProtocol,
 )
+from risk_platform.ai_providers.v2_adapter import ProviderChatRequest
+from risk_platform.ai_providers.v2_service import ProviderV2Runtime
 from risk_platform.audit.models import AuditActorType, AuditLog
 from risk_platform.audit.service import AuditService
 from risk_platform.auth.schemas import AuthenticatedUser, DataScope
 from risk_platform.auth.service import SessionIdentity
 from risk_platform.db import create_database_engine, create_session_factory, transaction
+from risk_platform.mailbox.ai import MailboxProviderV2
 from risk_platform.mailbox.entrypoint import routers
 from risk_platform.mailbox.extraction import (
     MailRiskCandidateService,
@@ -123,6 +126,44 @@ def test_provider_category_mapping_fails_closed(output: str) -> None:
             {"P1": UUID("00000000-0000-0000-0000-000000000010")},
             {"C1": UUID("00000000-0000-0000-0000-000000000001")},
         )
+
+
+def test_mailbox_v2_risk_prompt_freezes_schema_and_requests_json_mode() -> None:
+    class Runtime:
+        def __init__(self) -> None:
+            self.request: object | None = None
+
+        async def chat(self, request: object) -> SimpleNamespace:
+            self.request = request
+            return SimpleNamespace(content='{"risks":[]}')
+
+    runtime = Runtime()
+    result = asyncio.run(
+            MailboxProviderV2(cast(ProviderV2Runtime, runtime)).extract_risks(
+            {
+                "project_options": [{"option_id": "P1", "name": "WSLDEMO-ERP 系统升级"}],
+                "risk_category_options": [{"option_id": "C1", "name": "进度"}],
+            }
+        )
+    )
+
+    assert result == '{"risks":[]}'
+    request = cast(ProviderChatRequest, runtime.request)
+    assert request is not None
+    assert request.response_format is not None
+    assert request.response_format.value == "JSON_OBJECT"
+    instruction = request.messages[0].content
+    assert instruction is not None
+    for required in (
+        "these seven fields",
+        "project_option_id",
+        "category_option_id",
+        "evidence may only cite",
+        "suggestion is a recommended measure",
+        "Normal progress is not a risk",
+        'return exactly {"risks":[]}',
+    ):
+        assert required in instruction
 
 
 def test_disabled_mailbox_skips_ai_extraction_without_provider_work() -> None:

@@ -33,6 +33,7 @@ from risk_platform.ai_providers.v2_adapter import (
     ProviderFinishReason,
     ProviderHttpResponse,
     ProviderMessage,
+    ProviderResponseFormat,
     ProviderRole,
     ProviderToolDefinition,
     ProviderType,
@@ -60,6 +61,18 @@ class ScriptedTransport:
         if isinstance(outcome, Exception):
             raise outcome
         return outcome
+
+
+def test_chat_payload_translates_provider_neutral_json_mode() -> None:
+    payload = DeepSeekOfficialAdapter._chat_payload(
+        "deepseek-chat",
+        ProviderChatRequest(
+            (ProviderMessage(ProviderRole.USER, "extract"),),
+            response_format=ProviderResponseFormat.JSON_OBJECT,
+        ),
+    )
+
+    assert payload["response_format"] == {"type": "json_object"}
 
 
 class LocalOfficialGuard:

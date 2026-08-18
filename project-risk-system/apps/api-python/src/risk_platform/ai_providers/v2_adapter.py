@@ -52,6 +52,12 @@ class ProviderFinishReason(StrEnum):
     OTHER = "OTHER"
 
 
+class ProviderResponseFormat(StrEnum):
+    """Provider-neutral response-shaping capability."""
+
+    JSON_OBJECT = "JSON_OBJECT"
+
+
 class ProviderErrorClassification(StrEnum):
     NETWORK = "NETWORK"
     TIMEOUT = "TIMEOUT"
@@ -122,6 +128,7 @@ class ProviderToolDefinition:
 class ProviderChatRequest:
     messages: tuple[ProviderMessage, ...]
     tools: tuple[ProviderToolDefinition, ...] = ()
+    response_format: ProviderResponseFormat | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -446,6 +453,8 @@ class DeepSeekOfficialAdapter:
                 ]
             messages.append(item)
         payload: dict[str, object] = {"model": model_name, "messages": messages}
+        if request.response_format is ProviderResponseFormat.JSON_OBJECT:
+            payload["response_format"] = {"type": "json_object"}
         if request.tools:
             payload["tools"] = [
                 {
@@ -636,6 +645,7 @@ __all__ = [
     "ProviderHttpTransport",
     "ProviderMessage",
     "ProviderModelInfo",
+    "ProviderResponseFormat",
     "ProviderRole",
     "ProviderTokenUsage",
     "ProviderToolCall",

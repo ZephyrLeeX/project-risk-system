@@ -8,14 +8,50 @@ wire details to mailbox workers.
 
 from __future__ import annotations
 
+from typing import TypedDict
+
 from risk_platform.ai_providers.v2_adapter import (
     ProviderChatRequest,
     ProviderError,
     ProviderErrorClassification,
     ProviderMessage,
+    ProviderResponseFormat,
     ProviderRole,
 )
 from risk_platform.ai_providers.v2_service import ProviderV2Runtime
+
+
+class MailRiskExtractionItem(TypedDict):
+    project_option_id: str
+    category_option_id: str
+    level: str
+    description: str
+    evidence: str
+    suggestion: str
+    confidence: int
+
+
+class MailRiskExtractionOutput(TypedDict):
+    risks: list[MailRiskExtractionItem]
+
+
+_RISK_EXTRACTION_INSTRUCTION = """Extract actual risks from the supplied mailbox-derived content.
+Return one JSON object only, with no markdown fence and no other top-level fields:
+{"risks":[{"project_option_id":"P1","category_option_id":"C1","level":"HIGH","description":"...","evidence":"...","suggestion":"...","confidence":90}]}
+The output schema is MailRiskExtractionOutput. Every risks item must contain exactly
+these seven fields:
+project_option_id, category_option_id, level, description, evidence, suggestion, confidence.
+project_option_id must be exactly one option_id from project_options.
+category_option_id must be exactly one option_id from risk_category_options.
+Never return UUIDs, names, codes, free text categories, or invented IDs.
+level must be exactly HIGH, MEDIUM, or LOW. description must describe the actual risk.
+evidence may only cite facts present in the supplied mail-derived content and must not invent facts.
+suggestion is a recommended measure,
+not a claim that the measure already happened. confidence must be an integer from 0 through 100.
+Normal progress is not a risk. Explicit delay, overdue work, blockage, or material impact
+is a risk candidate.
+If there is no risk, return exactly {"risks":[]}.
+"""
 
 
 class MailboxProviderV2:
@@ -33,21 +69,18 @@ class MailboxProviderV2:
         )
 
     async def extract_risks(self, payload: dict[str, object]) -> str:
-        return await self._complete(
-            "You extract bounded risk candidates from a mailbox message. "
-            "Return JSON only with exactly one risks array. Every project and "
-            "category must use an option ID supplied in the request. Do not "
-            "create taxonomy, projects, or facts not supported by the text.",
-            payload,
-        )
+        return await self._complete(_RISK_EXTRACTION_INSTRUCTION, payload, json_mode=True)
 
-    async def _complete(self, instruction: str, payload: dict[str, object]) -> str:
+    async def _complete(
+        self, instruction: str, payload: dict[str, object], *, json_mode: bool = False
+    ) -> str:
         response = await self._runtime.chat(
             ProviderChatRequest(
                 messages=(
                     ProviderMessage(ProviderRole.SYSTEM, instruction),
                     ProviderMessage(ProviderRole.USER, _json_payload(payload)),
-                )
+                ),
+                response_format=ProviderResponseFormat.JSON_OBJECT if json_mode else None,
             )
         )
         if not response.content:
@@ -65,4 +98,4 @@ def _json_payload(payload: dict[str, object]) -> str:
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
 
-__all__ = ["MailboxProviderV2"]
+__all__ = ["MailRiskExtractionItem", "MailRiskExtractionOutput", "MailboxProviderV2"]
