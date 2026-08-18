@@ -159,6 +159,7 @@ class MutationDraftService:
             )
             session.add(draft)
             await session.flush()
+            display_proposal = await _display_proposal(session, proposal)
             message = await session.get(AgentMessage, execution.userMessageId)
             if message is None:
                 raise ApiError(409, "AGENT_INTERACTION_CONTEXT_INVALID", "写确认上下文不可用")
@@ -174,7 +175,7 @@ class MutationDraftService:
                     "type": AgentInteractionType.WRITE_CONFIRMATION.value,
                     "draftId": str(draft.id),
                     "operation": operation.value,
-                    "draft": draft.proposal,
+                    "draft": display_proposal,
                 },
             )
             await AuditService(session).record_success(
@@ -494,6 +495,37 @@ class MutationDraftService:
 
 class MutationConfirmationRequired(RuntimeError):
     """Stop the model loop after a draft has produced a durable interaction."""
+
+
+async def _display_proposal(
+    session: AsyncSession, proposal: dict[str, JSONValue]
+) -> dict[str, JSONValue]:
+    """Add non-authoritative labels/options for the confirmation form.
+
+    These fields are never stored in or accepted by the mutation allowlist; the
+    server reconstructs them from current database facts for display only.
+    """
+    displayed = dict(proposal)
+    project_id = _uuid(proposal.get("projectId"))
+    if project_id is not None:
+        project = await session.get(Project, project_id)
+        if project is not None:
+            displayed["projectName"] = project.name
+    categories = (
+        await session.scalars(
+            select(RiskCategory)
+            .where(RiskCategory.isActive.is_(True))
+            .order_by(RiskCategory.sortOrder, RiskCategory.name, RiskCategory.id)
+        )
+    ).all()
+    displayed["categoryOptions"] = [
+        {"id": str(item.id), "name": item.name} for item in categories
+    ]
+    category_id = _uuid(proposal.get("category"))
+    selected = next((item for item in categories if item.id == category_id), None)
+    if selected is not None:
+        displayed["categoryName"] = selected.name
+    return displayed
 
 
 def _uuid(value: object) -> UUID | None:

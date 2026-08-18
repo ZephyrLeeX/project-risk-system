@@ -30,7 +30,7 @@ from .models import (
     AgentMessage,
     MutationDraft,
 )
-from .mutations import MutationDraftService
+from .mutations import MutationDraftService, _display_proposal
 from .schemas import (
     AgentInteractionRespondRequest,
     AgentInteractionRespondResponse,
@@ -228,7 +228,9 @@ class AgentInteractionService:
                 select(MutationDraft).where(MutationDraft.interactionId == interaction_id)
             )
             view = interaction_view(row)
-            view.draft = None if draft is None else draft.proposal
+            view.draft = (
+                None if draft is None else await _display_proposal(session, draft.proposal)
+            )
             return view
 
 

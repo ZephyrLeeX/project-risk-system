@@ -30,6 +30,20 @@ def test_write_confirmation_supports_editable_fields_but_project_selection_stays
         AgentInteractionRespondRequest(action="CONFIRM", finalFields=fields, projectId=uuid4())
 
 
+def test_risk_create_does_not_require_responsibility_or_due_date() -> None:
+    request = MutationProposalRequest(
+        projectId=uuid4(),
+        category=uuid4(),
+        title="尾款逾期未支付",
+        description="项目尾款已逾期未支付",
+        level="MEDIUM",
+        evidence="用户陈述：具体金额及合同付款日未提供。",
+        suggestion="核对合同条款并持续催收。",
+    )
+    assert request.assigneeUserId is None
+    assert request.dueDate is None
+
+
 def test_candidate_risk_basis_distinguishes_ai_analysis_from_system_fact() -> None:
     base = {
         "id": uuid4(),

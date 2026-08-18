@@ -188,7 +188,8 @@ class AgentToolRegistry:
             *tuple(
                 AgentTool(
                     name,
-                    "生成待用户确认的 MutationDraft; 不会直接写入业务表",
+                    "生成待用户确认的 MutationDraft；risk_create 在项目、标题、描述和有效分类已明确时"
+                    "应立即调用；不会直接写入业务表",
                     ("risk.report",),
                     True,
                     MutationProposalRequest,

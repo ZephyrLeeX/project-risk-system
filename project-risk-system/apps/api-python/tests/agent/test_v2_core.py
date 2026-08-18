@@ -13,6 +13,7 @@ from risk_platform.agent.scope import ScopePolicy
 from risk_platform.agent.tools import AgentToolRegistry
 from risk_platform.ai_providers.v2_adapter import (
     ProviderCandidate,
+    ProviderChatRequest,
     ProviderChatResponse,
     ProviderFinishReason,
     ProviderTokenUsage,
@@ -45,6 +46,7 @@ class _Runtime:
     def __init__(self, responses: list[ProviderChatResponse]) -> None:
         self.responses = responses
         self.calls = 0
+        self.requests: list[object] = []
 
     async def candidate_snapshot(self) -> tuple[ProviderCandidate, ...]:
         return ()
@@ -52,6 +54,7 @@ class _Runtime:
     async def chat_snapshot(
         self, _snapshot: tuple[ProviderCandidate, ...], _request: object
     ) -> ProviderChatResponse:
+        self.requests.append(_request)
         response = self.responses[self.calls]
         self.calls += 1
         return response
@@ -172,6 +175,28 @@ def test_realistic_risk_report_reaches_provider_and_tool_loop() -> None:
     assert result.out_of_scope is False
     assert runtime.calls == 2
     assert tools.invocations == 1
+
+
+def test_risk_report_system_guidance_prioritizes_proposal_without_optional_follow_up() -> None:
+    runtime, tools = (
+        _Runtime(
+            [
+                _response(ProviderToolCall("proposal-1", "risk_create_proposal", {})),
+                _response(text="已准备草稿"),
+            ]
+        ),
+        _Tools(),
+    )
+    asyncio.run(
+        ReadOnlyAgentCore(cast(ProviderV2Runtime, runtime), cast(AgentToolRegistry, tools)).run(
+            _identity(), "WSLDEMO-海外交付项目尾款已经逾期未支付"
+        )
+    )
+    request = cast(ProviderChatRequest, runtime.requests[0])
+    system = request.messages[0].content
+    assert "必须优先调用 risk_create_proposal" in system
+    assert "责任人和期望日期不是 RiskCreate 字段" in system
+    assert "不得编造金额、日期、逾期天数或合同条款" in system
 
 
 def test_native_tool_call_is_correlated_then_finalized() -> None:

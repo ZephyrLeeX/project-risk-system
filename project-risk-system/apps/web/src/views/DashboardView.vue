@@ -21,7 +21,7 @@ import type {
   RiskTimelineListResponse,
 } from "@risk-platform/contracts";
 import type { OpenApi } from "@risk-platform/contracts";
-import { computed, onMounted, onUnmounted, reactive, ref } from "vue";
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 
 import { agentApi, type AgentHelpResponse } from "@/api/agent";
@@ -104,6 +104,7 @@ const agent = useAgentConversation();
 const agentInput = ref("");
 type JsonValue = OpenApi.components["schemas"]["JSONValue-Input"];
 const interactionFields = reactive<Record<string, string>>({});
+const interactionValidationError = ref("");
 const selectedInteractionCandidates = ref<string[]>([]);
 const manualProjectName = ref("");
 const agentHelp = ref<AgentHelpResponse | null>(null);
@@ -431,11 +432,45 @@ function interactionCandidateName(value: unknown): string {
   return "候选项目";
 }
 
-function draftField(key: string): string {
-  const draft = agent.state.interaction?.draft;
-  const value = draft && typeof draft === "object" ? draft[key] : null;
+function draftString(key: string): string {
+  const value = agent.state.interaction?.draft?.[key];
   return value === null || value === undefined ? "" : String(value);
 }
+
+function draftProjectName(): string {
+  return draftString("projectName") || "已匹配项目";
+}
+
+function draftCategoryOptions(): { id: string; name: string }[] {
+  const value = agent.state.interaction?.draft?.categoryOptions;
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (item): item is { id: string; name: string } =>
+      Boolean(
+        item &&
+          typeof item === "object" &&
+          typeof (item as Record<string, unknown>).id === "string" &&
+          typeof (item as Record<string, unknown>).name === "string",
+      ),
+  );
+}
+
+function syncInteractionFields(): void {
+  Object.keys(interactionFields).forEach((key) => delete interactionFields[key]);
+  const draft = agent.state.interaction?.draft;
+  if (!draft) return;
+  for (const key of ["title", "description", "level", "category", "evidence", "suggestion"]) {
+    const value = draft[key];
+    interactionFields[key] = value === null || value === undefined ? "" : String(value);
+  }
+  interactionValidationError.value = "";
+}
+
+watch(
+  () => agent.state.interaction?.id,
+  () => syncInteractionFields(),
+  { immediate: true },
+);
 
 function candidateRisks(message: { structured?: unknown }): Record<string, unknown>[] {
   const structured = message.structured && typeof message.structured === "object" && !Array.isArray(message.structured) ? message.structured as Record<string, unknown> : null;
@@ -453,6 +488,19 @@ function submitManualProject(): void {
 }
 
 function confirmInteraction(): void {
+  interactionValidationError.value = "";
+  if (!interactionFields.title?.trim() || !interactionFields.description?.trim()) {
+    interactionValidationError.value = "风险标题和风险描述不能为空";
+    return;
+  }
+  if (!interactionFields.level || !["HIGH", "MEDIUM", "LOW"].includes(interactionFields.level)) {
+    interactionValidationError.value = "请选择有效的风险等级";
+    return;
+  }
+  if (!interactionFields.category || !draftCategoryOptions().some((item) => item.id === interactionFields.category)) {
+    interactionValidationError.value = "请选择当前有效的风险分类";
+    return;
+  }
   const finalFields: Record<string, JsonValue> = { ...interactionFields };
   const draftItems = agent.state.interaction?.draft?.items;
   if (Array.isArray(draftItems) && selectedInteractionCandidates.value.length > 0) {
@@ -2213,26 +2261,39 @@ onUnmounted(() => {
         </p>
       </div>
 
-      <section v-if="agent.state.interaction" class="agent-interaction" aria-live="polite">
-        <header><strong>{{ agent.state.interaction.type === 'PROJECT_SELECTION' ? '请选择项目' : 'WRITE_CONFIRMATION：请确认写入' }}</strong><small>服务端状态：{{ agent.state.interaction.status }} · {{ formatDateTime(agent.state.interaction.expiresAt) }}</small></header>
+      <section v-if="agent.state.interaction?.type === 'PROJECT_SELECTION'" class="agent-interaction" aria-live="polite">
+        <header><strong>请选择项目</strong><small>服务端状态：{{ agent.state.interaction.status }} · {{ formatDateTime(agent.state.interaction.expiresAt) }}</small></header>
         <template v-if="agent.state.interaction.type === 'PROJECT_SELECTION' && agent.state.interaction.status === 'OPEN'">
           <button v-for="candidate in agent.state.interaction.candidates" :key="interactionCandidateId(candidate)" type="button" @click="selectProject(interactionCandidateId(candidate))">{{ interactionCandidateName(candidate) }}</button>
           <button type="button" @click="selectedInteractionCandidates = []">以上都不是</button>
           <form @submit.prevent="submitManualProject"><input v-model="manualProjectName" placeholder="手动输入项目名称"><button type="submit">重新搜索</button></form>
           <button type="button" @click="agent.cancelInteraction()">取消</button>
         </template>
-        <template v-else-if="agent.state.interaction.type === 'WRITE_CONFIRMATION' && agent.state.interaction.status === 'OPEN'">
-          <div v-if="agent.state.interaction.draft" class="agent-editable-fields">
-            <label>标题<input v-model="interactionFields.title" :placeholder="draftField('title')"></label>
-            <label>描述<textarea v-model="interactionFields.description" :placeholder="draftField('description')"></textarea></label>
-            <label>等级<input v-model="interactionFields.level" :placeholder="draftField('level')"></label>
-            <label>依据<input v-model="interactionFields.evidence" :placeholder="draftField('evidence')"></label>
-          </div>
-          <div v-if="Array.isArray(agent.state.interaction.draft?.items)" class="agent-batch-selection"><label v-for="(item, index) in agent.state.interaction.draft.items" :key="index"><input v-model="selectedInteractionCandidates" type="checkbox" :value="String(index)">保留第 {{ Number(index) + 1 }} 项</label></div>
-          <button type="button" :disabled="agent.sending.value" @click="confirmInteraction">确认提交</button><button type="button" :disabled="agent.sending.value" @click="agent.cancelInteraction()">取消</button>
-        </template>
         <p v-else>交互已处理；刷新或重连不会重复提交。</p>
       </section>
+
+      <ModalDialog
+        v-if="agent.state.interaction?.type === 'WRITE_CONFIRMATION' && agent.state.interaction.status === 'OPEN'"
+        eyebrow="WRITE CONFIRMATION"
+        title="确认上报风险"
+        @close="agent.cancelInteraction()"
+      >
+        <form class="agent-risk-confirmation-form" @submit.prevent="confirmInteraction">
+          <p class="modal-copy">请检查 AI 草稿。确认前不会写入业务风险；依据仅表示用户陈述或系统事实。</p>
+          <label><span>项目</span><output>{{ draftProjectName() }}</output></label>
+          <label><span>风险标题 *</span><input v-model="interactionFields.title" required maxlength="250"></label>
+          <label><span>风险描述 *</span><textarea v-model="interactionFields.description" required maxlength="4000"></textarea></label>
+          <label><span>风险等级 *</span><select v-model="interactionFields.level" required><option value="">请选择</option><option value="HIGH">高风险</option><option value="MEDIUM">中风险</option><option value="LOW">低风险</option></select></label>
+          <label><span>风险分类 *</span><select v-model="interactionFields.category" required><option value="">请选择</option><option v-for="item in draftCategoryOptions()" :key="item.id" :value="item.id">{{ item.name }}</option></select></label>
+          <label><span>依据 / evidence</span><textarea v-model="interactionFields.evidence" maxlength="10000"></textarea><small>只能填写用户陈述或系统事实，不要把 AI 推断写成事实。</small></label>
+          <label><span>处理建议 / suggestion</span><textarea v-model="interactionFields.suggestion" maxlength="10000"></textarea></label>
+          <p v-if="interactionValidationError" class="agent-form-error" role="alert">{{ interactionValidationError }}</p>
+        </form>
+        <template #footer>
+          <button type="button" :disabled="agent.sending.value" @click="agent.cancelInteraction()">取消</button>
+          <button class="admin-primary-button" type="button" :disabled="agent.sending.value" @click="confirmInteraction">确认上报</button>
+        </template>
+      </ModalDialog>
 
       <section v-for="message in agent.state.messages" :key="`${message.id}-risks`" class="agent-candidate-risks">
         <article v-for="risk in candidateRisks(message)" :key="String(risk.id)"><strong>{{ String(risk.title ?? '候选风险') }}</strong><span>{{ String(risk.basisType ?? '') }}</span><p>{{ String(risk.evidenceSummary ?? '') }}</p></article>
@@ -2970,3 +3031,7 @@ onUnmounted(() => {
     </ModalDialog>
   </div>
 </template>
+
+<style>
+.agent-risk-confirmation-form{display:grid;gap:14px}.agent-risk-confirmation-form label{display:grid;gap:6px;color:#355c73;font-weight:700}.agent-risk-confirmation-form label span{font-size:13px}.agent-risk-confirmation-form input,.agent-risk-confirmation-form textarea,.agent-risk-confirmation-form select{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #cbdfe9;border-radius:9px;color:#244b64;background:#fff;font:inherit;font-weight:400}.agent-risk-confirmation-form textarea{min-height:84px;resize:vertical}.agent-risk-confirmation-form output{padding:10px 12px;border-radius:9px;color:#315f7b;background:#f2f7fa;font-weight:600}.agent-risk-confirmation-form small{color:#718a9b;font-size:12px;font-weight:400;line-height:1.45}.agent-form-error{margin:0;padding:9px 11px;border-radius:8px;color:#a43e46;background:#fff0f1;line-height:1.45}
+</style>

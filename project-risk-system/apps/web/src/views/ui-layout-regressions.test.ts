@@ -46,6 +46,17 @@ describe("live UI layout regressions", () => {
     expect(prototypePageStyles).toContain(".agent-header-actions{display:flex");
   });
 
+  it("renders risk write confirmation as an editable modal initialized from the draft", () => {
+    expect(dashboardView).toContain('title="确认上报风险"');
+    expect(dashboardView).toContain("draftProjectName()");
+    expect(dashboardView).toContain("v-model=\"interactionFields.category\"");
+    expect(dashboardView).toContain("v-model=\"interactionFields.suggestion\"");
+    expect(dashboardView).toContain("watch(");
+    expect(dashboardView).toContain("syncInteractionFields");
+    expect(dashboardView).toContain("风险标题和风险描述不能为空");
+    expect(dashboardView).not.toContain(":placeholder=\"draftField");
+  });
+
   it("offers a new conversation only for the stale execution configuration", () => {
     expect(dashboardView).toContain(
       "agent.state.error.code === 'AGENT_EXECUTION_CONFIG_INVALID'",
