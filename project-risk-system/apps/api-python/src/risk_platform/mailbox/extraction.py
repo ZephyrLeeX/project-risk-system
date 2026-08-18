@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
 import re
@@ -10,23 +9,18 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal, cast
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from risk_platform.ai_providers.client import AiProviderClient, ProviderRequestError
-from risk_platform.ai_providers.models import (
-    AiCallLog,
-    AiCallResult,
-    AiCallScene,
-    AiConnectionStatus,
-    AiProviderConfig,
-)
+from risk_platform.ai_providers.v2_adapter import ProviderError
+from risk_platform.ai_providers.v2_service import ProviderV2Runtime
 from risk_platform.audit.models import AuditActorType
 from risk_platform.audit.service import AuditService
 from risk_platform.auth.service import SessionIdentity
 from risk_platform.db import transaction
+from risk_platform.mailbox.ai import MailboxProviderV2
 from risk_platform.mailbox.connection import MailSourceUnavailable
 from risk_platform.mailbox.models import (
     MailboxConfig,
@@ -52,7 +46,7 @@ from risk_platform.reliability.models import DurableTask, DurableTaskKind
 from risk_platform.risks.models import ProjectRiskLevel as RiskLevel
 from risk_platform.risks.models import RiskCategory, RiskSourceType
 from risk_platform.risks.service import RiskCreate, RisksService
-from risk_platform.shared.crypto import LegacySecretFields, SecretCipher, SecretCryptoError
+from risk_platform.shared.crypto import SecretCipher
 from risk_platform.shared.errors import ApiError
 from risk_platform.weekly_reports.service import invalidate_candidate
 
@@ -218,13 +212,13 @@ class MailRiskExtractionWorker:
         self,
         session_factory: async_sessionmaker[AsyncSession],
         cipher: SecretCipher,
-        client: AiProviderClient | None = None,
+        provider_runtime: ProviderV2Runtime | None = None,
         parser: MailParseWorker | None = None,
     ) -> None:
         self._sessions, self._cipher, self._client = (
             session_factory,
             cipher,
-            client or AiProviderClient(),
+            MailboxProviderV2(provider_runtime) if provider_runtime else None,
         )
         self._parser = parser or MailParseWorker(session_factory, cipher)
 
@@ -248,7 +242,7 @@ class MailRiskExtractionWorker:
                 parsed.attachment_texts,
                 source_date,
             )
-        except ProviderRequestError as error:
+        except ProviderError as error:
             if error.retryable and await self._exhausted(mailbox_id, uid_validity, imap_uid):
                 await self._stage(
                     mailbox_id,
@@ -265,7 +259,7 @@ class MailRiskExtractionWorker:
                 MailStageStatus.RETRYABLE_FAILURE
                 if error.retryable
                 else MailStageStatus.PERMANENT_FAILURE,
-                error.code,
+                error.classification.value,
             )
             if error.retryable:
                 raise
@@ -354,14 +348,6 @@ class MailRiskExtractionWorker:
                     "AI_EXTRACTION_DISABLED",
                 )
                 return
-            provider = await session.scalar(
-                select(AiProviderConfig)
-                .where(
-                    AiProviderConfig.enabled.is_(True),
-                    AiProviderConfig.lastTestStatus == AiConnectionStatus.HEALTHY,
-                )
-                .order_by(AiProviderConfig.isDefault.desc(), AiProviderConfig.priority)
-            )
             categories = (
                 await session.scalars(
                     select(RiskCategory)
@@ -387,7 +373,7 @@ class MailRiskExtractionWorker:
             return
         if message is None or not matches:
             raise ValueError("NO_MATCHED_PROJECT")
-        if provider is None:
+        if self._client is None:
             raise ValueError("PROVIDER_UNAVAILABLE")
         if not categories:
             raise ValueError("NO_ACTIVE_RISK_CATEGORY")
@@ -406,21 +392,11 @@ class MailRiskExtractionWorker:
         project_map = {f"P{i}": item.projectId for i, item in enumerate(matches, 1)}
         request = _provider_payload(body, attachments, source_date, options)
         request["project_options"] = list(project_map)
-        try:
-            key = self._cipher.decrypt_legacy(
-                LegacySecretFields(
-                    provider.encryptedApiKey, provider.keyIv, provider.keyAuthTag, "v1"
-                )
-            )
-        except SecretCryptoError:
-            raise ValueError("PROVIDER_UNAVAILABLE") from None
-        raw, usage, duration, trace = await self._call_provider(provider, key, request)
+        raw = await self._client.extract_risks(request)
         try:
             risks = _parse_output(raw, project_map, {x.option_id: x.category_id for x in options})
         except ValueError:
-            await self._log_call(provider, trace, "PROVIDER_INVALID_OUTPUT")
             raise
-        await self._log_call(provider, trace, None, usage=usage, duration=duration)
         async with transaction(self._sessions) as session:
             handoff = await session.scalar(
                 select(MailSourceHandoff)
@@ -520,62 +496,6 @@ class MailRiskExtractionWorker:
                     else:
                         message.status = MailMessageStatus.ANALYZING
                         message.failureCode = message.failureSummary = code
-
-    async def _call_provider(
-        self, provider: AiProviderConfig, key: str, payload: dict[str, object]
-    ) -> tuple[str, dict[str, int], int, UUID]:
-        """Apply only the configured in-attempt transient retry budget."""
-
-        last_error: ProviderRequestError | None = None
-        for attempt in range(provider.retryCount + 1):
-            trace = uuid4()
-            try:
-                raw, usage, duration = await self._client.extract_risks(
-                    provider.endpoint,
-                    provider.model,
-                    key,
-                    provider.timeoutSeconds,
-                    payload,
-                    provider.protocol,
-                )
-            except ProviderRequestError as error:
-                await self._log_call(provider, trace, error.code)
-                last_error = error
-                if not error.retryable or attempt >= provider.retryCount:
-                    raise
-                await asyncio.sleep(min(2**attempt, 4))
-                continue
-            return raw, usage, duration, trace
-        assert last_error is not None
-        raise last_error
-
-    async def _log_call(
-        self,
-        provider: AiProviderConfig,
-        trace: UUID,
-        code: str | None,
-        *,
-        usage: dict[str, int] | None = None,
-        duration: int = 0,
-    ) -> None:
-        async with transaction(self._sessions) as session:
-            values = usage or {"input": 0, "output": 0, "total": 0}
-            session.add(
-                AiCallLog(
-                    traceId=str(trace),
-                    providerId=provider.id,
-                    providerNameSnapshot=provider.name,
-                    modelSnapshot=provider.model,
-                    scene=AiCallScene.RISK_EXTRACTION,
-                    inputTokens=values["input"],
-                    outputTokens=values["output"],
-                    totalTokens=values["total"],
-                    durationMs=duration,
-                    result=AiCallResult.FAILURE if code else AiCallResult.SUCCESS,
-                    errorCode=code,
-                    errorSummary=code,
-                )
-            )
 
     async def _exhausted(self, mailbox_id: UUID, uid_validity: int, imap_uid: int) -> bool:
         async with self._sessions() as session:

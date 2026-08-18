@@ -1484,6 +1484,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/mailbox/messages/{message_id}/project-resolution": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Confirm Project Resolution */
+        post: operations["confirm_project_resolution_api_mailbox_messages__message_id__project_resolution_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/mailbox/messages/{message_id}/retry": {
         parameters: {
             query?: never;
@@ -4060,6 +4077,8 @@ export interface components {
             processingTrace: components["schemas"]["MailProcessingTraceItem"][];
             /** Projectmatches */
             projectMatches: components["schemas"]["MailProjectMatchItem"][];
+            /** Projectresolutioncandidates */
+            projectResolutionCandidates: components["schemas"]["MailProjectResolutionCandidateItem"][];
             /** Resultlabel */
             resultLabel: string;
             /** Resultnote */
@@ -4102,6 +4121,8 @@ export interface components {
             processedAt: string | null;
             /** Projectmatches */
             projectMatches: components["schemas"]["MailProjectMatchItem"][];
+            /** Projectresolutioncandidates */
+            projectResolutionCandidates: components["schemas"]["MailProjectResolutionCandidateItem"][];
             /** Resultlabel */
             resultLabel: string;
             /** Resultnote */
@@ -4166,6 +4187,29 @@ export interface components {
             projectId: string;
             /** Projectname */
             projectName: string;
+        };
+        /** MailProjectResolutionCandidateItem */
+        MailProjectResolutionCandidateItem: {
+            /** Alias */
+            alias: string | null;
+            /** Externalcode */
+            externalCode: string | null;
+            /** Name */
+            name: string;
+            /** Optionid */
+            optionId: string;
+            /** Projectid */
+            projectId: string;
+            /** Status */
+            status: string;
+        };
+        /** MailProjectResolutionConfirmRequest */
+        MailProjectResolutionConfirmRequest: {
+            /**
+             * Projectid
+             * Format: uuid
+             */
+            projectId: string;
         };
         /** MailRiskCandidateItem */
         MailRiskCandidateItem: {
@@ -4299,18 +4343,16 @@ export interface components {
         };
         /** MailSyncBatchDetail */
         MailSyncBatchDetail: {
-            /** Discoveredcount */
-            discoveredCount: number;
-            /** Handedoffcount */
-            handedOffCount: number;
-            /** Duplicatecount */
-            duplicateCount: number;
-            /** Downstreampendingcount */
-            downstreamPendingCount: number;
             /** Code */
             code: string;
             /** Createdat */
             createdAt: string;
+            /** Discoveredcount */
+            discoveredCount: number;
+            /** Downstreampendingcount */
+            downstreamPendingCount: number;
+            /** Duplicatecount */
+            duplicateCount: number;
             /** Durationms */
             durationMs: number | null;
             /** Enduid */
@@ -4321,6 +4363,8 @@ export interface components {
             failedCount: number;
             /** Finishedat */
             finishedAt: string | null;
+            /** Handedoffcount */
+            handedOffCount: number;
             /** Id */
             id: string;
             /** Messages */
@@ -4358,20 +4402,20 @@ export interface components {
             code: string;
             /** Createdat */
             createdAt: string;
-            /** Errorsummary */
-            errorSummary: string | null;
             /** Discoveredcount */
             discoveredCount: number;
-            /** Handedoffcount */
-            handedOffCount: number;
-            /** Duplicatecount */
-            duplicateCount: number;
             /** Downstreampendingcount */
             downstreamPendingCount: number;
+            /** Duplicatecount */
+            duplicateCount: number;
+            /** Errorsummary */
+            errorSummary: string | null;
             /** Failedcount */
             failedCount: number;
             /** Finishedat */
             finishedAt: string | null;
+            /** Handedoffcount */
+            handedOffCount: number;
             /** Id */
             id: string;
             /** Newcount */
@@ -4414,20 +4458,20 @@ export interface components {
             code: string;
             /** Createdat */
             createdAt: string;
-            /** Errorsummary */
-            errorSummary: string | null;
             /** Discoveredcount */
             discoveredCount: number;
-            /** Handedoffcount */
-            handedOffCount: number;
-            /** Duplicatecount */
-            duplicateCount: number;
             /** Downstreampendingcount */
             downstreamPendingCount: number;
+            /** Duplicatecount */
+            duplicateCount: number;
+            /** Errorsummary */
+            errorSummary: string | null;
             /** Failedcount */
             failedCount: number;
             /** Finishedat */
             finishedAt: string | null;
+            /** Handedoffcount */
+            handedOffCount: number;
             /** Id */
             id: string;
             /** Newcount */
@@ -4462,14 +4506,14 @@ export interface components {
             latestBatch: components["schemas"]["MailSyncBatchItem"] | null;
             /** Latestdiscoveredcount */
             latestDiscoveredCount: number;
-            /** Latesthandedoffcount */
-            latestHandedOffCount: number;
             /** Latestdownstreampendingcount */
             latestDownstreamPendingCount: number;
             /** Latestduplicatecount */
             latestDuplicateCount: number;
             /** Latestfailedcount */
             latestFailedCount: number;
+            /** Latesthandedoffcount */
+            latestHandedOffCount: number;
             /** Latestnewcount */
             latestNewCount: number;
             /** Latestpendingriskcount */
@@ -9150,6 +9194,41 @@ export interface operations {
             };
         };
     };
+    confirm_project_resolution_api_mailbox_messages__message_id__project_resolution_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                message_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MailProjectResolutionConfirmRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_dict_str__str__"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     retry_message_api_mailbox_messages__message_id__retry_post: {
         parameters: {
             query?: never;
@@ -9391,6 +9470,7 @@ export interface operations {
                 page?: number;
                 pageSize?: number;
                 sourceType?: components["schemas"]["RiskSourceType"] | null;
+                status?: components["schemas"]["RiskStatus"] | null;
             };
             header?: never;
             path?: never;
@@ -9549,6 +9629,7 @@ export interface operations {
                 page?: number;
                 pageSize?: number;
                 sourceType?: components["schemas"]["RiskSourceType"] | null;
+                status?: components["schemas"]["RiskStatus"] | null;
             };
             header?: never;
             path?: never;

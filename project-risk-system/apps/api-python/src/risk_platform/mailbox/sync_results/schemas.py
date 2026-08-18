@@ -75,6 +75,15 @@ class MailProjectMatchItem(StrictRequestModel):
     matchedText: str
 
 
+class MailProjectResolutionCandidateItem(StrictRequestModel):
+    optionId: str
+    projectId: str
+    name: str
+    externalCode: str | None
+    alias: str | None
+    status: str
+
+
 class MailAttachmentItem(StrictRequestModel):
     name: str
     type: str
@@ -118,6 +127,7 @@ class MailMessageListItem(StrictRequestModel):
     sentAt: str | None
     processedAt: str | None
     projectMatches: list[MailProjectMatchItem]
+    projectResolutionCandidates: list[MailProjectResolutionCandidateItem]
     riskCandidateCount: int
     pendingRiskCount: int
     resultLabel: str

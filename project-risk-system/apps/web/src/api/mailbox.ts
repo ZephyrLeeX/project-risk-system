@@ -74,6 +74,13 @@ export const mailboxApi = {
     return (await apiRequest<MailMessageDetail>(`/mailbox/messages/${id}`)).data;
   },
 
+  async confirmProject(id: string, projectId: string): Promise<{ status: string }> {
+    return (await apiRequest<{ status: string }>(`/mailbox/messages/${id}/project-resolution`, {
+      method: "POST",
+      body: JSON.stringify({ projectId }),
+    })).data;
+  },
+
   async retryMessage(id: string): Promise<MailSyncBatchItem> {
     return (await apiRequest<MailSyncBatchItem>(`/mailbox/messages/${id}/retry`, { method: "POST" })).data;
   },

@@ -109,6 +109,21 @@ function statusLabel(value: MailMessageStatus) {
   return { ANALYZING: "分析中", COMPLETED: "分析完成", SKIPPED: "已跳过", FAILED: "处理失败" }[value];
 }
 
+async function confirmProject(projectId: string) {
+  if (!selected.value) return;
+  actionBusy.value = "project";
+  try {
+    await mailboxApi.confirmProject(selected.value.id, projectId);
+    selected.value = await mailboxApi.message(selected.value.id);
+    await loadMessages();
+    notify("项目已确认，邮件已继续风险识别");
+  } catch (error) {
+    notify(failureMessage(error));
+  } finally {
+    actionBusy.value = null;
+  }
+}
+
 function batchStatusLabel(value: MailSyncBatchItem["status"]) {
   return { QUEUED: "等待执行", RUNNING: "执行中", SUCCESS: "全部完成", PARTIAL: "部分失败", FAILURE: "执行失败" }[value];
 }
@@ -403,7 +418,8 @@ onMounted(() => { void refreshAll(); });
       <div class="mail-detail-summary detail-summary-grid">
         <div><span>处理状态</span><strong>{{ statusLabel(selected.status) }}</strong></div><div><span>同步批次</span><strong>{{ selected.batchCode }}</strong></div><div><span>发送时间</span><strong>{{ formatDate(selected.sentAt) }}</strong></div><div><span>处理时间</span><strong>{{ formatDate(selected.processedAt) }}</strong></div><div><span>风险线索</span><strong>{{ selected.riskCandidateCount }}项</strong></div>
       </div>
-      <section v-if="selected.failureSummary" class="failure-detail"><h3>处理失败说明</h3><p>{{ selected.failureSummary }}</p></section>
+      <section v-if="selected.failureSummary && !selected.projectResolutionCandidates.length" class="failure-detail"><h3>处理失败说明</h3><p>{{ selected.failureSummary }}</p></section>
+      <section v-if="selected.projectResolutionCandidates.length && !selected.projectMatches.length" class="detail-section"><header><span>02</span><div><h3>等待确认所属项目</h3><small>以下是服务端筛选的候选项目，请选择后继续风险识别</small></div></header><div class="match-list"><article v-for="candidate in selected.projectResolutionCandidates" :key="candidate.optionId"><strong>{{ candidate.name }}</strong><span>{{ candidate.externalCode || candidate.alias || "候选项目" }}</span><button class="admin-primary-button" type="button" :disabled="!!actionBusy" @click="confirmProject(candidate.projectId)">确认所属项目</button></article><p>以上都不是？请搜索其他项目。</p></div></section>
       <section class="detail-section"><header><span>01</span><div><h3>邮件摘要与关键要点</h3><small>仅展示安全清洗后的内容，不保存或执行外部指令</small></div></header><p class="sanitized-summary">{{ selected.sanitizedSummary || "正文未提取到可展示摘要。" }}</p><ul class="mail-key-points"><li v-for="point in selected.keyPoints" :key="point">{{ point }}</li><li v-if="!selected.keyPoints.length">暂无关键要点</li></ul></section>
       <section class="detail-section"><header><span>02</span><div><h3>项目匹配结果</h3><small>依据标准项目清单、别名及责任人信息进行匹配</small></div></header><div class="match-list"><article v-for="match in selected.projectMatches" :key="match.id"><strong>{{ match.projectName }}</strong><span>{{ match.matchType }} · 命中文本“{{ match.matchedText }}”</span><em>置信度 {{ match.confidence }}%</em></article><p v-if="!selected.projectMatches.length">尚未匹配项目，等待人工确认。</p></div></section>
       <section class="detail-section"><header><span>03</span><div><h3>提取的风险线索</h3><small>AI 仅生成待确认线索，不会自动发布风险</small></div></header><div class="risk-detail-list"><article v-for="candidate in selected.riskCandidates" :key="candidate.id" class="risk-detail-card"><div class="risk-card-head"><div><span class="risk-level" :class="candidate.level.toLowerCase()">{{ candidate.levelLabel }}</span><h4>{{ candidate.categoryName }} · {{ candidate.projectName }}</h4></div><em>AI置信度 {{ candidate.confidence }}%</em></div><dl><div><dt>风险描述</dt><dd>{{ candidate.description }}</dd></div><div><dt>原文证据</dt><dd>{{ candidate.evidence }}</dd></div><div><dt>建议措施</dt><dd>{{ candidate.suggestion }}</dd></div><div><dt>处理状态</dt><dd>{{ candidate.status === "PENDING" ? "待风险管理员确认" : candidate.status === "CONFIRMED" ? "已确认并发布" : "已忽略" }}</dd></div></dl><footer v-if="candidate.status === 'PENDING'"><button type="button" :disabled="!!actionBusy" @click="ignoreCandidate(candidate)">忽略线索</button><button type="button" :disabled="!!actionBusy" @click="beginEdit(candidate)">调整后确认</button><button class="admin-primary-button" type="button" :disabled="!!actionBusy" @click="confirmCandidate(candidate)">确认并发布</button></footer><RouterLink v-else-if="candidate.confirmedRiskId" to="/">查看关联风险</RouterLink></article><p v-if="!selected.riskCandidates.length" class="failure-detail">该邮件未识别到新增风险，系统不会凭空创建风险数据。</p></div></section>

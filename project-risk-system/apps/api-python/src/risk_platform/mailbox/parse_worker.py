@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Mapping
 from typing import cast
 from uuid import UUID
 
@@ -10,8 +10,8 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from risk_platform.admin.models import User
-from risk_platform.ai_providers.client import AiProviderClient, ProviderRequestError
-from risk_platform.ai_providers.models import AiConnectionStatus, AiProviderConfig
+from risk_platform.ai_providers.v2_service import ProviderV2Runtime
+from risk_platform.mailbox.ai import MailboxProviderV2
 from risk_platform.mailbox.connection import MailboxConnection, MailSourceUnavailable
 from risk_platform.mailbox.models import (
     MailboxConfig,
@@ -39,13 +39,13 @@ class MailParseWorker:
         session_factory: async_sessionmaker[AsyncSession],
         cipher: SecretCipher,
         connection: MailboxConnection | None = None,
-        provider_client: AiProviderClient | None = None,
+        provider_runtime: ProviderV2Runtime | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._cipher = cipher
         self._connection = connection or MailboxConnection()
         self._resolution = ProjectResolutionService()
-        self._provider_client = provider_client or AiProviderClient()
+        self._provider = MailboxProviderV2(provider_runtime) if provider_runtime else None
         cleanup_stale_temp_directories()
 
     async def handle(self, payload: Mapping[str, object]) -> None:
@@ -120,32 +120,31 @@ class MailParseWorker:
             mailbox_config = await session.get(MailboxConfig, mailbox_id)
             user = await session.get(User, mailbox_config.userId) if mailbox_config else None
             scope = await self._scope(session, user.id if user else None)
-            try:
-                resolution = await self._resolution.resolve(
-                    session,
-                    parsed.subject,
-                    parsed.text,
-                    user.id if user else mailbox_id,
-                    scope,
-                    self._provider(session),
+            resolution = await self._resolution.resolve(
+                session,
+                parsed.subject,
+                parsed.text,
+                user.id if user else mailbox_id,
+                scope,
+                self._provider.resolve_project if self._provider else None,
+            )
+            if resolution.project_id is not None:
+                selected = next(
+                    item
+                    for item in resolution.candidates
+                    if item.project_id == resolution.project_id
                 )
-            except ProviderRequestError as error:
-                if error.code != "PROVIDER_UNAVAILABLE":
-                    raise
-                resolution = await self._resolution.resolve(
-                    session, parsed.subject, parsed.text, user.id if user else mailbox_id, scope
-                )
-            matches = resolution.candidates
-            for match in matches:
                 session.add(
                     MailMessageProjectMatch(
                         messageId=message.id,
-                        projectId=match.project_id,
-                        matchType=MailProjectMatchType.FUZZY
-                        if resolution.source == "AI"
-                        else MailProjectMatchType.EXACT,
+                        projectId=selected.project_id,
+                        matchType=(
+                            MailProjectMatchType.FUZZY
+                            if resolution.source == "AI"
+                            else MailProjectMatchType.EXACT
+                        ),
                         confidence=resolution.confidence or 0,
-                        matchedText=match.name[:500],
+                        matchedText=selected.name[:500],
                     )
                 )
             message.projectResolutionStatus = (
@@ -171,7 +170,9 @@ class MailParseWorker:
             )
             if resolution.project_id is None:
                 message.failureCode = message.failureSummary = "WAITING_PROJECT_CONFIRMATION"
-            affected_projects = old_project_ids | {match.project_id for match in matches}
+            affected_projects = old_project_ids | (
+                {resolution.project_id} if resolution.project_id is not None else set()
+            )
             for project_id in sorted(affected_projects, key=str):
                 await invalidate_message_project(session, message, project_id)
             handoff.parseStatus = MailStageStatus.SUCCEEDED
@@ -206,38 +207,6 @@ class MailParseWorker:
             DataScopeType.NONE: 1,
         }
         return max(scopes, key=lambda item: order[DataScopeType(item)], default=DataScopeType.NONE)
-
-    def _provider(self, session: AsyncSession) -> Callable[[dict[str, object]], Awaitable[str]]:
-        async def call(payload: dict[str, object]) -> str:
-            provider = await session.scalar(
-                select(AiProviderConfig)
-                .where(
-                    AiProviderConfig.enabled.is_(True),
-                    AiProviderConfig.lastTestStatus == AiConnectionStatus.HEALTHY,
-                )
-                .order_by(AiProviderConfig.isDefault.desc(), AiProviderConfig.priority)
-            )
-            if provider is None:
-                raise ProviderRequestError("PROVIDER_UNAVAILABLE", retryable=False)
-            try:
-                key = self._cipher.decrypt_legacy(
-                    LegacySecretFields(
-                        provider.encryptedApiKey, provider.keyIv, provider.keyAuthTag, "v1"
-                    )
-                )
-            except SecretCryptoError:
-                raise ProviderRequestError("PROVIDER_UNAVAILABLE", retryable=False) from None
-            result = await self._provider_client.extract_risks(
-                provider.endpoint,
-                provider.model,
-                key,
-                provider.timeoutSeconds,
-                payload,
-                provider.protocol,
-            )
-            return result[0]
-
-        return call
 
     async def _refetch(
         self, mailbox_id: UUID, uid_validity: int, imap_uid: int

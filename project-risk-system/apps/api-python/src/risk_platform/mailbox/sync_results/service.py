@@ -28,6 +28,7 @@ from risk_platform.mailbox.models import (
     MailMessageProjectMatch,
     MailMessageSkipReason,
     MailMessageStatus,
+    MailProjectResolutionStatus,
     MailRiskCandidate,
     MailRiskCandidateStatus,
     MailSourceHandoff,
@@ -42,6 +43,7 @@ from risk_platform.mailbox.sync_results.schemas import (
     MailMessageListQuery,
     MailMessageListResponse,
     MailProjectMatchItem,
+    MailProjectResolutionCandidateItem,
     MailRiskCandidateItem,
     MailRiskReviewOptions,
     MailSyncBatchDetail,
@@ -560,6 +562,9 @@ class MailSyncResultsService:
             configured=False,
             maskedEmail=None,
             latestBatch=None,
+            latestDiscoveredCount=0,
+            latestHandedOffCount=0,
+            latestDownstreamPendingCount=0,
             latestScannedCount=0,
             latestNewCount=0,
             latestSuccessCount=0,
@@ -631,12 +636,48 @@ class MailSyncResultsService:
                 )
                 for match, project_name in matches
             ],
+            projectResolutionCandidates=cls._resolution_candidates(
+                message.projectResolutionCandidates
+            ),
             riskCandidateCount=total,
             pendingRiskCount=pending,
             resultLabel=cls._result_label(message, total),
             resultNote=cls._result_note(message, pending),
             failureSummary=message.failureSummary,
         )
+
+    @staticmethod
+    def _resolution_candidates(
+        value: JSONValue | None,
+    ) -> list[MailProjectResolutionCandidateItem]:
+        if not isinstance(value, list):
+            return []
+        result: list[MailProjectResolutionCandidateItem] = []
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            required = {"optionId", "projectId", "name", "externalCode", "alias", "status"}
+            if not required.issubset(item):
+                continue
+            if not all(isinstance(item[key], (str, type(None))) for key in required):
+                continue
+            if not isinstance(item["optionId"], str) or not isinstance(item["projectId"], str):
+                continue
+            if not isinstance(item["name"], str) or not isinstance(item["status"], str):
+                continue
+            result.append(
+                MailProjectResolutionCandidateItem(
+                    optionId=item["optionId"],
+                    projectId=item["projectId"],
+                    name=item["name"],
+                    externalCode=item["externalCode"]
+                    if isinstance(item["externalCode"], str)
+                    else None,
+                    alias=item["alias"] if isinstance(item["alias"], str) else None,
+                    status=item["status"],
+                )
+            )
+        return result
 
     @classmethod
     def _detail_item(
@@ -684,6 +725,11 @@ class MailSyncResultsService:
 
     @staticmethod
     def _result_label(message: MailMessage, candidate_count: int) -> str:
+        if (
+            getattr(message, "projectResolutionStatus", None)
+            is MailProjectResolutionStatus.WAITING_CONFIRMATION
+        ):
+            return "等待确认所属项目"
         if message.status is MailMessageStatus.FAILED:
             return message.failureSummary or "处理失败"
         if message.status is MailMessageStatus.ANALYZING:
@@ -696,6 +742,11 @@ class MailSyncResultsService:
 
     @staticmethod
     def _result_note(message: MailMessage, pending: int) -> str:
+        if (
+            getattr(message, "projectResolutionStatus", None)
+            is MailProjectResolutionStatus.WAITING_CONFIRMATION
+        ):
+            return "请选择候选项目后继续风险识别"
         if message.status is MailMessageStatus.FAILED:
             return "等待风险管理员重试"
         if message.status is MailMessageStatus.ANALYZING:

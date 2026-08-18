@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, cast
 from uuid import UUID
 
 from sqlalchemy import or_, select
@@ -19,6 +19,7 @@ from risk_platform.rbac.scopes import project_scope_predicate
 MAX_PROJECT_RESOLUTION_CANDIDATES = 20
 MAX_RESOLUTION_TEXT = 8_000
 MIN_TOKEN_LENGTH = 2
+GENERIC_TOKENS = frozenset({"项目", "系统", "本周", "风险", "周报", "数据", "升级"})
 
 
 def normalize(value: str) -> str:
@@ -31,8 +32,19 @@ def search_tokens(subject: str, body: str) -> tuple[str, ...]:
     # mail body is never sent to SQL or the provider without this limit.
     tokens = re.findall(r"[\w\u3400-\u9fff]{2,}", text.casefold(), flags=re.UNICODE)
     return tuple(
-        dict.fromkeys(token for token in tokens if len(normalize(token)) >= MIN_TOKEN_LENGTH)
+        dict.fromkeys(
+            token
+            for token in tokens
+            if len(normalize(token)) >= MIN_TOKEN_LENGTH and normalize(token) not in GENERIC_TOKENS
+        )
     )
+
+
+def _phrases(subject: str, body: str) -> tuple[str, ...]:
+    subject_words = re.findall(r"[\w\u3400-\u9fff]{2,}", subject.casefold(), flags=re.UNICODE)
+    body_words = re.findall(r"[\w\u3400-\u9fff]{2,}", body.casefold(), flags=re.UNICODE)
+    values = ["".join(subject_words), "".join(body_words)]
+    return tuple(value for value in values if len(normalize(value)) >= 4)
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,19 +112,58 @@ class ProjectResolutionService:
             .limit(1)
             .scalar_subquery()
         )
-        rows = (
-            await session.execute(
-                select(Project)
-                .add_columns(active_alias)
-                .where(
-                    project_scope_predicate(user_id, data_scope),
-                    Project.status != ProjectStatus.ARCHIVED,
-                    or_(*fields),
+        rows = cast(
+            list[tuple[Project, str | None]],
+            (
+                await session.execute(
+                    select(Project)
+                    .add_columns(active_alias)
+                    .where(
+                        project_scope_predicate(user_id, data_scope),
+                        Project.status != ProjectStatus.ARCHIVED,
+                        or_(*fields),
+                    )
+                    # Fetch a bounded scoring window. Final ordering is
+                    # computed below from match signals, never Project.name.
+                    .order_by(Project.id)
+                    .limit(self.max_candidates * 10)
                 )
-                .order_by(Project.name, Project.id)
-                .limit(self.max_candidates)
+            ).all()
+        )
+        phrases = _phrases(subject, body)
+        normalized_subject = normalize(subject)
+        normalized_body = normalize(body[:MAX_RESOLUTION_TEXT])
+
+        def score(row: tuple[Project, str | None]) -> tuple[int, str]:
+            project, active_alias_value = row
+            values = tuple(
+                normalize(value)
+                for value in (project.externalCode, project.name, project.alias, active_alias_value)
+                if value
             )
-        ).all()
+            project_name = normalize(project.name)
+            external = normalize(project.externalCode or "")
+            aliases = {normalize(value) for value in (project.alias, active_alias_value) if value}
+            points = 0
+            if external and external in normalized_subject:
+                points += 1000
+            if project_name and project_name in normalized_subject:
+                points += 800
+            elif project_name and project_name in normalized_body:
+                points += 600
+            if any(alias and alias in normalized_subject for alias in aliases):
+                points += 500
+            elif any(alias and alias in normalized_body for alias in aliases):
+                points += 350
+            points += sum(20 for phrase in phrases if any(phrase in value for value in values))
+            points += sum(
+                10
+                for token in tokens
+                if any(token in value for value in values) and token not in GENERIC_TOKENS
+            )
+            return points, str(project.id)
+
+        rows.sort(key=score, reverse=True)
         return tuple(
             ResolutionCandidate(
                 option_id=f"P{index}",
@@ -122,7 +173,7 @@ class ProjectResolutionService:
                 alias=project.alias or active_alias_value,
                 status=project.status.value,
             )
-            for index, (project, active_alias_value) in enumerate(rows, 1)
+            for index, (project, active_alias_value) in enumerate(rows[: self.max_candidates], 1)
         )
 
     async def resolve(

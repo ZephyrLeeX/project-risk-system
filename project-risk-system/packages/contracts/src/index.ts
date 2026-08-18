@@ -1144,6 +1144,15 @@ export interface MailProjectMatchItem {
   matchedText: string;
 }
 
+export interface MailProjectResolutionCandidateItem {
+  optionId: string;
+  projectId: string;
+  name: string;
+  externalCode: string | null;
+  alias: string | null;
+  status: string;
+}
+
 export interface MailAttachmentItem {
   name: string;
   type: string;
@@ -1187,6 +1196,7 @@ export interface MailMessageListItem {
   sentAt: string | null;
   processedAt: string | null;
   projectMatches: MailProjectMatchItem[];
+  projectResolutionCandidates: MailProjectResolutionCandidateItem[];
   riskCandidateCount: number;
   pendingRiskCount: number;
   resultLabel: string;

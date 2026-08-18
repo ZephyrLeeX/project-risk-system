@@ -44,8 +44,8 @@ from risk_platform.imports.service import ImportPreviewService
 from risk_platform.imports.worker import ImportPreviewWorker
 from risk_platform.mailbox import tasks as mailbox_tasks
 from risk_platform.mailbox.extraction import MailRiskCandidateService, MailRiskExtractionWorker
-from risk_platform.mailbox.resolution import MailProjectResolutionService
 from risk_platform.mailbox.parse_worker import MailParseWorker
+from risk_platform.mailbox.resolution import MailProjectResolutionService
 from risk_platform.mailbox.service import MailboxService
 from risk_platform.mailbox.sync import MailboxSyncService
 from risk_platform.mailbox.sync_results import MailSyncResultsService
@@ -190,11 +190,12 @@ def merge_worker_handlers(
 
     merged: dict[str, TaskHandler] = {}
     merged.update(import_tasks.handlers(ImportPreviewWorker(sessions, str(import_root))))
+    mailbox_runtime = ProviderV2Runtime(sessions, agent_adapter or DeepSeekOfficialAdapter(cipher))
     merged.update(
         mailbox_tasks.handlers(
             MailboxSyncService(sessions, cipher),
-            MailParseWorker(sessions, cipher, provider_client=ai_provider_client),
-            MailRiskExtractionWorker(sessions, cipher, ai_provider_client),
+            MailParseWorker(sessions, cipher, provider_runtime=mailbox_runtime),
+            MailRiskExtractionWorker(sessions, cipher, provider_runtime=mailbox_runtime),
         )
     )
     merged.update(weekly_tasks.handlers(WeeklyReportService(sessions)))
@@ -210,9 +211,14 @@ def merge_worker_handlers(
     # The optional adapter is an explicit composition seam for the E2E harness.
     # Production callers omit it and therefore always use the guarded official
     # DeepSeek transport; no environment value can select a test provider.
-    runtime = ProviderV2Runtime(sessions, agent_adapter or DeepSeekOfficialAdapter(cipher))
     merged.update(
-        native_agent_execution_handlers(sessions, ReadOnlyAgentCore(runtime, tool_registry))
+        native_agent_execution_handlers(
+            sessions,
+            ReadOnlyAgentCore(
+                ProviderV2Runtime(sessions, agent_adapter or DeepSeekOfficialAdapter(cipher)),
+                tool_registry,
+            ),
+        )
     )
     return merged
 
