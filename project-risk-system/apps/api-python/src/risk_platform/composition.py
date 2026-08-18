@@ -28,6 +28,7 @@ from risk_platform.agent.v2_execution import native_agent_execution_handlers
 from risk_platform.ai_providers.client import AiProviderClient
 from risk_platform.ai_providers.service import AiProvidersService
 from risk_platform.ai_providers.v2_adapter import (
+    AiProviderAdapter,
     AiProviderAdapterRegistry,
     DeepSeekOfficialAdapter,
     ProviderType,
@@ -180,6 +181,8 @@ def merge_worker_handlers(
     import_root: Path,
     tool_registry: AgentToolRegistry,
     ai_provider_client: AiProviderClient,
+    *,
+    agent_adapter: AiProviderAdapter | None = None,
 ) -> Mapping[str, TaskHandler]:
     """Merge every module-local handler mapping into one closed registry."""
 
@@ -202,7 +205,10 @@ def merge_worker_handlers(
             )
         )
     )
-    runtime = ProviderV2Runtime(sessions, DeepSeekOfficialAdapter(cipher))
+    # The optional adapter is an explicit composition seam for the E2E harness.
+    # Production callers omit it and therefore always use the guarded official
+    # DeepSeek transport; no environment value can select a test provider.
+    runtime = ProviderV2Runtime(sessions, agent_adapter or DeepSeekOfficialAdapter(cipher))
     merged.update(
         native_agent_execution_handlers(sessions, ReadOnlyAgentCore(runtime, tool_registry))
     )

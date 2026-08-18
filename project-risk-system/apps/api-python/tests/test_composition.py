@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from risk_platform.agent.service import AgentConversationService
 from risk_platform.agent.tools import AgentToolRegistry
 from risk_platform.ai_providers.service import AiProvidersService
+from risk_platform.ai_providers.v2_adapter import AiProviderAdapter, DeepSeekOfficialAdapter
 from risk_platform.auth.service import AuthService
 from risk_platform.composition import (
     build_ai_provider_client,
@@ -130,6 +131,54 @@ def test_worker_handlers_cover_every_task_kind(tmp_path: Path) -> None:
 
     assert set(handlers) == {kind.value for kind in DurableTaskKind}
     assert len(handlers) == len(DurableTaskKind)
+
+
+def test_production_worker_composition_uses_the_guarded_official_adapter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: list[object] = []
+
+    class _Runtime:
+        def __init__(self, sessions: object, adapter: object) -> None:
+            del sessions
+            captured.append(adapter)
+
+    monkeypatch.setattr("risk_platform.composition.ProviderV2Runtime", _Runtime)
+    merge_worker_handlers(
+        _sessions(),
+        _cipher(),
+        tmp_path,
+        build_tool_registry(_sessions()),
+        build_ai_provider_client(_settings(tmp_path)),
+    )
+
+    assert len(captured) == 1
+    assert isinstance(captured[0], DeepSeekOfficialAdapter)
+
+
+def test_e2e_adapter_is_only_selected_by_explicit_injection(tmp_path: Path) -> None:
+    class _Adapter:
+        async def list_models(
+            self, encrypted_api_key: str, timeout_seconds: int
+        ) -> tuple[object, ...]:
+            del encrypted_api_key, timeout_seconds
+            return ()
+
+        async def chat(self, candidate: object, request: object) -> object:
+            del candidate, request
+            raise AssertionError("not called by composition test")
+
+    adapter = _Adapter()
+    handlers = merge_worker_handlers(
+        _sessions(),
+        _cipher(),
+        tmp_path,
+        build_tool_registry(_sessions()),
+        build_ai_provider_client(_settings(tmp_path)),
+        agent_adapter=cast(AiProviderAdapter, adapter),
+    )
+
+    assert set(handlers) == {kind.value for kind in DurableTaskKind}
 
 
 def test_build_services_provides_every_router_dependency(tmp_path: Path) -> None:
