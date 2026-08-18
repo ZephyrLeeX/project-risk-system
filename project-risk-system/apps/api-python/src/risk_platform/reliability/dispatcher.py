@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from risk_platform.model_types import utc_now
 from risk_platform.reliability.core import TaskHandler, claim_task, finish_task
-from risk_platform.reliability.models import DurableTask, TaskOutbox
+from risk_platform.reliability.models import DurableTask, DurableTaskStatus, TaskOutbox
 from risk_platform.reliability.registry import task_definition
 
 
@@ -100,7 +100,7 @@ async def execute_message(
                 await finish_task(session, task_id, token, success=False, cancelled=True)
         except DurableTaskFailure as exc:
             async with session_factory() as session, session.begin():
-                await finish_task(
+                status = await finish_task(
                     session,
                     task_id,
                     token,
@@ -117,6 +117,10 @@ async def execute_message(
                         else None
                     ),
                 )
+                if status is DurableTaskStatus.FAILED and exc.code == "AGENT_PROVIDER_UNAVAILABLE":
+                    finalizer = getattr(handler, "finalize_task_failure", None)
+                    if finalizer is not None:
+                        await finalizer(session, task_id, exc.code)
         except Exception as exc:
             async with session_factory() as session, session.begin():
                 await finish_task(

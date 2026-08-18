@@ -25,6 +25,7 @@ from .core import AgentCoreOutcome, AgentLoopError, ProjectSelectionRequired, Re
 from .events import append_event, event_capacity_available
 from .models import (
     AgentConversation,
+    AgentEvent,
     AgentEventType,
     AgentExecution,
     AgentExecutionConfig,
@@ -102,15 +103,9 @@ class NativeAgentExecutionWorker:
         except ProviderError as error:
             # Adapter-owned retry/failover has already consumed the immutable
             # candidate snapshot. Only the existing durable retry lifecycle may
-            # decide a later execution attempt; no transient SSE terminal fact.
-            if not error.retryable:
-                await self._error(
-                    payload,
-                    task_id,
-                    lease_token,
-                    "AGENT_PROVIDER_UNAVAILABLE",
-                    retryable=False,
-                )
+            # decide whether this is the final attempt. The dispatcher writes
+            # the terminal Agent state only after DurableTask is FAILED, so a
+            # RETRY_WAIT attempt cannot leak a terminal SSE error.
             raise DurableTaskFailure(
                 "AGENT_PROVIDER_UNAVAILABLE",
                 retryable=error.retryable,
@@ -475,6 +470,67 @@ class NativeAgentExecutionWorker:
                     {"code": code, "retryable": retryable},
                     message.id,
                 )
+
+    async def finalize_task_failure(
+        self, session: AsyncSession, task_id: UUID, failure_code: str
+    ) -> None:
+        """Persist the provider terminal state after durable exhaustion.
+
+        This is called by the dispatcher in the same transaction that changes
+        the DurableTask to FAILED. It is deliberately idempotent: a duplicate
+        delivery or recovery pass cannot create a second terminal event or
+        move an already-terminal execution backwards.
+        """
+
+        if failure_code != "AGENT_PROVIDER_UNAVAILABLE":
+            return
+        execution = await session.scalar(
+            select(AgentExecution).where(AgentExecution.taskId == task_id).with_for_update()
+        )
+        if execution is None:
+            return
+        config = await session.scalar(
+            select(AgentExecutionConfig).where(AgentExecutionConfig.taskId == task_id)
+        )
+        if config is None:
+            return
+        existing_terminal = await session.scalar(
+            select(AgentEvent.id)
+            .where(
+                AgentEvent.taskId == task_id,
+                AgentEvent.type.in_({AgentEventType.COMPLETED, AgentEventType.ERROR}),
+            )
+            .limit(1)
+        )
+        if existing_terminal is not None:
+            if execution.status not in {
+                AgentExecutionStatus.COMPLETED,
+                AgentExecutionStatus.CANCELLED,
+            }:
+                execution.status = AgentExecutionStatus.FAILED
+                execution.completedAt = datetime.now(UTC)
+            return
+        if execution.status not in {
+            AgentExecutionStatus.COMPLETED,
+            AgentExecutionStatus.CANCELLED,
+        }:
+            execution.status = AgentExecutionStatus.FAILED
+            execution.completedAt = datetime.now(UTC)
+        message = await session.get(AgentMessage, config.userMessageId)
+        if message is None:
+            return
+        await self._append(
+            session,
+            config,
+            message,
+            task_id,
+            AgentEventType.ERROR,
+            {
+                "code": "AGENT_PROVIDER_UNAVAILABLE",
+                "message": "AI 服务暂时无法连接，请稍后重试",  # noqa: RUF001
+            },
+            message.id,
+        )
 
     async def _mark_execution_terminal(
         self,
