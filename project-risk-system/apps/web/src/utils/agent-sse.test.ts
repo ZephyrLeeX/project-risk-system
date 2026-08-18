@@ -195,6 +195,14 @@ describe("agent event reducer", () => {
     state = applyFrame(state, frame("message.delta", "e2", { text: "x" }));
     expect(state.lastEventId).toBe("e2");
   });
+
+  it("ignores a replayed event so resume cannot duplicate a terminal message", () => {
+    let state = applyFrame(initialAgentState(), frame("message.delta", "e1", { text: "答复" }));
+    state = applyFrame(state, frame("completed", "e2", { dataAsOf: "2026-08-14T00:00:01.000Z" }));
+    const replayed = applyFrame(state, frame("completed", "e2", { dataAsOf: "2026-08-14T00:00:01.000Z" }));
+    expect(replayed.messages).toHaveLength(1);
+    expect(replayed.status).toBe("completed");
+  });
 });
 
 describe("agent display labels", () => {

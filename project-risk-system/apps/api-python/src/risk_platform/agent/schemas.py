@@ -9,6 +9,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
 from risk_platform.model_types import JSONValue
+from risk_platform.risks.models import ProjectRiskLevel, RiskStatus
 from risk_platform.risks.schemas import RiskItem
 from risk_platform.shared.http import StrictRequestModel
 
@@ -291,6 +292,8 @@ class DashboardFocusToolResponse(_Contract):
 
 class RiskToolArguments(StrictRequestModel):
     keyword: str | None = Field(default=None, max_length=100)
+    level: ProjectRiskLevel | None = None
+    status: RiskStatus | None = None
     projectId: UUID | None = None
     page: int = Field(default=1, ge=1)
     pageSize: int = Field(default=20, ge=1, le=100)

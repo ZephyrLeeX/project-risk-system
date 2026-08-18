@@ -9,7 +9,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -25,7 +25,13 @@ from risk_platform.imports.models import (
 from risk_platform.projects.models import Project, ProjectStatus
 from risk_platform.rbac.models import DataScopeType
 from risk_platform.rbac.scopes import project_scope_predicate
-from risk_platform.risks.models import ProjectRiskLevel, Risk, RiskCategory, RiskStatus
+from risk_platform.risks.models import (
+    ProjectRiskLevel,
+    Risk,
+    RiskCategory,
+    RiskSourceType,
+    RiskStatus,
+)
 from risk_platform.risks.schemas import RiskItem, RiskQuery
 from risk_platform.risks.service import RisksService
 
@@ -79,80 +85,153 @@ class DashboardService:
             days=now.weekday()
         )
         async with self._session_factory() as session:
-            projects = (await session.execute(select(Project).where(scope))).scalars().all()
-            risks = (
+            project_stats = (
                 await session.execute(
-                    select(Risk, Project)
+                    select(
+                        func.count(Project.id),
+                        func.count(Project.id).filter(Project.status == ProjectStatus.DELIVERY),
+                        func.count(func.distinct(Project.departmentId)).filter(
+                            Project.status == ProjectStatus.DELIVERY,
+                            Project.departmentId.is_not(None),
+                        ),
+                        func.max(Project.lastImportedAt),
+                    ).where(scope)
+                )
+            ).one()
+            active_conditions = [scope, Risk.status == RiskStatus.ACTIVE]
+            risk_stats = (
+                await session.execute(
+                    select(
+                        func.count(Risk.id),
+                        func.count(Risk.id).filter(Risk.level == ProjectRiskLevel.HIGH),
+                        func.count(Risk.id).filter(Risk.level == ProjectRiskLevel.MEDIUM),
+                        func.count(Risk.id).filter(Risk.level == ProjectRiskLevel.LOW),
+                        func.count(Risk.id).filter(Risk.level == ProjectRiskLevel.UNKNOWN),
+                        func.count(func.distinct(Risk.projectId)),
+                        func.count(func.distinct(Risk.projectId)).filter(
+                            Risk.level == ProjectRiskLevel.HIGH
+                        ),
+                        func.count(Risk.id).filter(Risk.detectedAt >= week_start),
+                        func.count(Risk.id).filter(
+                            Risk.level == ProjectRiskLevel.HIGH,
+                            Risk.detectedAt >= week_start,
+                        ),
+                        func.count(Risk.id).filter(Risk.sourceType == RiskSourceType.MAIL_AI),
+                        func.count(Risk.id).filter(Risk.sourceType == RiskSourceType.MANUAL),
+                        func.count(Risk.id).filter(Risk.sourceType == RiskSourceType.EXCEL),
+                        func.count(Risk.id).filter(Risk.sourceType == RiskSourceType.LITIGATION),
+                        func.max(Risk.updatedAt),
+                    )
+                    .select_from(Risk)
                     .join(Project, Project.id == Risk.projectId)
-                    .where(scope, Risk.status == RiskStatus.ACTIVE)
-                    .order_by(Risk.updatedAt.desc())
+                    .where(*active_conditions)
+                )
+            ).one()
+            active_project_ids = (
+                select(Risk.projectId)
+                .join(Project, Project.id == Risk.projectId)
+                .where(*active_conditions)
+                .distinct()
+                .subquery()
+            )
+            amount_stats = (
+                await session.execute(
+                    select(
+                        func.count(Project.id).filter(
+                            Project.actualCollectedAmount.is_not(None),
+                            Project.remainingAmount.is_not(None),
+                        ),
+                        func.coalesce(
+                            func.sum(Project.actualCollectedAmount).filter(
+                                Project.actualCollectedAmount.is_not(None),
+                                Project.remainingAmount.is_not(None),
+                            ),
+                            Decimal(0),
+                        ),
+                        func.coalesce(
+                            func.sum(Project.remainingAmount).filter(
+                                Project.actualCollectedAmount.is_not(None),
+                                Project.remainingAmount.is_not(None),
+                            ),
+                            Decimal(0),
+                        ),
+                    )
+                    .join(active_project_ids, active_project_ids.c.projectId == Project.id)
+                    .where(scope)
+                )
+            ).one()
+            high_project_rows = (
+                await session.execute(
+                    select(Project.name, func.max(Risk.updatedAt).label("latest"))
+                    .select_from(Risk)
+                    .join(Project, Project.id == Risk.projectId)
+                    .where(*active_conditions, Risk.level == ProjectRiskLevel.HIGH)
+                    .group_by(Project.id, Project.name)
+                    .order_by(func.max(Risk.updatedAt).desc())
+                    .limit(2)
                 )
             ).all()
-        active = [risk for risk, _project in risks]
-        risk_projects = {project.id: project for _risk, project in risks}
-        high = [risk for risk in active if risk.level is ProjectRiskLevel.HIGH]
-        complete = [
-            project
-            for project in risk_projects.values()
-            if project.actualCollectedAmount is not None and project.remainingAmount is not None
-        ]
-        collected = sum(
-            (project.actualCollectedAmount or Decimal(0) for project in complete), Decimal(0)
-        )
-        remaining = sum((project.remainingAmount or Decimal(0) for project in complete), Decimal(0))
+            priority_rows = (
+                await session.execute(
+                    select(
+                        func.coalesce(func.nullif(func.trim(Risk.suggestion), ""), Risk.title)
+                    )
+                    .select_from(Risk)
+                    .join(Project, Project.id == Risk.projectId)
+                    .where(*active_conditions, Risk.level == ProjectRiskLevel.HIGH)
+                    .order_by(Risk.updatedAt.desc())
+                    .limit(3)
+                )
+            ).all()
+        project_total, delivery_total, delivery_departments, latest_project = project_stats
+        (
+            active_total,
+            high_total,
+            medium_total,
+            low_total,
+            unknown_total,
+            risk_project_total,
+            high_project_total,
+            weekly_new_total,
+            weekly_new_high_total,
+            mail_ai_total,
+            manual_total,
+            excel_total,
+            litigation_total,
+            latest_risk,
+        ) = risk_stats
+        complete_count, collected, remaining = amount_stats
+        collected = collected or Decimal(0)
+        remaining = remaining or Decimal(0)
         denominator = collected + remaining
-        latest = max(
-            [risk.updatedAt for risk in active]
-            + [
-                project.lastImportedAt for project in projects if project.lastImportedAt is not None
-            ],
-            default=None,
-        )
-        source_counts = {
-            source: sum(risk.sourceType.value == source for risk in active)
-            for source in ("MAIL_AI", "MANUAL", "EXCEL", "LITIGATION")
-        }
-        high_project_names = list(
-            dict.fromkeys(
-                project.name for risk, project in risks if risk.level is ProjectRiskLevel.HIGH
-            )
-        )[:2]
-        priorities = list(dict.fromkeys((risk.suggestion or risk.title).strip() for risk in high))[
-            :3
-        ]
+        latest = max((value for value in (latest_project, latest_risk) if value), default=None)
+        high_project_names = [name for name, _latest in high_project_rows]
+        priorities = list(dict.fromkeys(str(value).strip() for value, in priority_rows))[:3]
         return DashboardSummary(
-            projectTotal=len(projects),
-            deliveryProjectTotal=sum(
-                project.status is ProjectStatus.DELIVERY for project in projects
-            ),
-            deliveryDepartmentTotal=len(
-                {
-                    project.departmentId
-                    for project in projects
-                    if project.status is ProjectStatus.DELIVERY and project.departmentId is not None
-                }
-            ),
+            projectTotal=project_total,
+            deliveryProjectTotal=delivery_total,
+            deliveryDepartmentTotal=delivery_departments,
             latestImportBatchCode=None,
             latestImportCreatedProjectTotal=0,
-            activeRiskTotal=len(active),
-            highRiskTotal=len(high),
-            mediumRiskTotal=sum(risk.level is ProjectRiskLevel.MEDIUM for risk in active),
-            lowRiskTotal=sum(risk.level is ProjectRiskLevel.LOW for risk in active),
-            unknownRiskTotal=sum(risk.level is ProjectRiskLevel.UNKNOWN for risk in active),
-            riskProjectTotal=len(risk_projects),
-            highRiskProjectTotal=len({risk.projectId for risk in high}),
-            weeklyNewRiskTotal=sum(risk.detectedAt >= week_start for risk in active),
-            weeklyNewHighRiskTotal=sum(risk.detectedAt >= week_start for risk in high),
-            mailAiRiskTotal=source_counts["MAIL_AI"],
-            manualRiskTotal=source_counts["MANUAL"],
-            excelRiskTotal=source_counts["EXCEL"],
-            litigationRiskTotal=source_counts["LITIGATION"],
+            activeRiskTotal=active_total,
+            highRiskTotal=high_total,
+            mediumRiskTotal=medium_total,
+            lowRiskTotal=low_total,
+            unknownRiskTotal=unknown_total,
+            riskProjectTotal=risk_project_total,
+            highRiskProjectTotal=high_project_total,
+            weeklyNewRiskTotal=weekly_new_total,
+            weeklyNewHighRiskTotal=weekly_new_high_total,
+            mailAiRiskTotal=mail_ai_total,
+            manualRiskTotal=manual_total,
+            excelRiskTotal=excel_total,
+            litigationRiskTotal=litigation_total,
             highRiskFocusProjectNames=high_project_names,
             highRiskPriorityItems=priorities,
-            riskRemainingAmountYuan=f"{remaining:.2f}" if complete else None,
-            riskCollectedAmountYuan=f"{collected:.2f}" if complete else None,
-            riskAmountCompleteProjectTotal=len(complete),
-            riskAmountMissingProjectTotal=len(risk_projects) - len(complete),
+            riskRemainingAmountYuan=f"{remaining:.2f}" if complete_count else None,
+            riskCollectedAmountYuan=f"{collected:.2f}" if complete_count else None,
+            riskAmountCompleteProjectTotal=complete_count,
+            riskAmountMissingProjectTotal=risk_project_total - complete_count,
             riskCollectionCompletionRate=(
                 float((collected / denominator * 100).quantize(Decimal("0.1")))
                 if denominator > 0

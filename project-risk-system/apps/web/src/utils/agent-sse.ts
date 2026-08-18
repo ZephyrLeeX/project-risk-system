@@ -199,6 +199,10 @@ export function applyFrame(
   state: AgentConversationState,
   frame: SseFrame,
 ): AgentConversationState {
+  // Resume is at-least-once at the transport boundary. Ignore an already
+  // applied durable event so reconnects cannot duplicate messages,
+  // interactions, terminal events, or mutation previews.
+  if (frame.id !== null && frame.id === state.lastEventId) return state;
   const base = parseEventBase(frame.data);
   // An unparseable frame still advances the resume cursor if it carried an id.
   if (base === null) {

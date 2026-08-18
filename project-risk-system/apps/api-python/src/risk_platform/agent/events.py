@@ -175,8 +175,10 @@ async def _stream(
     terminal_seen = False
     normal_close = False
     loop = asyncio.get_running_loop()
-    last_fact_at = loop.time()
-    last_keepalive_at = last_fact_at
+    # ``idle_seconds`` is retained as a call-compatible parameter for older
+    # callers, but it is intentionally not a transport close threshold.
+    del idle_seconds
+    last_keepalive_at = loop.time()
     try:
         while True:
             async with sessions() as session:
@@ -198,26 +200,19 @@ async def _stream(
                     after_sequence = row.sequence
                     terminal_seen = row.type in STREAM_CLOSE_EVENT_TYPES
                     yield wire_event(row)
-                last_fact_at = loop.time()
                 if terminal_seen:
                     normal_close = True
                     return
                 continue
             status = await _latest_task_status(sessions, conversation_id)
             now = loop.time()
-            if status in (DurableTaskStatus.QUEUED, DurableTaskStatus.RETRY_WAIT):
-                # Queueing and durable retry backoff are expected periods without
-                # AgentEvent facts. Keep the HTTP transport alive without changing
-                # the execution's durable outcome or resume cursor.
+            if status in ACTIVE_STATUSES:
+                # This is an SSE comment, not an AgentEvent. It cannot change
+                # execution/task/business state. RUNNING remains connected while
+                # a provider, database, or tool call produces no durable event.
                 if now - last_keepalive_at >= keepalive_seconds:
                     yield b": keepalive\n\n"
                     last_keepalive_at = now
-            elif status == DurableTaskStatus.RUNNING and now - last_fact_at >= idle_seconds:
-                # A RUNNING execution should write durable heartbeats. This is a
-                # delivery watchdog only: closing lets EventSource reconnect while
-                # leaving task lifecycle ownership with the fenced worker.
-                normal_close = True
-                return
             elif status not in ACTIVE_STATUSES:
                 normal_close = True
                 return

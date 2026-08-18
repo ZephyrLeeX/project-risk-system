@@ -79,6 +79,7 @@ class RiskFilterOptions(BaseModel):
 class RiskQuery(StrictRequestModel):
     keyword: str | None = Field(default=None, max_length=100)
     level: ProjectRiskLevel | None = None
+    status: RiskStatus | None = None
     categoryId: UUID | None = None
     owner: str | None = Field(default=None, max_length=100)
     sourceType: RiskSourceType | None = None

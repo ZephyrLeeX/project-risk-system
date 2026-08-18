@@ -29,6 +29,7 @@ function envelope(conversationId: string) {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.resetAllMocks();
 });
@@ -81,5 +82,36 @@ describe("Agent conversation reset", () => {
     expect(mockedAgentApi.create).toHaveBeenCalledTimes(2);
     expect(mockedAgentApi.continueConversation).not.toHaveBeenCalled();
     expect(agent.state.conversationId).toBe("new-id");
+  });
+
+  it("reconnects a premature EOF from lastEventId without duplicating the assistant", async () => {
+    vi.useFakeTimers();
+    mockedAgentApi.create.mockResolvedValue(envelope("resume-id"));
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          'id: e1\nevent: message.delta\ndata: {"conversationId":"resume-id","messageId":"m-2","sequence":2,"traceId":"t","occurredAt":"2026-08-17T00:00:00.000Z","text":"答复"}\n\n',
+          { headers: { "Content-Type": "text/event-stream" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          'id: e2\nevent: completed\ndata: {"conversationId":"resume-id","messageId":"m-2","sequence":3,"traceId":"t","occurredAt":"2026-08-17T00:00:01.000Z","dataAsOf":"2026-08-17T00:00:01.000Z"}\n\n',
+          { headers: { "Content-Type": "text/event-stream" } },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const agent = useAgentConversation();
+
+    const sending = agent.send("有哪些高风险？");
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    await vi.advanceTimersByTimeAsync(1000);
+    await sending;
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1]?.[0]).toContain("after=e1");
+    expect(agent.state.messages.filter((item) => item.role === "ASSISTANT")).toHaveLength(1);
+    expect(agent.state.status).toBe("completed");
   });
 });

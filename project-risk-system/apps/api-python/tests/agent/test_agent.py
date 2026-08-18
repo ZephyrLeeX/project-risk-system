@@ -30,7 +30,8 @@ from risk_platform.dashboard.schemas import DashboardSummary
 from risk_platform.dashboard.service import DashboardService
 from risk_platform.db import create_database_engine, create_session_factory, transaction
 from risk_platform.reliability.models import DurableTask, DurableTaskKind, DurableTaskStatus
-from risk_platform.risks.schemas import RiskDetail, RiskPage
+from risk_platform.risks.models import ProjectRiskLevel, RiskStatus
+from risk_platform.risks.schemas import RiskDetail, RiskPage, RiskQuery
 from risk_platform.risks.service import RisksService
 from risk_platform.shared.errors import ApiError
 from risk_platform.todos.schemas import ManagerTodoDetail, ManagerTodoListResponse
@@ -157,6 +158,36 @@ def test_tool_registry_fails_closed_when_a_tool_returns_none() -> None:
     registry._by_name["project_search"] = replace(original, call=returns_none)
     with pytest.raises(AgentToolResultTypeError):
         asyncio.run(registry.invoke(identity(), "project_search", {}, trace_id="trace"))
+
+
+def test_risk_list_maps_bounded_level_and_status_to_risk_query() -> None:
+    captured: list[object] = []
+
+    class FakeRisks:
+        async def list(self, _identity: SessionIdentity, query: object) -> RiskPage:
+            captured.append(query)
+            return RiskPage(items=[], page=1, pageSize=20, total=0)
+
+        async def list_for_project(
+            self, _identity: SessionIdentity, _project_id: UUID, query: object
+        ) -> RiskPage:
+            captured.append(query)
+            return RiskPage(items=[], page=1, pageSize=20, total=0)
+
+    call = AgentToolRegistry._risk_list(FakeRisks())  # type: ignore[arg-type]
+
+    async def invoke() -> object:
+        return await call(
+            identity(),
+            {"level": ProjectRiskLevel.HIGH, "status": RiskStatus.ACTIVE, "pageSize": 20},
+        )
+
+    asyncio.run(invoke())
+    query = captured[0]
+    assert isinstance(query, RiskQuery)
+    assert query.level is ProjectRiskLevel.HIGH
+    assert query.status is RiskStatus.ACTIVE
+    assert query.pageSize == 20
 
 
 def test_all_agent_tools_adapt_their_declared_runtime_result_to_agent_tool_result() -> None:

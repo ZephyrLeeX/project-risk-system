@@ -145,6 +145,25 @@ export function useAgentConversation() {
     streamUrl: string,
     after: string | null,
   ): Promise<void> {
+    let cursor = after;
+    const reconnectDelays = [1000, 2000, 5000];
+    for (let attempt = 0; attempt <= reconnectDelays.length; attempt += 1) {
+      const endedUnexpectedly = await connectStreamOnce(streamUrl, cursor);
+      if (!endedUnexpectedly || state.status !== "streaming") return;
+      if (attempt === reconnectDelays.length) {
+        markDisconnected();
+        return;
+      }
+      await delay(reconnectDelays[attempt]!);
+      cursor = state.lastEventId;
+    }
+  }
+
+  /** Consume one HTTP stream. A true result means EOF without a terminal event. */
+  async function connectStreamOnce(
+    streamUrl: string,
+    after: string | null,
+  ): Promise<boolean> {
     abortStream();
     controller = new AbortController();
     const url = withResumeCursor(streamUrl, after);
@@ -157,20 +176,18 @@ export function useAgentConversation() {
         signal: controller.signal,
       });
     } catch (error) {
-      if (isAbort(error)) return;
-      markDisconnected();
-      return;
+      if (isAbort(error)) return false;
+      return true;
     }
 
     if (!response.ok) {
       await consumeStreamError(response);
-      return;
+      return false;
     }
 
     const body = response.body;
     if (!body) {
-      markDisconnected();
-      return;
+      return false;
     }
 
     const reader = body.getReader();
@@ -187,13 +204,11 @@ export function useAgentConversation() {
           Object.assign(state, applyFrame(state, frame));
         }
       }
-      // Stream closed. If no terminal event was seen, offer to resume.
-      if (state.status === "streaming") {
-        markDisconnected();
-      }
+      // Clean EOF is unexpected while the durable turn is still streaming.
+      return state.status === "streaming";
     } catch (error) {
-      if (isAbort(error)) return;
-      markDisconnected();
+      if (isAbort(error)) return false;
+      return true;
     }
   }
 
@@ -264,4 +279,8 @@ function isAbort(error: unknown): boolean {
     error instanceof DOMException &&
     (error.name === "AbortError" || error.name === "TimeoutError")
   );
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }

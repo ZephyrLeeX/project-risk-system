@@ -698,7 +698,11 @@ class RisksService:
     ) -> Sequence[Any]:
         conditions: list[Any] = [
             project_scope_predicate(UUID(identity.user.id), DataScopeType(identity.user.dataScope)),
-            Risk.status == (RiskStatus.RESOLVED if resolved else RiskStatus.ACTIVE),
+            Risk.status == (
+                query.status
+                if query.status is not None
+                else (RiskStatus.RESOLVED if resolved else RiskStatus.ACTIVE)
+            ),
         ]
         if query.keyword and (value := query.keyword.strip()):
             pattern = f"%{value}%"

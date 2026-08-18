@@ -17,6 +17,7 @@ from risk_platform.dashboard.schemas import DashboardSummary
 from risk_platform.dashboard.service import DashboardService
 from risk_platform.model_types import JSONValue
 from risk_platform.projects.query_service import ProjectSearchQuery, ProjectsQueryService
+from risk_platform.risks.models import ProjectRiskLevel, RiskStatus
 from risk_platform.risks.schemas import RiskDetail, RiskItem, RiskPage, RiskQuery
 from risk_platform.risks.service import RisksService
 from risk_platform.shared.errors import ApiError
@@ -343,6 +344,8 @@ class AgentToolRegistry:
         async def call(identity: SessionIdentity, arguments: Mapping[str, object]) -> object:
             query = RiskQuery(
                 keyword=cast(str | None, arguments.get("keyword")),
+                level=cast(ProjectRiskLevel | None, arguments.get("level")),
+                status=cast(RiskStatus | None, arguments.get("status")),
                 page=_int_argument(arguments.get("page"), 1),
                 pageSize=_int_argument(arguments.get("pageSize"), 20),
             )
