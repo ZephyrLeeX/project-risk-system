@@ -27,7 +27,6 @@ const emptySummary: MailSyncSummary = {
   latestNewCount: 0,
   latestSuccessCount: 0,
   latestSkippedCount: 0,
-  latestDuplicateCount: 0,
   latestRuleMismatchCount: 0,
   latestFailedCount: 0,
   latestRiskCandidateCount: 0,
