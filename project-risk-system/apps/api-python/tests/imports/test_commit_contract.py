@@ -8,7 +8,12 @@ import pytest
 from pydantic import ValidationError
 
 from risk_platform.imports.commit_service import ImportCommitService, _risk_snapshot, _snapshot
-from risk_platform.imports.schemas import ConfirmImportRequest, ImportBatchListQuery
+from risk_platform.imports.models import ImportBatch, ImportBatchStatus
+from risk_platform.imports.schemas import (
+    ConfirmImportRequest,
+    ImportBatchListQuery,
+    ImportSourceMeta,
+)
 from risk_platform.projects.models import Project, ProjectRiskLevel, ProjectStatus
 from risk_platform.risks.models import Risk, RiskSourceType, RiskStatus
 
@@ -25,6 +30,19 @@ def test_history_query_bounds_match_legacy_contract() -> None:
         ImportBatchListQuery(page=0)
     with pytest.raises(ValidationError):
         ImportBatchListQuery(pageSize=51)
+
+
+def test_import_preview_contract_exposes_processing_and_nullable_source_meta() -> None:
+    assert ImportBatchStatus.PROCESSING.value == "PROCESSING"
+    batch = ImportBatch(sourceMeta=None)
+    assert ImportCommitService._source_meta(batch) is None
+    source = ImportSourceMeta(
+        sheetNames=["数据回款"],
+        ignoredSheets=["汇总"],
+        monthAttributes={"1": "春节", "2": None},
+    )
+    batch.sourceMeta = source.model_dump()
+    assert ImportCommitService._source_meta(batch) == source
 
 
 def test_project_snapshot_keeps_amount_precision_and_version() -> None:

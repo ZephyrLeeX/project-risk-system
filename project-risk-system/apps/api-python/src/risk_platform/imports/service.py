@@ -11,7 +11,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from risk_platform.imports.models import ImportBatch
+from risk_platform.imports.models import ImportBatch, ImportBatchStatus
 from risk_platform.imports.parser import MAIN_SHEET, MAX_WORKBOOK_BYTES, WorkbookError
 from risk_platform.imports.storage import WorkbookStorage
 from risk_platform.model_types import new_uuid
@@ -66,6 +66,7 @@ class ImportPreviewService:
                     fileHash=digest,
                     storageKey=key,
                     sheetName=MAIN_SHEET,
+                    status=ImportBatchStatus.PROCESSING,
                     totalRows=0,
                     readyRows=0,
                     warningRows=0,

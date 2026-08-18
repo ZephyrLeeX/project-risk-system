@@ -184,13 +184,6 @@
             ],
             "title": "Email"
           },
-          "mobile": {
-            "anyOf": [
-              {"type": "string"},
-              {"type": "null"}
-            ],
-            "title": "Mobile"
-          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -216,6 +209,17 @@
               }
             ],
             "title": "Lockeduntil"
+          },
+          "mobile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mobile"
           },
           "mustChangePassword": {
             "title": "Mustchangepassword",
@@ -248,6 +252,7 @@
           "username",
           "displayName",
           "email",
+          "mobile",
           "department",
           "status",
           "role",
@@ -255,7 +260,6 @@
           "assignedProjectIds",
           "assignedProjectCount",
           "mustChangePassword",
-          "mobile",
           "lastLoginAt",
           "lockedUntil",
           "createdAt",
@@ -3650,9 +3654,20 @@
         "title": "AuditModuleKey",
         "type": "string"
       },
+      "AuthMethod": {
+        "enum": [
+          "PASSWORD",
+          "WECHAT"
+        ],
+        "type": "string"
+      },
       "AuthenticatedUser": {
         "additionalProperties": false,
         "properties": {
+          "authMethod": {
+            "$ref": "#/components/schemas/AuthMethod",
+            "default": "PASSWORD"
+          },
           "dataScope": {
             "$ref": "#/components/schemas/DataScope"
           },
@@ -3678,12 +3693,6 @@
           "mustChangePassword": {
             "title": "Mustchangepassword",
             "type": "boolean"
-          },
-          "authMethod": {
-            "enum": ["PASSWORD", "WECHAT"],
-            "title": "Authmethod",
-            "type": "string",
-            "default": "PASSWORD"
           },
           "permissions": {
             "items": {
@@ -5338,9 +5347,14 @@
             "type": "string"
           },
           "sourceMeta": {
-            "additionalProperties": true,
-            "title": "Sourcemeta",
-            "type": "object"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImportSourceMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "status": {
             "$ref": "#/components/schemas/ImportBatchStatus"
@@ -5431,6 +5445,7 @@
       },
       "ImportBatchStatus": {
         "enum": [
+          "PROCESSING",
           "PREVIEWED",
           "IMPORTED",
           "ROLLED_BACK",
@@ -5771,6 +5786,46 @@
           "committedProjectId"
         ],
         "title": "ImportRowItem",
+        "type": "object"
+      },
+      "ImportSourceMeta": {
+        "additionalProperties": false,
+        "properties": {
+          "ignoredSheets": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ignoredsheets",
+            "type": "array"
+          },
+          "monthAttributes": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Monthattributes",
+            "type": "object"
+          },
+          "sheetNames": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Sheetnames",
+            "type": "array"
+          }
+        },
+        "required": [
+          "sheetNames",
+          "ignoredSheets",
+          "monthAttributes"
+        ],
+        "title": "ImportSourceMeta",
         "type": "object"
       },
       "JSONScalar": {
@@ -12383,16 +12438,22 @@
             ],
             "title": "Email"
           },
-          "mobile": {
-            "anyOf": [
-              {"maxLength": 32, "minLength": 11, "type": "string"},
-              {"type": "null"}
-            ],
-            "title": "Mobile"
-          },
           "enabled": {
             "title": "Enabled",
             "type": "boolean"
+          },
+          "mobile": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "minLength": 11,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mobile"
           },
           "projectIds": {
             "items": {
@@ -16456,38 +16517,6 @@
         ]
       }
     },
-    "/api/auth/wechat-login": {
-      "get": {
-        "operationId": "wechat_login_api_auth_wechat_login_get",
-        "parameters": [
-          {
-            "name": "personToken",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                { "type": "string", "maxLength": 2048 },
-                { "type": "null" }
-              ],
-              "title": "Persontoken"
-            }
-          }
-        ],
-        "responses": {
-          "303": { "description": "Successful Response" },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/HTTPValidationError" }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Wechat Login",
-        "tags": ["auth"]
-      }
-    },
     "/api/auth/logout": {
       "post": {
         "operationId": "logout_api_auth_logout_post",
@@ -16525,6 +16554,55 @@
           }
         },
         "summary": "Get Session",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/wechat-login": {
+      "get": {
+        "description": "Exchange the one-request bearer credential for the normal session cookie.",
+        "operationId": "wechat_login_api_auth_wechat_login_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "personToken",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2048,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Persontoken"
+            }
+          }
+        ],
+        "responses": {
+          "303": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Wechat Login",
         "tags": [
           "auth"
         ]

@@ -120,8 +120,14 @@ class ImportBatchSummary(StrictRequestModel):
     rolledBackAt: datetime | None
 
 
+class ImportSourceMeta(StrictRequestModel):
+    sheetNames: list[str]
+    ignoredSheets: list[str]
+    monthAttributes: dict[str, str | None]
+
+
 class ImportBatchDetail(ImportBatchSummary):
-    sourceMeta: dict[str, object]
+    sourceMeta: ImportSourceMeta | None
     rows: list[ImportRowItem]
     supplementalRows: list[SupplementalRowItem]
     legalRows: list[LegalRowItem]
@@ -140,6 +146,7 @@ __all__ = [
     "ImportBatchListQuery",
     "ImportBatchSummary",
     "ImportRowItem",
+    "ImportSourceMeta",
     "LegalRowItem",
     "MatchSupplementalRequest",
     "PaginatedImportBatches",

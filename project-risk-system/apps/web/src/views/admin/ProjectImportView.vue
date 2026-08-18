@@ -9,7 +9,7 @@ import type {
   SupplementalCollectionRowItem,
   SupplementalMatchStatus,
 } from "@risk-platform/contracts";
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 
 import { ApiError } from "@/api/http";
 import { projectImportApi } from "@/api/imports";
@@ -43,6 +43,8 @@ const historyStatus = ref<"" | ImportBatchStatus>("");
 const historyPage = ref(1);
 const selectedHistoryBatch = ref<ProjectImportBatchSummary | null>(null);
 const historyPageSize = 5;
+let pollingTimer: number | undefined;
+let pollingRun = 0;
 
 const latestImportedBatch = computed(() =>
   batches.value.find((batch) => batch.status === "IMPORTED"),
@@ -130,9 +132,19 @@ const canConfirm = computed(
         0 ||
       acknowledgeWarnings.value),
 );
+const sourceMeta = computed(() => currentBatch.value?.sourceMeta);
+const sheetNames = computed(() => sourceMeta.value?.sheetNames ?? []);
+const rows = computed(() => currentBatch.value?.rows ?? []);
+const supplementalRows = computed(() => currentBatch.value?.supplementalRows ?? []);
+const legalRows = computed(() => currentBatch.value?.legalRows ?? []);
 
 onMounted(async () => {
   await loadBatches();
+});
+
+onBeforeUnmount(() => {
+  pollingRun += 1;
+  if (pollingTimer !== undefined) window.clearTimeout(pollingTimer);
 });
 
 function chooseFile(): void {
@@ -243,17 +255,48 @@ async function preview(): Promise<void> {
   loading.value = true;
   errorMessage.value = "";
   try {
-    currentBatch.value = await projectImportApi.preview(
-      selectedFile.value,
-    );
+    const accepted = await projectImportApi.preview(selectedFile.value);
     uploadDrawerOpen.value = false;
+    selectedFile.value = null;
     acknowledgeWarnings.value = false;
+    noticeMessage.value = "正在解析 Excel…";
+    currentBatch.value = await projectImportApi.detail(accepted.batchId);
+    await pollPreview(accepted.batchId);
     await loadBatches();
   } catch (error) {
     errorMessage.value = getErrorMessage(error);
   } finally {
     loading.value = false;
   }
+}
+
+async function pollPreview(id: string): Promise<void> {
+  const run = ++pollingRun;
+  const deadline = Date.now() + 45_000;
+  const poll = async (): Promise<void> => {
+    if (run !== pollingRun) return;
+    const detail = await projectImportApi.detail(id);
+    if (run !== pollingRun) return;
+    currentBatch.value = detail;
+    if (detail.status === "PREVIEWED") {
+      noticeMessage.value = "Excel 解析完成，请检查预览结果。";
+      return;
+    }
+    if (detail.status === "FAILED") {
+      noticeMessage.value = "Excel 解析失败，请查看批次错误信息。";
+      return;
+    }
+    if (Date.now() >= deadline) {
+      noticeMessage.value = "Excel 仍在后台解析，请稍后从导入历史打开。";
+      return;
+    }
+    pollingTimer = window.setTimeout(() => {
+      void poll().catch((error: unknown) => {
+        if (run === pollingRun) errorMessage.value = getErrorMessage(error);
+      });
+    }, 750);
+  };
+  await poll();
 }
 
 async function confirmImport(): Promise<void> {
@@ -400,6 +443,7 @@ function getErrorMessage(error: unknown): string {
 
 function statusLabel(status: ImportBatchStatus): string {
   return {
+    PROCESSING: "解析中",
     PREVIEWED: "待确认",
     IMPORTED: "已导入",
     ROLLED_BACK: "已回滚",
@@ -561,15 +605,19 @@ function formatTime(value: string | null): string {
 
       <ol class="prototype-import-stepper" aria-label="导入进度">
         <li class="is-complete"><span>1</span><div><strong>上传文件</strong><small>文件摘要已生成</small></div></li>
-        <li class="is-complete"><span>2</span><div><strong>解析校验</strong><small>{{ currentBatch.sourceMeta.sheetNames.length }}张工作表已识别</small></div></li>
+        <li class="is-complete"><span>2</span><div><strong>解析校验</strong><small>{{ sheetNames.length }}张工作表已识别</small></div></li>
         <li :class="{ 'is-complete': currentBatch.status !== 'PREVIEWED', 'is-current': currentBatch.status === 'PREVIEWED' }"><span>3</span><div><strong>确认差异</strong><small>{{ pendingMatchCount }}条匹配待确认</small></div></li>
         <li :class="{ 'is-current': currentBatch.status === 'IMPORTED', 'is-complete': currentBatch.status === 'IMPORTED' }"><span>4</span><div><strong>发布数据</strong><small>确认后整批生效</small></div></li>
       </ol>
 
-      <div class="prototype-import-workspace">
+      <section v-if="currentBatch.status === 'PROCESSING'" class="admin-state" role="status">
+        正在后台解析 Excel，请稍后刷新或从导入历史打开。
+      </section>
+
+      <div v-else class="prototype-import-workspace">
         <main>
           <section class="prototype-sheet-recognition">
-            <header><div><p>WORKBOOK STRUCTURE</p><h3>工作表识别结果</h3></div><span><i></i>{{ currentBatch.sourceMeta.sheetNames.length }}张工作表已识别</span></header>
+            <header><div><p>WORKBOOK STRUCTURE</p><h3>工作表识别结果</h3></div><span><i></i>{{ sheetNames.length }}张工作表已识别</span></header>
             <div class="prototype-sheet-grid">
               <button :class="{ 'is-active': activeSheet === 'main' }" type="button" @click="showSheet('main')"><span class="sheet-token is-main">▣</span><span><strong>数据回款</strong><small>主清单</small></span><b>{{ currentBatch.totalRows }}条</b><i>✓</i></button>
               <button :class="{ 'is-active': activeSheet === 'supplemental' }" type="button" @click="showSheet('supplemental')"><span class="sheet-token is-payment">□</span><span><strong>涵谷回款</strong><small>补充回款</small></span><b>{{ currentBatch.supplementalTotalRows }}条</b><i>✓</i></button>
@@ -731,7 +779,7 @@ function formatTime(value: string | null): string {
       </div>
 
       <section
-        v-if="currentBatch.supplementalRows.length > 0"
+        v-if="supplementalRows.length > 0"
         id="sheet-supplemental-section"
         class="supplemental-rows-section"
       >
@@ -760,7 +808,7 @@ function formatTime(value: string | null): string {
             </thead>
             <tbody>
               <tr
-                v-for="row in currentBatch.supplementalRows"
+                v-for="row in supplementalRows"
                 :key="row.id"
               >
                 <td>{{ row.rowNumber }}</td>
@@ -835,7 +883,7 @@ function formatTime(value: string | null): string {
       </section>
 
       <section
-        v-if="currentBatch.legalRows.length > 0"
+        v-if="legalRows.length > 0"
         id="sheet-legal-section"
         class="supplemental-rows-section legal-rows-section"
       >
@@ -860,7 +908,7 @@ function formatTime(value: string | null): string {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="row in currentBatch.legalRows" :key="row.id">
+              <tr v-for="row in legalRows" :key="row.id">
                 <td>{{ row.rowNumber }}</td>
                 <td>
                   <span
@@ -933,7 +981,7 @@ function formatTime(value: string | null): string {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="row in currentBatch.rows" :key="row.id">
+            <tr v-for="row in rows" :key="row.id">
               <td>{{ row.rowNumber }}</td>
               <td>{{ row.action === "CREATE" ? "新增" : row.action === "UPDATE" ? "更新" : "跳过" }}</td>
               <td>
@@ -984,7 +1032,7 @@ function formatTime(value: string | null): string {
           <h2>导入批次 <small>最近10个批次</small></h2>
         </div>
       </header>
-      <div class="import-history-filters"><input v-model="historyKeyword" type="search" placeholder="搜索文件名、批次号或上传人" @input="historyPage=1"><select v-model="historyStatus" @change="historyPage=1"><option value="">全部状态</option><option value="PREVIEWED">待确认</option><option value="IMPORTED">已导入</option><option value="ROLLED_BACK">已回滚</option><option value="FAILED">失败</option></select><button type="button" @click="historyKeyword='';historyStatus='';historyPage=1">重置</button></div>
+      <div class="import-history-filters"><input v-model="historyKeyword" type="search" placeholder="搜索文件名、批次号或上传人" @input="historyPage=1"><select v-model="historyStatus" @change="historyPage=1"><option value="">全部状态</option><option value="PROCESSING">解析中</option><option value="PREVIEWED">待确认</option><option value="IMPORTED">已导入</option><option value="ROLLED_BACK">已回滚</option><option value="FAILED">失败</option></select><button type="button" @click="historyKeyword='';historyStatus='';historyPage=1">重置</button></div>
       <div v-if="historyLoading" class="admin-state">正在加载批次记录…</div>
       <div v-else-if="batches.length === 0" class="admin-state">
         暂无导入批次

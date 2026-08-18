@@ -4,17 +4,18 @@ import type {
   PaginatedResponse,
   ProjectImportBatchDetail,
   ProjectImportBatchSummary,
+  ProjectImportPreviewAccepted,
   ProjectOption,
 } from "@risk-platform/contracts";
 
 import { apiDownload, apiRequest } from "./http";
 
 export const projectImportApi = {
-  async preview(file: File): Promise<ProjectImportBatchDetail> {
+  async preview(file: File): Promise<ProjectImportPreviewAccepted> {
     const form = new FormData();
     form.append("file", file);
     return (
-      await apiRequest<ProjectImportBatchDetail>(
+      await apiRequest<ProjectImportPreviewAccepted>(
         "/imports/project-list/preview",
         {
           method: "POST",

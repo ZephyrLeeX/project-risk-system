@@ -1057,22 +1057,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/auth/wechat-login": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["wechat_login_api_auth_wechat_login_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/auth/logout": {
         parameters: {
             query?: never;
@@ -1099,6 +1083,26 @@ export interface paths {
         };
         /** Get Session */
         get: operations["get_session_api_auth_session_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/wechat-login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Wechat Login
+         * @description Exchange the one-request bearer credential for the normal session cookie.
+         */
+        get: operations["wechat_login_api_auth_wechat_login_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1910,18 +1914,16 @@ export interface components {
             displayName: string;
             /** Email */
             email: string | null;
-            /** Mobile */
-            mobile: string | null;
             /** Id */
             id: string;
             /** Lastloginat */
             lastLoginAt: string | null;
             /** Lockeduntil */
             lockedUntil: string | null;
+            /** Mobile */
+            mobile: string | null;
             /** Mustchangepassword */
             mustChangePassword: boolean;
-            /** Authmethod */
-            authMethod?: "PASSWORD" | "WECHAT";
             role: components["schemas"]["risk_platform__admin__users__schemas__RoleResponse"] | null;
             status: components["schemas"]["UserStatus"];
             /** Updatedat */
@@ -3181,6 +3183,8 @@ export interface components {
         AuditModuleKey: "ALL" | "AUTH" | "PERMISSION" | "MAILBOX" | "AI" | "RISK" | "IMPORT" | "CONFIG" | "AUDIT" | "OTHER";
         /** AuthenticatedUser */
         AuthenticatedUser: {
+            /** @default PASSWORD */
+            authMethod: components["schemas"]["AuthMethod"];
             dataScope: components["schemas"]["DataScope"];
             /** Departmentname */
             departmentName: string | null;
@@ -3197,6 +3201,8 @@ export interface components {
             /** Username */
             username: string;
         };
+        /** @enum {string} */
+        AuthMethod: "PASSWORD" | "WECHAT";
         /** Body_preview_api_imports_project_list_preview_post */
         Body_preview_api_imports_project_list_preview_post: {
             /** File */
@@ -3728,10 +3734,7 @@ export interface components {
             rows: components["schemas"]["ImportRowItem"][];
             /** Sheetname */
             sheetName: string;
-            /** Sourcemeta */
-            sourceMeta: {
-                [key: string]: unknown;
-            };
+            sourceMeta: components["schemas"]["ImportSourceMeta"] | null;
             status: components["schemas"]["ImportBatchStatus"];
             /** Supplementalambiguousrows */
             supplementalAmbiguousRows: number;
@@ -3760,7 +3763,7 @@ export interface components {
          * ImportBatchStatus
          * @enum {string}
          */
-        ImportBatchStatus: "PREVIEWED" | "IMPORTED" | "ROLLED_BACK" | "FAILED";
+        ImportBatchStatus: "PROCESSING" | "PREVIEWED" | "IMPORTED" | "ROLLED_BACK" | "FAILED";
         /** ImportBatchSummary */
         ImportBatchSummary: {
             /** Confirmedat */
@@ -3862,6 +3865,17 @@ export interface components {
             status: string;
             /** Warnings */
             warnings: string[];
+        };
+        /** ImportSourceMeta */
+        ImportSourceMeta: {
+            /** Ignoredsheets */
+            ignoredSheets: string[];
+            /** Monthattributes */
+            monthAttributes: {
+                [key: string]: string | null;
+            };
+            /** Sheetnames */
+            sheetNames: string[];
         };
         /** @description Arbitrary JSON value; normalized to `unknown` for TypeScript codegen (T032). */
         JSONScalar: unknown;
@@ -6074,10 +6088,10 @@ export interface components {
             displayName: string;
             /** Email */
             email?: string | null;
-            /** Mobile */
-            mobile?: string | null;
             /** Enabled */
             enabled: boolean;
+            /** Mobile */
+            mobile?: string | null;
             /** Projectids */
             projectIds: string[];
             /** Roleid */
@@ -8449,35 +8463,6 @@ export interface operations {
             };
         };
     };
-    wechat_login_api_auth_wechat_login_get: {
-        parameters: {
-            query?: {
-                personToken?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            303: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     logout_api_auth_logout_post: {
         parameters: {
             query?: never;
@@ -8514,6 +8499,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_SessionResponse_"];
+                };
+            };
+        };
+    };
+    wechat_login_api_auth_wechat_login_get: {
+        parameters: {
+            query?: {
+                personToken?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            303: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

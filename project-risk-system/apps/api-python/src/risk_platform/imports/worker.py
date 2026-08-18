@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from risk_platform.imports.models import (
     ImportBatch,
+    ImportBatchStatus,
     ImportRowAction,
     ImportRowStatus,
     LegalMatterMatchStatus,
@@ -68,7 +69,7 @@ class ImportPreviewWorker:
                     select(ImportBatch).where(ImportBatch.id == batch_id).with_for_update()
                 )
                 if batch is not None:
-                    batch.status = "FAILED"
+                    batch.status = ImportBatchStatus.FAILED
                     batch.errorRows = max(batch.errorRows, 1)
             raise
         async with self._session_factory() as session, session.begin():
@@ -113,6 +114,9 @@ class ImportPreviewWorker:
             batch.legalTotalRows = len(parsed.legal_rows)
             batch.legalWarningRows = sum(row.status == "WARNING" for row in parsed.legal_rows)
             batch.legalErrorRows = sum(row.status == "ERROR" for row in parsed.legal_rows)
+            # Keep the lifecycle transition in the same transaction as every
+            # parsed row and the completion metadata.
+            batch.status = ImportBatchStatus.PREVIEWED
 
     @staticmethod
     def _project_row(batch_id: UUID, row: ParsedRow) -> ProjectImportRow:

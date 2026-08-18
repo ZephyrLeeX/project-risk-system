@@ -28,6 +28,7 @@ UUIDType = PG_UUID
 
 
 class ImportBatchStatus(StrEnum):
+    PROCESSING = "PROCESSING"
     PREVIEWED = "PREVIEWED"
     IMPORTED = "IMPORTED"
     ROLLED_BACK = "ROLLED_BACK"
@@ -58,7 +59,7 @@ class ImportBatch(Base):
     status: Mapped[ImportBatchStatus] = mapped_column(
         Enum(ImportBatchStatus, name="ImportBatchStatus", native_enum=True),
         nullable=False,
-        server_default=text("'PREVIEWED'"),
+        server_default=text("'PROCESSING'"),
     )
     sheetName: Mapped[str] = mapped_column(String(128), nullable=False)
     sourceMeta: Mapped[JSONValue | None] = mapped_column(JSONB, nullable=True)

@@ -422,6 +422,7 @@ export interface AiCallLogDetail extends AiCallLogListItem {
 }
 
 export type ImportBatchStatus =
+  | "PROCESSING"
   | "PREVIEWED"
   | "IMPORTED"
   | "ROLLED_BACK"
@@ -922,10 +923,18 @@ export interface ProjectImportBatchDetail
     sheetNames: string[];
     monthAttributes: Record<string, string | null>;
     ignoredSheets: string[];
-  };
+  } | null;
   rows: ProjectImportRowItem[];
   supplementalRows: SupplementalCollectionRowItem[];
   legalRows: LegalMatterRowItem[];
+}
+
+export interface ProjectImportPreviewAccepted {
+  batchId: string;
+  taskId: string;
+  fileName: string;
+  fileHash: string;
+  status: ImportBatchStatus;
 }
 
 export interface ConfirmProjectImportRequest {

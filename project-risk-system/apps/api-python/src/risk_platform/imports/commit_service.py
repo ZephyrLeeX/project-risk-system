@@ -33,6 +33,7 @@ from risk_platform.imports.schemas import (
     ImportBatchListQuery,
     ImportBatchSummary,
     ImportRowItem,
+    ImportSourceMeta,
     LegalRowItem,
     PaginatedImportBatches,
     ProjectOption,
@@ -282,9 +283,22 @@ class ImportCommitService:
                 raise ApiError(404, "NOT_FOUND", "导入批次不存在")
             if batch.status is ImportBatchStatus.IMPORTED:
                 pass
+            elif batch.status is ImportBatchStatus.PROCESSING:
+                raise ApiError(
+                    409,
+                    "IMPORT_PREVIEW_PROCESSING",
+                    "Excel 仍在解析，请稍后重试",  # noqa: RUF001
+                )
             elif batch.status is not ImportBatchStatus.PREVIEWED:
                 raise ApiError(409, "CONFLICT", "只有预检完成的批次可以确认导入")
             else:
+                source_meta = self._source_meta(batch)
+                if source_meta is None:
+                    raise ApiError(
+                        409,
+                        "IMPORT_PREVIEW_INCOMPLETE",
+                        "Excel 预检尚未完整完成，请稍后重试",  # noqa: RUF001
+                    )
                 if batch.errorRows or batch.supplementalErrorRows or batch.legalErrorRows:
                     raise ApiError(
                         400,
@@ -847,7 +861,7 @@ class ImportCommitService:
         }
         return ImportBatchDetail(
             **self._summary(batch, uploaded_name).model_dump(),
-            sourceMeta=cast(dict[str, object], batch.sourceMeta or {}),
+            sourceMeta=self._source_meta(batch),
             rows=[self._row_item(row) for row in rows],
             supplementalRows=[
                 self._supplemental_item(
@@ -859,6 +873,15 @@ class ImportCommitService:
             ],
             legalRows=[self._legal_item(row) for row in legal],
         )
+
+    @staticmethod
+    def _source_meta(batch: ImportBatch) -> ImportSourceMeta | None:
+        if not isinstance(batch.sourceMeta, dict):
+            return None
+        try:
+            return ImportSourceMeta.model_validate(batch.sourceMeta)
+        except ValueError:
+            return None
 
     @staticmethod
     def _summary(batch: ImportBatch, uploaded_name: str) -> ImportBatchSummary:
