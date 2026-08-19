@@ -106,6 +106,8 @@ const interactionFields = reactive<Record<string, string>>({});
 const interactionValidationError = ref("");
 const selectedInteractionCandidates = ref<string[]>([]);
 const manualProjectName = ref("");
+const manualProjectSearchOpen = ref(false);
+const interactionSubmitting = computed(() => agent.sending.value && agent.state.interaction?.type === "PROJECT_SELECTION");
 const agentSuggestions = [
   "当前有哪些高风险？",
   "风险项目待回款是多少？",
@@ -404,7 +406,9 @@ function startNewAgentConversation(): void {
 }
 
 function sendAgent(prompt?: string): void {
-  const message = (prompt ?? agentInput.value).trim();
+  const message = prompt === "给出本周处理建议"
+    ? "请查询本周已识别的项目风险，并基于本周风险给出按优先级排序的处理建议。"
+    : (prompt ?? agentInput.value).trim();
   if (!message) return;
   agentInput.value = "";
   void agent.send(message);
@@ -418,6 +422,19 @@ function interactionCandidateId(value: unknown): string {
 function interactionCandidateName(value: unknown): string {
   if (value && typeof value === "object" && !Array.isArray(value) && typeof (value as Record<string, unknown>).name === "string") return String((value as Record<string, unknown>).name);
   return "候选项目";
+}
+
+function interactionCandidateField(value: unknown, field: string): string {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const fieldValue = (value as Record<string, unknown>)[field];
+    return typeof fieldValue === "string" ? fieldValue : "";
+  }
+  return "";
+}
+
+function interactionStatusLabel(value: unknown): string {
+  const labels: Record<string, string> = { DELIVERY: "交付中", COMPLETED: "已完成", ARCHIVED: "已归档" };
+  return labels[String(value)] ?? "状态未知";
 }
 
 function draftString(key: string): string {
@@ -467,12 +484,18 @@ function candidateRisks(message: { structured?: unknown }): Record<string, unkno
 }
 
 function selectProject(id: string): void {
+  if (!id || interactionSubmitting.value) return;
   void agent.respondInteraction({ action: "SELECT", projectId: id });
+}
+
+function openManualProjectSearch(): void {
+  manualProjectSearchOpen.value = true;
+  requestAnimationFrame(() => document.getElementById("agent-manual-project-name")?.focus());
 }
 
 function submitManualProject(): void {
   const projectName = manualProjectName.value.trim();
-  if (projectName) void agent.respondInteraction({ action: "MANUAL_INPUT", projectName });
+  if (projectName && !interactionSubmitting.value) void agent.respondInteraction({ action: "MANUAL_INPUT", projectName });
 }
 
 function confirmInteraction(): void {
@@ -2242,13 +2265,19 @@ onUnmounted(() => {
         </p>
       </div>
 
-      <section v-if="agent.state.interaction?.type === 'PROJECT_SELECTION'" class="agent-interaction" aria-live="polite">
-        <header><strong>请选择项目</strong><small>服务端状态：{{ agent.state.interaction.status }} · {{ formatDateTime(agent.state.interaction.expiresAt) }}</small></header>
+      <section v-if="agent.state.interaction?.type === 'PROJECT_SELECTION'" class="agent-interaction project-selection-card" aria-live="polite">
+        <header><strong>找到多个匹配项目</strong><small>请选择要查询的项目，选择后 Agent 将继续原问题。</small></header>
         <template v-if="agent.state.interaction.type === 'PROJECT_SELECTION' && agent.state.interaction.status === 'OPEN'">
-          <button v-for="candidate in agent.state.interaction.candidates" :key="interactionCandidateId(candidate)" type="button" @click="selectProject(interactionCandidateId(candidate))">{{ interactionCandidateName(candidate) }}</button>
-          <button type="button" @click="selectedInteractionCandidates = []">以上都不是</button>
-          <form @submit.prevent="submitManualProject"><input v-model="manualProjectName" placeholder="手动输入项目名称"><button type="submit">重新搜索</button></form>
-          <button type="button" @click="agent.cancelInteraction()">取消</button>
+          <div class="project-selection-list">
+            <button v-for="candidate in agent.state.interaction.candidates" :key="interactionCandidateId(candidate)" class="project-selection-option" type="button" :disabled="interactionSubmitting" @click="selectProject(interactionCandidateId(candidate))">
+              <span class="project-selection-copy"><strong>{{ interactionCandidateName(candidate) }}</strong><small v-if="interactionCandidateField(candidate, 'externalCode')">项目编码：{{ interactionCandidateField(candidate, 'externalCode') }}</small><small v-if="interactionCandidateField(candidate, 'departmentName')">部门：{{ interactionCandidateField(candidate, 'departmentName') }}</small></span>
+              <span class="project-selection-meta"><span class="project-status-chip">{{ interactionStatusLabel(interactionCandidateField(candidate, 'status')) }}</span><i aria-hidden="true">›</i></span>
+            </button>
+          </div>
+          <p v-if="agent.state.error" class="agent-form-error" role="alert">{{ agentErrorLabel(agent.state.error.code, agent.state.error.message) }} <button v-if="agent.state.error.retryable" type="button" class="agent-inline-retry" @click="agent.retryInteraction()">重试</button></p>
+          <button v-if="!manualProjectSearchOpen" class="project-selection-secondary" type="button" :disabled="interactionSubmitting" @click="openManualProjectSearch">以上都不是，重新搜索</button>
+          <form v-else class="project-manual-search" @submit.prevent="submitManualProject"><label for="agent-manual-project-name">项目名称</label><div><input id="agent-manual-project-name" v-model="manualProjectName" placeholder="输入项目名称" maxlength="100"><button class="admin-primary-button" type="submit" :disabled="interactionSubmitting || !manualProjectName.trim()">搜索项目</button></div></form>
+          <button class="project-selection-cancel" type="button" :disabled="interactionSubmitting" @click="agent.cancelInteraction()">取消</button>
         </template>
         <p v-else>交互已处理；刷新或重连不会重复提交。</p>
       </section>
@@ -3014,5 +3043,6 @@ onUnmounted(() => {
 </template>
 
 <style>
+.project-selection-card{display:grid;gap:16px;padding:20px;border:1px solid #d6e7ef;border-radius:18px;background:linear-gradient(145deg,#fff,#f5fbfd);box-shadow:0 14px 32px rgba(32,92,117,.12)}.project-selection-card>header{display:grid;gap:5px}.project-selection-card>header strong{color:#1d526f;font-size:17px}.project-selection-card>header small{color:#6b8797;line-height:1.5}.project-selection-list{display:grid;gap:10px}.project-selection-option{display:flex;align-items:center;justify-content:space-between;gap:14px;width:100%;padding:14px 15px;border:1px solid #d4e6ee;border-radius:13px;background:#fff;color:#24536d;text-align:left;box-shadow:0 4px 12px rgba(36,83,109,.06);cursor:pointer;transition:.18s ease}.project-selection-option:hover:not(:disabled),.project-selection-option:focus-visible{border-color:#4c9db6;box-shadow:0 7px 18px rgba(40,126,154,.16);transform:translateY(-1px)}.project-selection-option:disabled{cursor:wait;opacity:.62}.project-selection-copy{display:grid;gap:4px;min-width:0}.project-selection-copy strong{font-size:14px}.project-selection-copy small{color:#718a9b;font-size:12px}.project-selection-meta{display:flex;align-items:center;gap:10px;flex:none}.project-status-chip{padding:4px 8px;border-radius:999px;background:#e5f5f5;color:#277b82;font-size:11px;font-weight:700}.project-selection-meta i{font-size:22px;color:#4b9db6;font-style:normal}.project-selection-secondary,.project-selection-cancel{justify-self:start;border:0;background:transparent;color:#27859a;font:inherit;cursor:pointer}.project-selection-cancel{color:#718a9b}.project-selection-secondary:disabled,.project-selection-cancel:disabled{cursor:wait;opacity:.6}.project-manual-search{display:grid;gap:7px;padding:14px;border:1px dashed #a9cfd9;border-radius:13px;background:#f7fcfd}.project-manual-search label{color:#47758a;font-size:12px;font-weight:700}.project-manual-search>div{display:flex;gap:8px}.project-manual-search input{flex:1;min-width:0;padding:10px 12px;border:1px solid #c5dde5;border-radius:9px;font:inherit}.agent-inline-retry{border:0;background:transparent;color:#277b82;text-decoration:underline;cursor:pointer;font:inherit}
 .agent-risk-confirmation-form{display:grid;gap:14px}.agent-risk-confirmation-form label{display:grid;gap:6px;color:#355c73;font-weight:700}.agent-risk-confirmation-form label span{font-size:13px}.agent-risk-confirmation-form input,.agent-risk-confirmation-form textarea,.agent-risk-confirmation-form select{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #cbdfe9;border-radius:9px;color:#244b64;background:#fff;font:inherit;font-weight:400}.agent-risk-confirmation-form textarea{min-height:84px;resize:vertical}.agent-risk-confirmation-form output{padding:10px 12px;border-radius:9px;color:#315f7b;background:#f2f7fa;font-weight:600}.agent-risk-confirmation-form small{color:#718a9b;font-size:12px;font-weight:400;line-height:1.45}.agent-form-error{margin:0;padding:9px 11px;border-radius:8px;color:#a43e46;background:#fff0f1;line-height:1.45}
 </style>

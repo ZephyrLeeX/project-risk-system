@@ -259,6 +259,8 @@ ProjectListToolArguments = ProjectSearchToolArguments
 class ProjectListToolItem(_Contract):
     id: UUID
     name: str
+    externalCode: str | None = None
+    departmentName: str | None = None
     status: str
 
 
@@ -277,6 +279,8 @@ class ProjectDetailToolResponse(_Contract):
     id: UUID
     name: str
     alias: str | None
+    externalCode: str | None = None
+    departmentName: str | None = None
     status: str
 
 

@@ -307,7 +307,13 @@ class AgentToolRegistry:
             result = await service.search(identity, query)
             return ProjectListToolResponse(
                 items=[
-                    ProjectListToolItem(id=item.id, name=item.name, status=item.status)
+                    ProjectListToolItem(
+                        id=item.id,
+                        name=item.name,
+                        externalCode=item.externalCode,
+                        departmentName=item.departmentName,
+                        status=item.status,
+                    )
                     for item in result.items
                 ],
                 page=result.page,
@@ -322,7 +328,12 @@ class AgentToolRegistry:
         async def call(identity: SessionIdentity, arguments: Mapping[str, object]) -> object:
             item = await service.detail(identity, UUID(str(arguments["projectId"])))
             return ProjectDetailToolResponse(
-                id=item.id, name=item.name, alias=item.alias, status=item.status
+                id=item.id,
+                name=item.name,
+                alias=item.alias,
+                externalCode=item.externalCode,
+                departmentName=item.departmentName,
+                status=item.status,
             )
 
         return call

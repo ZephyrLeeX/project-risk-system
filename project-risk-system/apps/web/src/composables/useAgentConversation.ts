@@ -31,6 +31,7 @@ export function useAgentConversation() {
   /** Stream URL of the in-flight turn, reused for resume-after-disconnect. */
   let activeStreamUrl: string | null = null;
   let controller: AbortController | null = null;
+  let lastInteractionBody: AgentInteractionRequest | null = null;
 
   onScopeDispose(() => {
     abortStream();
@@ -113,6 +114,7 @@ export function useAgentConversation() {
     const interaction = state.interaction;
     if (!interaction || interaction.status !== "OPEN" || sending.value) return;
     sending.value = true;
+    lastInteractionBody = body;
     state.error = null;
     try {
       const result = await agentApi.respondInteraction(interaction.id, body);
@@ -127,6 +129,10 @@ export function useAgentConversation() {
     } finally {
       sending.value = false;
     }
+  }
+
+  function retryInteraction(): void {
+    if (lastInteractionBody) void respondInteraction(lastInteractionBody);
   }
 
   async function cancelInteraction(): Promise<void> {
@@ -263,6 +269,7 @@ export function useAgentConversation() {
     reconnect,
     retry,
     respondInteraction,
+    retryInteraction,
     cancelInteraction,
     reset,
   };

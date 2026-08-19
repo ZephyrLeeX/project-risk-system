@@ -105,7 +105,12 @@ class ReadOnlyAgentCore:
                 "但必须作为 draft 建议而不是系统事实。evidence 只能写用户明确陈述或授权工具事实，"
                 "不得编造金额、日期、逾期天数或合同条款；缺失事实时可明确写“未提供”。suggestion "
                 "可以生成处理建议，但必须表达为建议而非已发生事实。只有无法形成有效标题/描述、"
-                "项目需要 PROJECT_SELECTION/MANUAL_INPUT、或找不到有效 active 分类时，才继续追问。",
+                "项目需要 PROJECT_SELECTION/MANUAL_INPUT、或找不到有效 active 分类时，才继续追问。"
+                "本周处理建议 guidance：当用户请求本周处理建议、本周重点风险和建议、或本周应该优先处理什么时，"
+                "必须先调用 weekly_report（未指定 weekStart 时使用当前周），不得直接生成泛化管理建议。"
+                "若 riskCount 为 0，明确说明本周周报暂未识别到风险，不得编造风险；若有风险，按 HIGH、MEDIUM 优先，"
+                "对周报中的风险项目调用 bounded 的 weekly_report_detail，必要时再调用 risk_list 和 todo_list。"
+                "最终回答必须分成‘系统事实’与‘AI处理建议’，不得把建议写成已经发生的业务事实。",
             ),
             ProviderMessage(
                 ProviderRole.USER,

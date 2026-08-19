@@ -156,6 +156,31 @@ def test_general_chat_stays_out_of_scope(message: str) -> None:
     assert ScopePolicy().decide(message).value == "OUT_OF_SCOPE"
 
 
+@pytest.mark.parametrize(
+    "message",
+    ("给出本周处理建议", "本周处理建议", "根据本周风险给出建议", "本周重点风险和建议"),
+)
+def test_weekly_advice_intent_is_in_scope(message: str) -> None:
+    assert ScopePolicy().decide(message).value == "ALLOWED"
+
+
+def test_unrelated_weekly_question_stays_out_of_scope() -> None:
+    assert ScopePolicy().decide("本周天气怎么样").value == "OUT_OF_SCOPE"
+
+
+def test_weekly_advice_guidance_requires_grounding_and_fact_advice_split() -> None:
+    runtime, tools = _Runtime([_response(text="已查阅周报")]), _Tools()
+    asyncio.run(
+        ReadOnlyAgentCore(cast(ProviderV2Runtime, runtime), cast(AgentToolRegistry, tools)).run(
+            _identity(), "给出本周处理建议"
+        )
+    )
+    guidance = cast(ProviderChatRequest, runtime.requests[0]).messages[0].content
+    assert "必须先调用 weekly_report" in guidance
+    assert "riskCount 为 0" in guidance
+    assert "系统事实" in guidance and "AI处理建议" in guidance
+
+
 def test_realistic_risk_report_reaches_provider_and_tool_loop() -> None:
     runtime, tools = (
         _Runtime(

@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from risk_platform.admin.models import Department
 from risk_platform.auth.service import SessionIdentity
 from risk_platform.projects.models import Project, ProjectAlias, ProjectStatus
 from risk_platform.rbac.models import DataScopeType
@@ -26,6 +27,8 @@ class ProjectQueryItem(BaseModel):
     id: UUID
     name: str
     alias: str | None
+    externalCode: str | None
+    departmentName: str | None
     status: str
 
 
@@ -67,8 +70,9 @@ class ProjectsQueryService:
         async with self._sessions() as session:
             rows = list(
                 (
-                    await session.scalars(
-                        select(Project)
+                    await session.execute(
+                        select(Project, Department.name)
+                        .outerjoin(Department, Department.id == Project.departmentId)
                         .where(*filters)
                         .order_by(Project.name, Project.id)
                         .offset((query.page - 1) * query.pageSize)
@@ -78,7 +82,7 @@ class ProjectsQueryService:
             )
             total = int(await session.scalar(select(func.count(Project.id)).where(*filters)) or 0)
         return ProjectSearchResult(
-            items=[self._item(row) for row in rows],
+            items=[self._item(project, department_name) for project, department_name in rows],
             page=query.page,
             pageSize=query.pageSize,
             total=total,
@@ -89,15 +93,26 @@ class ProjectsQueryService:
             UUID(identity.user.id), DataScopeType(identity.user.dataScope)
         )
         async with self._sessions() as session:
-            row = await session.scalar(select(Project).where(Project.id == project_id, scope))
+            row = (
+                await session.execute(
+                    select(Project, Department.name)
+                    .outerjoin(Department, Department.id == Project.departmentId)
+                    .where(Project.id == project_id, scope)
+                )
+            ).first()
         if row is None:
             raise ApiError(404, "PROJECT_NOT_FOUND", "项目不存在或无权访问")
-        return self._item(row)
+        return self._item(row[0], row[1])
 
     @staticmethod
-    def _item(project: Project) -> ProjectQueryItem:
+    def _item(project: Project, department_name: str | None) -> ProjectQueryItem:
         return ProjectQueryItem(
-            id=project.id, name=project.name, alias=project.alias, status=project.status.value
+            id=project.id,
+            name=project.name,
+            alias=project.alias,
+            externalCode=project.externalCode,
+            departmentName=department_name,
+            status=project.status.value,
         )
 
 

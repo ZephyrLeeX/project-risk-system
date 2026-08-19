@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import cast
 from typing import cast as type_cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import select, update
 from sqlalchemy.engine import CursorResult
@@ -13,7 +13,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from risk_platform.auth.service import SessionIdentity
 from risk_platform.model_types import JSONValue
-from risk_platform.projects.query_service import ProjectSearchQuery, ProjectsQueryService
+from risk_platform.projects.models import Project
+from risk_platform.projects.query_service import (
+    ProjectQueryItem,
+    ProjectSearchQuery,
+    ProjectsQueryService,
+)
+from risk_platform.rbac.models import DataScopeType
+from risk_platform.rbac.scopes import project_scope_predicate
 from risk_platform.reliability.core import enqueue_task
 from risk_platform.reliability.models import DurableTaskKind
 from risk_platform.shared.errors import ApiError
@@ -27,6 +34,7 @@ from .models import (
     AgentInteraction,
     AgentInteractionAction,
     AgentInteractionStatus,
+    AgentInteractionType,
     AgentMessage,
     MutationDraft,
 )
@@ -64,7 +72,17 @@ class AgentInteractionService:
         payload: AgentInteractionRespondRequest,
         trace_id: str,
     ) -> AgentInteractionRespondResponse:
-        if payload.action in {"CONFIRM", "CANCEL"}:
+        async with self._sessions() as dispatch_session:
+            interaction_type = await dispatch_session.scalar(
+                select(AgentInteraction.type).where(
+                    AgentInteraction.id == interaction_id,
+                    AgentInteraction.ownerUserId == UUID(identity.user.id),
+                )
+            )
+        if interaction_type is AgentInteractionType.WRITE_CONFIRMATION and payload.action in {
+            "CONFIRM",
+            "CANCEL",
+        }:
             await MutationDraftService(self._sessions).respond(
                 identity,
                 interaction_id,
@@ -76,6 +94,8 @@ class AgentInteractionService:
                 interaction=await self._write_interaction_view(identity, interaction_id),
                 streamUrl=None,
             )
+        if interaction_type is AgentInteractionType.WRITE_CONFIRMATION:
+            raise ApiError(409, "AGENT_INTERACTION_ACTION_INVALID", "该交互不支持此操作")
         owner_id = UUID(identity.user.id)
         if "dashboard.view" not in identity.user.permissions:
             raise ApiError(403, "FORBIDDEN", "当前账号无权重新解析项目")
@@ -87,7 +107,7 @@ class AgentInteractionService:
         if payload.action == "SELECT":
             assert payload.projectId is not None
             item = await self._projects.detail(identity, payload.projectId)
-            selected = {"id": str(item.id), "name": item.name, "status": item.status}
+            selected = self._candidate(item)
         elif payload.action == "MANUAL_INPUT":
             assert payload.projectName is not None
             result = await self._projects.search(
@@ -97,10 +117,10 @@ class AgentInteractionService:
                 raise ApiError(404, "AGENT_PROJECT_NOT_FOUND", "当前系统中没有找到该项目")
             if result.total == 1:
                 item = result.items[0]
-                selected = {"id": str(item.id), "name": item.name, "status": item.status}
+                selected = self._candidate(item)
             else:
                 manual_candidates = [
-                    {"id": str(item.id), "name": item.name, "status": item.status}
+                    self._candidate(item)
                     for item in result.items
                 ]
 
@@ -141,6 +161,15 @@ class AgentInteractionService:
                 for item in row.candidateOptions
             ):
                 raise ApiError(422, "VALIDATION_ERROR", "所选项目不在当前候选中")
+            if payload.action == "SELECT":
+                current_scope = project_scope_predicate(
+                    owner_id, DataScopeType(identity.user.dataScope)
+                )
+                still_authorized = await session.scalar(
+                    select(Project.id).where(Project.id == payload.projectId, current_scope)
+                )
+                if still_authorized is None:
+                    raise ApiError(422, "VALIDATION_ERROR", "所选项目已不在当前授权范围内")
             row.status = (
                 AgentInteractionStatus.CANCELLED
                 if payload.action == "CANCEL"
@@ -180,17 +209,21 @@ class AgentInteractionService:
             else:
                 assert selected is not None
                 context = {"selectedProject": cast(dict[str, JSONValue], selected)}
+            config_id = uuid4()
             new_task = await enqueue_task(
                 session,
                 DurableTaskKind.AGENT_EXECUTION,
                 f"agent-execution-resume:{execution.id}:{row.id}",
-                {"execution_id": str(execution.id), "user_message_id": str(message.id)},
+                {
+                    "execution_id": str(execution.id),
+                    "user_message_id": str(message.id),
+                    "execution_configuration_id": str(config_id),
+                },
             )
             execution.taskId = new_task.id
             execution.status = AgentExecutionStatus.RUNNING
             execution.resumeContext = context
             execution.updatedAt = now
-            config_id = UUID(str(execution.id))
             session.add(
                 AgentExecutionConfig(
                     id=config_id,
@@ -232,6 +265,18 @@ class AgentInteractionService:
                 None if draft is None else await _display_proposal(session, draft.proposal)
             )
             return view
+
+    @staticmethod
+    def _candidate(item: ProjectQueryItem) -> dict[str, object]:
+        # ProjectQueryItem is the authorized ProjectsQueryService result; keep
+        # this metadata bounded and never accept client-supplied fields.
+        return {
+            "id": str(item.id),
+            "name": item.name,
+            "externalCode": item.externalCode,
+            "departmentName": item.departmentName,
+            "status": item.status,
+        }
 
 
 __all__ = ["AgentInteractionService", "interaction_view"]
