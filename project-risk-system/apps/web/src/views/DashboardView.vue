@@ -979,6 +979,7 @@ async function logout(): Promise<void> {
 onMounted(() => {
   void loadDashboard();
   void loadWeeklyReport();
+  void agent.restore();
 });
 
 onUnmounted(() => {

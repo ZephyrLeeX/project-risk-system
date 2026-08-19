@@ -1,17 +1,35 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { agentApi } from "@/api/agent";
+import { ApiError } from "@/api/http";
 import { useAgentConversation } from "@/composables/useAgentConversation";
 
 vi.mock("@/api/agent", () => ({
   agentApi: {
     create: vi.fn(),
     continueConversation: vi.fn(),
+    history: vi.fn(),
     confirm: vi.fn(),
   },
 }));
 
 const mockedAgentApi = vi.mocked(agentApi);
+
+/** Minimal localStorage stub backed by an in-memory map. */
+function stubLocalStorage(): Map<string, string> {
+  const store = new Map<string, string>();
+  vi.stubGlobal("localStorage", {
+    getItem: (key: string) => store.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      store.set(key, value);
+    },
+    removeItem: (key: string) => {
+      store.delete(key);
+    },
+    clear: () => store.clear(),
+  });
+  return store;
+}
 
 function envelope(conversationId: string) {
   return {
@@ -113,5 +131,92 @@ describe("Agent conversation reset", () => {
     expect(fetchMock.mock.calls[1]?.[0]).toContain("after=e1");
     expect(agent.state.messages.filter((item) => item.role === "ASSISTANT")).toHaveLength(1);
     expect(agent.state.status).toBe("completed");
+  });
+});
+
+describe("Agent conversation restore after refresh", () => {
+  it("persists the conversation id on create and restores history from the server", async () => {
+    const store = stubLocalStorage();
+    mockedAgentApi.create.mockResolvedValue(envelope("persist-id"));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null)));
+    const agent = useAgentConversation();
+
+    await agent.send("有哪些项目？");
+    expect(store.get("risk-platform:agent-conversation-id")).toBe("persist-id");
+
+    // Simulate a page refresh: a fresh composable reads the stored reference.
+    const restored = useAgentConversation();
+    mockedAgentApi.history.mockResolvedValue({
+      conversation: { id: "persist-id" },
+      messages: [
+        {
+          id: "m-1",
+          role: "USER",
+          content: "有哪些项目？",
+          createdAt: "2026-08-17T00:00:00.000Z",
+          dataAsOf: null,
+          sequence: 1,
+        },
+        {
+          id: "m-2",
+          role: "ASSISTANT",
+          content: "共 3 个项目",
+          createdAt: "2026-08-17T00:00:01.000Z",
+          dataAsOf: null,
+          sequence: 2,
+        },
+      ],
+      nextMessageSequence: 3,
+    } as never);
+
+    await restored.restore();
+
+    expect(mockedAgentApi.history).toHaveBeenCalledWith("persist-id");
+    expect(restored.state.conversationId).toBe("persist-id");
+    expect(restored.state.messages).toHaveLength(2);
+    expect(restored.state.status).toBe("completed");
+    // The next send continues the same conversation rather than creating one.
+    mockedAgentApi.continueConversation.mockResolvedValue({
+      userMessage: { id: "m-3", role: "USER", content: "第二个", createdAt: "", dataAsOf: null, sequence: 3 },
+      streamUrl: "/agent/conversations/persist-id/events",
+    } as never);
+    const sending = restored.send("第二个");
+    await vi.waitFor(() =>
+      expect(mockedAgentApi.continueConversation).toHaveBeenCalledWith("persist-id", "第二个"),
+    );
+    await sending;
+  });
+
+  it("does nothing when no conversation reference is stored", async () => {
+    stubLocalStorage();
+    const agent = useAgentConversation();
+    await agent.restore();
+    expect(mockedAgentApi.history).not.toHaveBeenCalled();
+    expect(agent.state.conversationId).toBeNull();
+  });
+
+  it("clears the stale reference when the stored conversation is gone (404)", async () => {
+    const store = stubLocalStorage();
+    store.set("risk-platform:agent-conversation-id", "gone-id");
+    const agent = useAgentConversation();
+    mockedAgentApi.history.mockRejectedValue(
+      new ApiError("not found", 404, "AGENT_CONVERSATION_NOT_FOUND"),
+    );
+
+    await agent.restore();
+
+    expect(mockedAgentApi.history).toHaveBeenCalledWith("gone-id");
+    expect(store.get("risk-platform:agent-conversation-id")).toBeUndefined();
+    expect(agent.state.conversationId).toBeNull();
+    expect(agent.state.status).toBe("idle");
+  });
+
+  it("reset clears the stored reference so a new conversation starts empty", async () => {
+    const store = stubLocalStorage();
+    store.set("risk-platform:agent-conversation-id", "old-id");
+    const agent = useAgentConversation();
+    agent.reset();
+    expect(store.get("risk-platform:agent-conversation-id")).toBeUndefined();
+    expect(agent.state.conversationId).toBeNull();
   });
 });

@@ -23,6 +23,34 @@ import {
  * failure and durable interaction confirmation. No write occurs on
  * the stream — it is consumed read-only and reduced into view state.
  */
+
+/** localStorage key for the latest conversation id reference (not chat text). */
+const AGENT_CONVERSATION_KEY = "risk-platform:agent-conversation-id";
+
+function readStoredConversationId(): string | null {
+  try {
+    return globalThis.localStorage.getItem(AGENT_CONVERSATION_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function persistConversationId(conversationId: string): void {
+  try {
+    globalThis.localStorage.setItem(AGENT_CONVERSATION_KEY, conversationId);
+  } catch {
+    /* storage unavailable (private mode / disabled) — restore is best-effort */
+  }
+}
+
+function clearStoredConversationId(): void {
+  try {
+    globalThis.localStorage.removeItem(AGENT_CONVERSATION_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
 export function useAgentConversation() {
   const state = reactive<AgentConversationState>(initialAgentState());
   /** True while a turn is being created or streamed; disables the input. */
@@ -73,6 +101,7 @@ export function useAgentConversation() {
       } else {
         const envelope = await agentApi.create(message);
         state.conversationId = envelope.conversation.id;
+        persistConversationId(envelope.conversation.id);
         streamUrl = envelope.streamUrl;
         userMessage = envelope.userMessage;
       }
@@ -144,7 +173,41 @@ export function useAgentConversation() {
     abortStream();
     activeStreamUrl = null;
     lastUserMessage.value = "";
+    clearStoredConversationId();
     Object.assign(state, initialAgentState());
+  }
+
+  /**
+   * Restore the most recent conversation after a page refresh.
+   *
+   * Only the conversation id reference is persisted locally (never the chat
+   * text); the visible USER/ASSISTANT history is re-fetched from the server so
+   * the next message continues the same authorized context. A missing or
+   * expired conversation is cleared silently so a fresh one is created next.
+   */
+  async function restore(): Promise<void> {
+    const conversationId = readStoredConversationId();
+    if (!conversationId || sending.value || state.conversationId) return;
+    sending.value = true;
+    state.error = null;
+    try {
+      const history = await agentApi.history(conversationId);
+      state.conversationId = history.conversation.id;
+      state.messages = history.messages
+        .filter((message) => message.role === "USER" || message.role === "ASSISTANT")
+        .map(toStreamMessage);
+      state.status = state.messages.length ? "completed" : "idle";
+      state.streamingText = "";
+      state.progress = null;
+    } catch (error) {
+      // 404 / expired / revoked: drop the stale reference so the next send
+      // starts a fresh conversation instead of looping on a dead id.
+      if (error instanceof ApiError && (error.status === 404 || error.status === 403)) {
+        clearStoredConversationId();
+      }
+    } finally {
+      sending.value = false;
+    }
   }
 
   async function connectStream(
@@ -272,6 +335,7 @@ export function useAgentConversation() {
     retryInteraction,
     cancelInteraction,
     reset,
+    restore,
   };
 }
 

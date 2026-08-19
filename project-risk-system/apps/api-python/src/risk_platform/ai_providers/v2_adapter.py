@@ -131,6 +131,49 @@ class ProviderChatRequest:
     response_format: ProviderResponseFormat | None = None
 
 
+def measure_provider_request(request: ProviderChatRequest) -> int:
+    """Provider-neutral serialized-byte budget for a full chat request.
+
+    Unlike a tokenizer, this is a stable, conservative byte count.  It covers
+    everything the adapter actually puts on the wire: every message role,
+    content, ``tool_call_id``, assistant ``tool_calls`` (id, name and
+    arguments) and every tool definition (name, description and
+    ``input_schema``).  It is deliberately provider-neutral so the Agent core
+    can fail closed *before* any HTTP call, without depending on DeepSeek's
+    tokenizer or wire framing.
+    """
+
+    payload: list[object] = []
+    for message in request.messages:
+        item: dict[str, object] = {"role": message.role.value}
+        if message.content is not None:
+            item["content"] = message.content
+        if message.tool_call_id is not None:
+            item["tool_call_id"] = message.tool_call_id
+        if message.tool_calls:
+            item["tool_calls"] = [
+                {
+                    "id": call.id,
+                    "name": call.name,
+                    "arguments": dict(call.arguments),
+                }
+                for call in message.tool_calls
+            ]
+        payload.append(item)
+    for tool in request.tools:
+        payload.append(
+            {
+                "name": tool.name,
+                "description": tool.description,
+                "input_schema": dict(tool.input_schema),
+            }
+        )
+    encoded = json.dumps(
+        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str
+    ).encode()
+    return len(encoded)
+
+
 @dataclass(frozen=True, slots=True)
 class ProviderTokenUsage:
     input_tokens: int
@@ -651,4 +694,5 @@ __all__ = [
     "ProviderToolCall",
     "ProviderToolDefinition",
     "ProviderType",
+    "measure_provider_request",
 ]

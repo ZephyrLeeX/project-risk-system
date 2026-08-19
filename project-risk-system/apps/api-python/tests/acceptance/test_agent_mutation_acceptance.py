@@ -70,8 +70,13 @@ class _ProposalTools:
         self.registry = registry
         self.runtime = runtime
 
-    def catalogue(self, identity: SessionIdentity) -> list[dict[str, object]]:
-        return self.registry.catalogue(identity)
+    def catalogue(
+        self,
+        identity: SessionIdentity,
+        *,
+        selected_project_id: UUID | None = None,
+    ) -> list[dict[str, object]]:
+        return self.registry.catalogue(identity, selected_project_id=selected_project_id)
 
     async def invoke(
         self,

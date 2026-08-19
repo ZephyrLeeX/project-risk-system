@@ -7,6 +7,10 @@ from uuid import uuid4
 
 import pytest
 
+from risk_platform.agent.context import (
+    AgentConversationContext,
+    ConversationMessage,
+)
 from risk_platform.agent.core import AgentLoopError, AgentLoopLimits, ReadOnlyAgentCore
 from risk_platform.agent.schemas import AgentToolResult, CandidateRisk, CandidateRiskBasisType
 from risk_platform.agent.scope import ScopePolicy
@@ -17,6 +21,7 @@ from risk_platform.ai_providers.v2_adapter import (
     ProviderChatRequest,
     ProviderChatResponse,
     ProviderFinishReason,
+    ProviderRole,
     ProviderTokenUsage,
     ProviderToolCall,
     ProviderType,
@@ -433,3 +438,48 @@ def test_candidate_risk_basis_contract_distinguishes_facts_and_ai_analysis() -> 
             "evidenceSummary": "系统事实: 无引用",
             "sourceInvocationIds": [],
         })
+
+
+def _risk_memory_context() -> AgentConversationContext:
+    return AgentConversationContext(
+        summary=None,
+        recent_messages=(
+            ConversationMessage(3, ProviderRole.USER, "当前有哪些高风险"),
+            ConversationMessage(4, ProviderRole.ASSISTANT, "第一项…第二项…"),
+        ),
+        active_project=None,
+        summarized_through_sequence=2,
+    )
+
+
+def test_contextual_followup_inherits_domain_context_and_reaches_provider() -> None:
+    # "第二个展开说一下" is out-of-scope by the static policy, but with a recent
+    # domain turn it inherits the domain context and reaches the provider.
+    runtime, tools = _Runtime([_response(text="已展开第二项")]), _Tools()
+    result = asyncio.run(
+        ReadOnlyAgentCore(cast(ProviderV2Runtime, runtime), cast(AgentToolRegistry, tools)).run(
+            _identity(),
+            "第二个展开说一下",
+            conversation_context=_risk_memory_context(),
+            candidate_snapshot=(),
+        )
+    )
+    assert result.out_of_scope is False
+    assert runtime.calls == 1
+
+
+def test_non_domain_shorthand_with_memory_stays_out_of_scope() -> None:
+    # "这个帮我翻译成英文" carries no positive domain query intent, so even with
+    # a recent domain turn it must fail closed and never reach the provider.
+    runtime, tools = _Runtime([]), _Tools()
+    result = asyncio.run(
+        ReadOnlyAgentCore(cast(ProviderV2Runtime, runtime), cast(AgentToolRegistry, tools)).run(
+            _identity(),
+            "这个帮我翻译成英文",
+            conversation_context=_risk_memory_context(),
+            candidate_snapshot=(),
+        )
+    )
+    assert result.out_of_scope is True
+    assert runtime.calls == 0
+    assert tools.invocations == 0

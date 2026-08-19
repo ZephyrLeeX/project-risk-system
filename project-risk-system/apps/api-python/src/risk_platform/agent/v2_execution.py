@@ -279,11 +279,21 @@ class NativeAgentExecutionWorker:
         snapshot = None
         if "conversation_context" in parameters:
             snapshot = await self._core.candidate_snapshot()
+            # Size recent history to the real per-execution fixed overhead
+            # (actual system instruction + tool definitions + current message +
+            # reserves) rather than a static 8 KiB current-user assumption.
+            history_budget = self._core.history_budget_for(
+                identity,
+                message,
+                resume_context=context,
+                selected_project_id=selected_project_id,
+            )
             conversation_context = await self._conversation_context.build(
                 config.conversationId,
                 config.userMessageId,
                 identity,
                 snapshot,
+                history_budget=history_budget,
             )
             if (
                 selected_project_id is None

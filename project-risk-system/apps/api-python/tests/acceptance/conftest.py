@@ -209,7 +209,12 @@ class AcceptanceHarness:
         for _code, _name, _desc, _scope, perms in ROLES:
             permissions.extend(perms)
         unique = list(dict.fromkeys(permissions))
-        return self._identity(SYSTEM_ADMIN_ID, list(ROLE_PROFILES), unique, scope)
+        # Reference the real seeded SYSTEM_ADMIN user (whose id is assigned by
+        # seed_reference_data) rather than the SYSTEM_ADMIN_ID constant, so the
+        # identity satisfies the agent_conversations.ownerUserId foreign key.
+        return self._identity(
+            self.env.seed.users["SYSTEM_ADMIN"], list(ROLE_PROFILES), unique, scope
+        )
 
     def _identity(
         self,

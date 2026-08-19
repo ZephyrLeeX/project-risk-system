@@ -306,5 +306,5 @@ def test_contract_datetime_runtime_json_is_utc_milliseconds_with_z() -> None:
 def test_openapi_surface_contains_provider_v2_additive_paths() -> None:
     """T051 extends the T050 interaction contract without changing paths."""
     schema = build_openapi()
-    assert len(schema["paths"]) == 105
-    assert len(schema["components"]["schemas"]) == 265
+    assert len(schema["paths"]) == 107
+    assert len(schema["components"]["schemas"]) == 269

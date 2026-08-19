@@ -1,5 +1,7 @@
 """Bounded, provider-neutral conversation memory for Agent executions."""
 
+# ruff: noqa: RUF002
+
 from __future__ import annotations
 
 import logging
@@ -32,7 +34,11 @@ class ConversationContextPolicy:
     compression_target: int
     summary_input_budget: int = 40 * 1024
     minimum_recent_turns: int = 2
-    max_compression_passes: int = 4
+    # Safety net only.  The compression loop is driven by reaching the trigger
+    # or exhausting the compressible batch; this cap exists solely to log
+    # explicit degradation if a pathological conversation cannot be compressed
+    # in bounded passes, never as a silent fixed stop.
+    max_compression_passes: int = 32
 
     def __post_init__(self) -> None:
         if (
@@ -105,8 +111,18 @@ class ConversationContextService:
         current_user_message_id: UUID,
         identity: SessionIdentity,
         snapshot: tuple[ProviderCandidate, ...],
+        *,
+        history_budget: int | None = None,
     ) -> AgentConversationContext:
-        for _ in range(self._policy.max_compression_passes):
+        # The history budget may be supplied per-execution from the real fixed
+        # overhead (actual system instruction + tool definitions + current
+        # message + reserves).  When absent, fall back to the static policy.
+        effective_budget = (
+            history_budget if history_budget is not None and history_budget > 0
+            else self._policy.history_budget
+        )
+        passes = 0
+        while True:
             conversation, _, turns = await self._load(
                 conversation_id, current_user_message_id, UUID(identity.user.id)
             )
@@ -114,11 +130,22 @@ class ConversationContextService:
             if self._context_size(conversation.contextSummary, turns) <= (
                 self._policy.compression_trigger
             ):
-                return self._result(conversation, turns, active)
+                return self._result(conversation, turns, active, effective_budget)
             compressible = turns[: -self._policy.minimum_recent_turns]
             batch = self._bounded_prefix(compressible)
+            # No compressible batch means only the protected recent window
+            # remains unsummarized; everything older is already in the summary,
+            # so the no-dropped-history invariant holds by construction.
             if not batch:
-                return self._result(conversation, turns, active)
+                return self._result(conversation, turns, active, effective_budget)
+            if passes >= self._policy.max_compression_passes:
+                # Execution-budget exhaustion is explicit degradation, never a
+                # silent stop.  We do not claim the unsummarized middle turns
+                # have entered memory; the persisted summary + latest turns are
+                # returned and the next turn resumes monotonic compression.
+                logger.warning("AGENT_CONTEXT_COMPRESSION_DEGRADED")
+                return self._result(conversation, turns, active, effective_budget)
+            passes += 1
             through = batch[-1].last_sequence
             transcript = "\n\n".join(turn.transcript() for turn in batch)
             try:
@@ -127,11 +154,11 @@ class ConversationContextService:
                 )
             except ProviderError:
                 logger.warning("AGENT_CONTEXT_COMPRESSION_DEGRADED")
-                return self._result(conversation, turns, active)
+                return self._result(conversation, turns, active, effective_budget)
             summary = self._bounded_text(summary, self._policy.compression_target)
             if not summary:
                 logger.warning("AGENT_CONTEXT_COMPRESSION_DEGRADED")
-                return self._result(conversation, turns, active)
+                return self._result(conversation, turns, active, effective_budget)
             updated = await self._compare_and_set_summary(
                 conversation.id,
                 expected_version=conversation.contextSummaryVersion,
@@ -145,7 +172,10 @@ class ConversationContextService:
             conversation_id, current_user_message_id, UUID(identity.user.id)
         )
         return self._result(
-            conversation, turns, await self._active_project(conversation, identity)
+            conversation,
+            turns,
+            await self._active_project(conversation, identity),
+            effective_budget,
         )
 
     async def _load(
@@ -239,12 +269,13 @@ class ConversationContextService:
         conversation: AgentConversation,
         turns: Sequence[_Turn],
         active: ActiveProject | None,
+        history_budget: int,
     ) -> AgentConversationContext:
         selected: list[_Turn] = []
         used = len((conversation.contextSummary or "").encode())
         for turn in reversed(turns):
             required = len(selected) < self._policy.minimum_recent_turns
-            if not required and used + turn.size > self._policy.history_budget:
+            if not required and used + turn.size > history_budget:
                 break
             selected.append(turn)
             used += turn.size
@@ -312,30 +343,85 @@ def refers_to_active_project(message: str) -> bool:
     )
 
 
-def is_contextual_followup(message: str) -> bool:
-    normalized = "".join(message.split())
-    if len(normalized) > 120 or any(
-        term in normalized
-        for term in ("Python", "python", "写代码", "写文章", "创建网页", "天气")
-    ):
-        return False
-    return any(
-        marker in normalized
-        for marker in (
-            "这个",
-            "那个",
-            "第一个",
-            "第二个",
-            "第三个",
-            "刚才",
-            "上面",
-            "上述",
-            "按你的建议",
-            "按你上面的建议",
-            "不是",
-            "我说的是",
-        )
+# Closed, domain-anchored vocabulary.  This is a *positive* allowlist of the
+# system's own risk-management concepts and follow-up actions — NOT a chase-the-
+# bad-verb blacklist.  Inheritance is granted only when a shorthand positively
+# resolves to one of these; anything else fails closed.
+_REFERENCE_MARKERS = (
+    "这个",
+    "那个",
+    "第一个",
+    "第二个",
+    "第三个",
+    "刚才",
+    "上面",
+    "上述",
+)
+_CORRECTION_MARKERS = ("不是", "我说的是")
+_DOMAIN_TERMS = ("项目", "风险", "待办", "周报", "看板", "状态", "数量", "金额")
+_DOMAIN_FOLLOWUP_VERBS = (
+    "展开",
+    "说一下",
+    "详情",
+    "处理",
+    "查询",
+    "上报",
+    "完成",
+    "新增",
+    "修改",
+    "还有",
+    "多少",
+    "列表",
+)
+
+
+def _is_referential_shorthand(normalized: str) -> bool:
+    return any(marker in normalized for marker in _REFERENCE_MARKERS) or any(
+        marker in normalized for marker in _CORRECTION_MARKERS
     )
+
+
+def _has_domain_query(normalized: str) -> bool:
+    return any(term in normalized for term in _DOMAIN_TERMS) or any(
+        verb in normalized for verb in _DOMAIN_FOLLOWUP_VERBS
+    )
+
+
+def _has_domain_anchor(context: AgentConversationContext) -> bool:
+    """A server-owned or recently-established domain context to inherit from."""
+
+    if context.active_project is not None:
+        return True
+    return any(
+        any(term in (item.content or "") for term in _DOMAIN_TERMS)
+        for item in context.recent_messages
+    )
+
+
+def inherits_domain_context(
+    message: str, context: AgentConversationContext
+) -> bool:
+    """Fail-closed domain context inheritance for referential shorthand.
+
+    An otherwise out-of-scope message is admitted only when it is a short
+    referential shorthand that positively resolves to the established domain
+    context (the server-owned active project or the most recent complete
+    domain turn).  A bare ``这个`` attached to an arbitrary non-domain verb
+    (translate, compute tax, write an email) does NOT inherit, because it
+    carries no positive domain query intent.  Corrections (``不是 A，我说的是
+    B``) inherit the prior turn's domain-ness directly.
+    """
+
+    normalized = "".join(message.split())
+    if not normalized or len(normalized) > 120:
+        return False
+    if not _is_referential_shorthand(normalized):
+        return False
+    if not _has_domain_anchor(context):
+        return False
+    if any(marker in normalized for marker in _CORRECTION_MARKERS):
+        return True
+    return _has_domain_query(normalized)
 
 
 __all__ = [
@@ -344,6 +430,6 @@ __all__ = [
     "ConversationContextPolicy",
     "ConversationContextService",
     "ConversationMessage",
-    "is_contextual_followup",
+    "inherits_domain_context",
     "refers_to_active_project",
 ]
