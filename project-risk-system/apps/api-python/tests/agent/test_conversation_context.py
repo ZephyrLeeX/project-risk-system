@@ -17,7 +17,7 @@ from risk_platform.agent.context import (
     ConversationMessage,
     Summarizer,
     _Turn,
-    inherits_domain_context,
+    is_contextual_shorthand,
     refers_to_active_project,
 )
 from risk_platform.agent.core import AgentLoopError, ContextBudget, ReadOnlyAgentCore
@@ -601,39 +601,47 @@ _PROJECT_TURN = (
         ("第二个展开说一下", _ctx(recent=_RISK_TURN)),
         ("不是 A，我说的是 B 项目", _ctx(recent=_PROJECT_TURN)),
         ("不是这个风险，是第二个风险", _ctx(recent=_RISK_TURN)),
+        # Three-state scope: a bare correction "不是 A，我说的是 B" where B is a
+        # project name with no "项目/风险" keyword still resolves to the prior
+        # domain turn.  Layer 1 cannot confirm the domain deterministically
+        # (it would need an ever-expanding blacklist to tell "江湾" from
+        # "天气"), so it defers to the model-level AGENT_SCOPE_POLICY (layer 2)
+        # instead of hard-rejecting.  This is the "不因 B 不含项目/风险而提前
+        # 拒绝" guarantee.
+        ("不是 A，我说的是 B", _ctx(recent=_PROJECT_TURN)),
+        ("不是南岸，我说的是江湾", _ctx(recent=_PROJECT_TURN)),
+        # Corrections/references that are anchored but genuinely non-domain
+        # ("不是，我想问天气") are ALSO contextual-ambiguous at layer 1 and
+        # reach the provider; layer 2 must return the fixed OUT_OF_SCOPE_MESSAGE.
+        ("不是，我想问天气", _ctx(recent=_RISK_TURN)),
+        ("不是，给我翻译成英文", _ctx(recent=_RISK_TURN)),
+        ("这个帮我翻译成英文", _ctx(recent=_RISK_TURN)),
+        ("刚才那个帮我写封邮件", _ctx(recent=_RISK_TURN)),
     ),
 )
-def test_contextual_followup_inherits_domain_context(
+def test_contextual_shorthand_is_anchored_reference_or_correction(
     message: str, context: AgentConversationContext
 ) -> None:
-    assert inherits_domain_context(message, context) is True
+    assert is_contextual_shorthand(message, context) is True
 
 
 @pytest.mark.parametrize(
     "message,context",
     (
-        # Bare shorthand + non-domain verb: no positive domain query intent.
-        ("这个帮我翻译成英文", _ctx(recent=_RISK_TURN)),
-        ("这个怎么算个人所得税", _ctx(recent=_RISK_TURN)),
-        ("刚才那个帮我写封邮件", _ctx(recent=_RISK_TURN)),
-        # Correction marker but no positive domain referent -> fail closed even
-        # with a domain anchor (the F2 correction-bypass this remediates).
-        ("不是，帮我写封邮件", _ctx(recent=_RISK_TURN)),
-        ("不是，我想问天气", _ctx(recent=_RISK_TURN)),
-        ("不是，给我翻译成英文", _ctx(recent=_RISK_TURN)),
-        # The old buggy "不是 A，我说的是 B" (bare token, no domain term) now
-        # fails closed; a real correction carries a domain referent (B 项目).
-        ("不是 A，我说的是 B", _ctx(recent=_PROJECT_TURN)),
-        # Shorthand with no domain anchor to inherit from.
+        # A shorthand with no domain anchor to inherit from fails closed.
         ("第二个展开说一下", _ctx()),
-        # Not a referential shorthand at all.
+        ("不是 A，我说的是 B", _ctx()),
+        # Not a referential shorthand at all — a fresh general request.
         ("帮我写 Python", _ctx(recent=_RISK_TURN)),
+        ("今天北京天气怎么样", _ctx(recent=_RISK_TURN)),
+        # Too long to be a short shorthand.
+        ("这个" + "X" * 200, _ctx(recent=_RISK_TURN)),
     ),
 )
-def test_contextual_followup_fails_closed(
+def test_contextual_shorthand_fails_closed_without_anchor_or_when_not_shorthand(
     message: str, context: AgentConversationContext
 ) -> None:
-    assert inherits_domain_context(message, context) is False
+    assert is_contextual_shorthand(message, context) is False
 
 
 def test_below_trigger_does_not_call_summarizer() -> None:

@@ -408,7 +408,7 @@
       },
       "AgentConversationRuntime": {
         "additionalProperties": false,
-        "description": "Owner-scoped snapshot of the conversation's live execution.\n\nRestored by ``history`` so a refresh reattaches to a RUNNING stream or\nre-displays an OPEN interaction instead of forcing a re-send.  Absent\n(``None``) when no execution is active, which keeps the happy-path restore\n(``status == \"completed\"``) unchanged.",
+        "description": "Owner-scoped snapshot of the conversation's live execution.\n\nRestored by ``history`` so a refresh reattaches to a RUNNING stream or\nre-displays an OPEN interaction instead of forcing a re-send.  Absent\n(``None``) when no execution is active, which keeps the happy-path restore\n(``status == \"completed\"``) unchanged.\n\n``resumeAfterEventId`` is the last observed AgentEvent id at snapshot time\nfor a RUNNING turn.  The restore must reconnect the stream with this cursor\n(``?after=<id>``), NOT ``null``: otherwise the SSE GET re-reads the\nconversation tail at request time and, if the worker wrote the terminal\nMESSAGE_DELTA/COMPLETED events in the gap between the history response and\nthe SSE GET, the stream opens *after* them, observes a terminal task, and\ncloses with no event — the UI goes ``disconnected`` and the assistant\nanswer is lost.  Resuming from the snapshot cursor replays exactly the\nevents written in that gap.",
         "properties": {
           "interaction": {
             "anyOf": [
@@ -419,6 +419,18 @@
                 "type": "null"
               }
             ]
+          },
+          "resumeAfterEventId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resumeaftereventid"
           },
           "status": {
             "title": "Status",

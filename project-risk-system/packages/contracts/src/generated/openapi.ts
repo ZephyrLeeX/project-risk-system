@@ -2018,9 +2018,21 @@ export interface components {
          *     re-displays an OPEN interaction instead of forcing a re-send.  Absent
          *     (``None``) when no execution is active, which keeps the happy-path restore
          *     (``status == "completed"``) unchanged.
+         *
+         *     ``resumeAfterEventId`` is the last observed AgentEvent id at snapshot time
+         *     for a RUNNING turn.  The restore must reconnect the stream with this cursor
+         *     (``?after=<id>``), NOT ``null``: otherwise the SSE GET re-reads the
+         *     conversation tail at request time and, if the worker wrote the terminal
+         *     MESSAGE_DELTA/COMPLETED events in the gap between the history response and
+         *     the SSE GET, the stream opens *after* them, observes a terminal task, and
+         *     closes with no event — the UI goes ``disconnected`` and the assistant
+         *     answer is lost.  Resuming from the snapshot cursor replays exactly the
+         *     events written in that gap.
          */
         AgentConversationRuntime: {
             interaction?: components["schemas"]["AgentInteractionResponse"] | null;
+            /** Resumeaftereventid */
+            resumeAfterEventId?: string | null;
             /** Status */
             status: string;
             /** Streamurl */

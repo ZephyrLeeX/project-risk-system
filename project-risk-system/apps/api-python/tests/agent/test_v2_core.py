@@ -516,9 +516,22 @@ def _risk_memory_context() -> AgentConversationContext:
     )
 
 
+def _project_memory_context() -> AgentConversationContext:
+    return AgentConversationContext(
+        summary=None,
+        recent_messages=(
+            ConversationMessage(1, ProviderRole.USER, "A 项目有什么风险"),
+            ConversationMessage(2, ProviderRole.ASSISTANT, "已查询 A 项目"),
+        ),
+        active_project=None,
+        summarized_through_sequence=2,
+    )
+
+
 def test_contextual_followup_inherits_domain_context_and_reaches_provider() -> None:
     # "第二个展开说一下" is out-of-scope by the static policy, but with a recent
-    # domain turn it inherits the domain context and reaches the provider.
+    # domain turn it is a contextually-ambiguous anchored shorthand: layer 1
+    # defers it to the provider (CONTEXTUAL_AMBIGUOUS) instead of hard-rejecting.
     runtime, tools = _Runtime([_response(text="已展开第二项")]), _Tools()
     result = asyncio.run(
         ReadOnlyAgentCore(cast(ProviderV2Runtime, runtime), cast(AgentToolRegistry, tools)).run(
@@ -532,10 +545,30 @@ def test_contextual_followup_inherits_domain_context_and_reaches_provider() -> N
     assert runtime.calls == 1
 
 
-def test_non_domain_shorthand_with_memory_stays_out_of_scope() -> None:
-    # "这个帮我翻译成英文" carries no positive domain query intent, so even with
-    # a recent domain turn it must fail closed and never reach the provider.
-    runtime, tools = _Runtime([]), _Tools()
+def test_bare_correction_reaches_provider_without_project_keyword() -> None:
+    # Guarantee 1: "不是 A，我说的是 B" where B is a bare project name with no
+    # "项目/风险" keyword.  Layer 1 cannot confirm the domain deterministically
+    # (no blacklist), so it must NOT pre-reject — it defers to the provider.
+    runtime, tools = _Runtime([_response(text="已切换到 B 项目")]), _Tools()
+    result = asyncio.run(
+        ReadOnlyAgentCore(cast(ProviderV2Runtime, runtime), cast(AgentToolRegistry, tools)).run(
+            _identity(),
+            "不是 A，我说的是 B",
+            conversation_context=_project_memory_context(),
+            candidate_snapshot=(),
+        )
+    )
+    assert result.out_of_scope is False
+    assert runtime.calls == 1
+
+
+def test_non_domain_anchored_shorthand_defers_to_model_scope_rule() -> None:
+    # Guarantee 2: "这个帮我翻译成英文" is an anchored shorthand (recent 风险
+    # turn) that is genuinely non-domain.  Layer 1 still defers it to the
+    # provider (CONTEXTUAL_AMBIGUOUS) rather than guessing via a blacklist;
+    # the model-level AGENT_SCOPE_POLICY (layer 2) then refuses with the fixed
+    # OUT_OF_SCOPE_MESSAGE and no tool call.
+    runtime, tools = _ScopeAwareRuntime(), _Tools()
     result = asyncio.run(
         ReadOnlyAgentCore(cast(ProviderV2Runtime, runtime), cast(AgentToolRegistry, tools)).run(
             _identity(),
@@ -544,8 +577,9 @@ def test_non_domain_shorthand_with_memory_stays_out_of_scope() -> None:
             candidate_snapshot=(),
         )
     )
-    assert result.out_of_scope is True
-    assert runtime.calls == 0
+    assert runtime.calls == 1  # deferred to layer 2, not hard-rejected at layer 1
+    assert result.text == OUT_OF_SCOPE_MESSAGE
+    assert result.out_of_scope is False
     assert tools.invocations == 0
 
 

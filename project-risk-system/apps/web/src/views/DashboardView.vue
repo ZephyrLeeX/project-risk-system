@@ -108,6 +108,12 @@ const selectedInteractionCandidates = ref<string[]>([]);
 const manualProjectName = ref("");
 const manualProjectSearchOpen = ref(false);
 const interactionSubmitting = computed(() => agent.sending.value && agent.state.interaction?.type === "PROJECT_SELECTION");
+/** The agent input is disabled while a turn is in flight OR an explicit cancel is still draining to a terminal status. */
+const agentInputDisabled = computed(() => agent.sending.value || agent.state.status === "cancelling");
+/** Send-button label surfaces the cancelling drain as "取消中" instead of a stale "发送". */
+const agentSendLabel = computed(() =>
+  agent.state.status === "cancelling" ? "取消中" : agent.sending.value ? "处理中" : "发送",
+);
 const agentSuggestions = [
   "当前有哪些高风险？",
   "风险项目待回款是多少？",
@@ -2209,7 +2215,7 @@ onUnmounted(() => {
         <div class="agent-header-actions">
           <button
             type="button"
-            :disabled="agent.sending.value"
+            :disabled="agentInputDisabled"
             @click="startNewAgentConversation"
           >
             ＋ 新建对话
@@ -2339,11 +2345,11 @@ onUnmounted(() => {
       <form @submit.prevent="sendAgent()">
         <textarea
           v-model="agentInput"
-          :disabled="agent.sending.value"
+          :disabled="agentInputDisabled"
           placeholder="输入关于项目、风险、回款或待办的问题"
         ></textarea>
-        <button type="submit" :disabled="agent.sending.value">
-          {{ agent.sending.value ? "处理中" : "发送" }}
+        <button type="submit" :disabled="agentInputDisabled">
+          {{ agentSendLabel }}
         </button>
       </form>
     </aside>

@@ -33,12 +33,14 @@ from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from risk_platform.admin.models import User
+from risk_platform.agent.events import append_event, open_event_stream
 from risk_platform.agent.interaction import AgentInteractionService
 from risk_platform.agent.models import (
     AgentConversation,
     AgentExecution,
     AgentExecutionConfig,
     AgentExecutionStatus,
+    AgentEventType,
     AgentInteraction,
     AgentInteractionStatus,
     AgentInteractionType,
@@ -453,5 +455,102 @@ def test_history_runtime_is_owner_scoped(
         with pytest.raises(ApiError) as cancel_error:
             await app_service.cancel(identity(OTHER), created.conversation.id)
         assert cancel_error.value.code == "AGENT_CONVERSATION_NOT_FOUND"
+
+    asyncio.run(run())
+
+
+def test_running_restore_resumes_from_snapshot_cursor_not_request_time_tail(
+    database: async_sessionmaker[AsyncSession],
+) -> None:
+    """The cursor race fixed by ``resumeAfterEventId``.
+
+    A RUNNING restore must resume the SSE stream from the snapshot event
+    cursor, not the request-time tail.  Otherwise, when the worker writes the
+    terminal MESSAGE_DELTA + COMPLETED events in the gap between the history
+    response and the SSE GET, ``after=None`` re-reads ``lastEventSequence``
+    (now the COMPLETED sequence) at GET time, so the stream opens *after* those
+    events, observes a terminal task, and closes with no event — the UI goes
+    ``disconnected`` and the assistant answer is lost.  Resuming from the
+    snapshot cursor replays exactly the events written in that gap.
+    """
+
+    async def run() -> None:
+        app_service = service(database)
+        created = await app_service.create(identity(), "列出本周高风险项目")
+        conversation_id = created.conversation.id
+        async with transaction(database) as session:
+            execution = await session.scalar(
+                select(AgentExecution).where(
+                    AgentExecution.conversationId == conversation_id
+                )
+            )
+            assert execution is not None
+            task = await session.get(DurableTask, execution.taskId)
+            assert task is not None
+            execution_id = execution.id
+            task_id = task.id
+        # Snapshot time: the long-running turn has already written one event (a
+        # progress heartbeat), so lastEventSequence > 0 and the runtime records
+        # resumeAfterEventId = that event's id.
+        async with transaction(database) as session:
+            await append_event(
+                session,
+                conversation_id=conversation_id,
+                message_id=created.userMessage.id,
+                task_id=task_id,
+                event_type=AgentEventType.PROGRESS,
+                payload={
+                    "stage": "thinking",
+                    "message": "正在检索风险",
+                    "traceId": "t052-trace",
+                },
+            )
+        snapshot = await app_service.history(identity(), conversation_id)
+        assert snapshot.runtime is not None
+        assert snapshot.runtime.status == "RUNNING"
+        assert snapshot.runtime.resumeAfterEventId is not None
+        cursor_id = snapshot.runtime.resumeAfterEventId
+        # Gap: the worker appends the terminal MESSAGE_DELTA + COMPLETED events
+        # between the history snapshot and the SSE GET, then terminalizes the
+        # execution.  Resuming from the snapshot cursor replays exactly these.
+        async with transaction(database) as session:
+            await append_event(
+                session,
+                conversation_id=conversation_id,
+                message_id=created.userMessage.id,
+                task_id=task_id,
+                event_type=AgentEventType.MESSAGE_DELTA,
+                payload={"text": "共 2 个高风险", "traceId": "t052-trace"},
+            )
+            await append_event(
+                session,
+                conversation_id=conversation_id,
+                message_id=created.userMessage.id,
+                task_id=task_id,
+                event_type=AgentEventType.COMPLETED,
+                payload={"traceId": "t052-trace"},
+            )
+        await _mark_terminal(
+            database,
+            execution_id,
+            execution_status=AgentExecutionStatus.COMPLETED,
+            task_status=DurableTaskStatus.SUCCEEDED,
+        )
+        # Restore FROM the snapshot cursor: both gap events are replayed and the
+        # terminal event closes the stream — the assistant answer is not lost.
+        cursor_stream = await open_event_stream(
+            database, conversation_id, OWNER, cursor_id, poll_interval=0.001
+        )
+        cursor_frames = [chunk async for chunk in cursor_stream]
+        cursor_joined = b"".join(cursor_frames).decode()
+        assert "event: message.delta" in cursor_joined
+        assert "event: completed" in cursor_joined
+        assert "共 2 个高风险" in cursor_joined
+        # The buggy after=None path re-reads the tail at GET time and closes
+        # with no event — pin that the snapshot cursor is what avoids the loss.
+        buggy_stream = await open_event_stream(
+            database, conversation_id, OWNER, None, poll_interval=0.001
+        )
+        assert [chunk async for chunk in buggy_stream] == []
 
     asyncio.run(run())

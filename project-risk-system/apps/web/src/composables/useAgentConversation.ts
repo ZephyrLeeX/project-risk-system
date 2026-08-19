@@ -2,6 +2,7 @@ import { onScopeDispose, reactive, ref } from "vue";
 
 import {
   agentApi,
+  type AgentConversationHistory,
   type AgentInteractionRequest,
   type AgentMessageResponse,
 } from "@/api/agent";
@@ -51,6 +52,11 @@ function clearStoredConversationId(): void {
   }
 }
 
+/** Bounded deadline to wait for the worker to observe an explicit cancel. */
+const TERMINAL_POLL_DEADLINE_MS = 15_000;
+/** Cadence at which history.runtime is polled while an explicit cancel drains. */
+const TERMINAL_POLL_INTERVAL_MS = 400;
+
 export function useAgentConversation() {
   const state = reactive<AgentConversationState>(initialAgentState());
   /** True while a turn is being created or streamed; disables the input. */
@@ -80,7 +86,7 @@ export function useAgentConversation() {
   /** Send a turn, creating the conversation on first use. */
   async function send(rawMessage: string): Promise<void> {
     const message = rawMessage.trim();
-    if (!message || sending.value) return;
+    if (!message || sending.value || state.status === "cancelling") return;
     lastUserMessage.value = message;
     sending.value = true;
     state.error = null;
@@ -218,11 +224,19 @@ export function useAgentConversation() {
       const runtime = history.runtime;
       if (runtime && runtime.status === "RUNNING" && runtime.streamUrl) {
         // A refresh mid-turn reattaches to the SAME durable execution instead
-        // of forcing a re-send; the stream resumes at the conversation tail
-        // (after=null → server starts at lastEventSequence).
+        // of forcing a re-send.  The stream resumes from the snapshot cursor
+        // (resumeAfterEventId → ?after=<id>), NOT null: otherwise the SSE GET
+        // re-reads the conversation tail at request time and, if the worker
+        // wrote the terminal MESSAGE_DELTA/COMPLETED events in the gap between
+        // this history response and the SSE GET, the stream opens *after*
+        // them, observes a terminal task, and closes with no event — the UI
+        // goes disconnected and the assistant answer is lost.
         activeStreamUrl = runtime.streamUrl;
         state.status = "streaming";
-        await connectStream(runtime.streamUrl, null);
+        await connectStream(
+          runtime.streamUrl,
+          runtime.resumeAfterEventId ?? null,
+        );
       } else if (runtime && runtime.status === "WAITING_FOR_USER" && runtime.interaction) {
         // Redisplay the OPEN interaction (project selection / write
         // confirmation draft) so the user can resolve it without re-typing.
@@ -254,6 +268,13 @@ export function useAgentConversation() {
    */
   async function cancel(): Promise<void> {
     if (!state.conversationId) return;
+    // Set "cancelling" synchronously BEFORE the POST so an immediate next send
+    // is blocked by the send() guard while the worker has not yet reached a
+    // terminal status — otherwise the still-RUNNING execution answers
+    // continueConversation with a misleading 409 AGENT_EXECUTION_ACTIVE and
+    // the UI reports a busy error the user did not cause.  The input stays
+    // disabled (label "取消中") until the runtime is inactive.
+    state.status = "cancelling";
     state.error = null;
     try {
       await agentApi.cancelConversation(state.conversationId);
@@ -265,6 +286,16 @@ export function useAgentConversation() {
     activeStreamUrl = null;
     state.streamingText = "";
     state.progress = null;
+    // The worker observes the cancel flag asynchronously; poll history.runtime
+    // until the execution is no longer RUNNING, then reconcile and release.
+    const terminalHistory = await waitForRuntimeInactive(state.conversationId);
+    if (terminalHistory) {
+      state.messages = terminalHistory.messages
+        .filter((message) => message.role === "USER" || message.role === "ASSISTANT")
+        .map(toStreamMessage);
+      state.streamingText = "";
+      state.progress = null;
+    }
     state.status = "completed";
   }
 
@@ -275,6 +306,10 @@ export function useAgentConversation() {
     let cursor = after;
     const reconnectDelays = [1000, 2000, 5000];
     for (let attempt = 0; attempt <= reconnectDelays.length; attempt += 1) {
+      // Stop reconnecting the moment the turn is no longer streaming (an
+      // explicit cancel set "cancelling" or a terminal event landed) so a
+      // pending reconnect delay cannot race a cancel and open a rogue fetch.
+      if (state.status !== "streaming") return;
       const endedUnexpectedly = await connectStreamOnce(streamUrl, cursor);
       if (!endedUnexpectedly || state.status !== "streaming") return;
       if (attempt === reconnectDelays.length) {
@@ -353,7 +388,12 @@ export function useAgentConversation() {
   }
 
   function markDisconnected(): void {
-    if (state.status === "completed" || state.status === "error") return;
+    if (
+      state.status === "completed" ||
+      state.status === "error" ||
+      state.status === "cancelling"
+    )
+      return;
     state.status = "disconnected";
   }
 
@@ -414,4 +454,34 @@ function isAbort(error: unknown): boolean {
 
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+/**
+ * Poll history.runtime until the live execution is no longer RUNNING.
+ *
+ * The worker sets an explicit cancel to CANCELLED only after it observes the
+ * cancel flag (polled asynchronously), so the runtime can still report
+ * RUNNING for a few hundred milliseconds after POST /cancel resolves.  This
+ * keeps the input in the "cancelling" state across that window.  Returns the
+ * terminal history so the caller can reconcile any final assistant message
+ * (a cancel that lost the race against normal completion); returns null on
+ * the bounded deadline so a stuck worker cannot pin the input forever — the
+ * next send reconciles against the true runtime via the 409 path.
+ */
+async function waitForRuntimeInactive(
+  conversationId: string,
+): Promise<AgentConversationHistory | null> {
+  const deadline = Date.now() + TERMINAL_POLL_DEADLINE_MS;
+  while (Date.now() < deadline) {
+    try {
+      const history = await agentApi.history(conversationId);
+      if (!history.runtime || history.runtime.status !== "RUNNING") {
+        return history;
+      }
+    } catch {
+      // history is best-effort during cancel; keep polling until the deadline.
+    }
+    await delay(TERMINAL_POLL_INTERVAL_MS);
+  }
+  return null;
 }

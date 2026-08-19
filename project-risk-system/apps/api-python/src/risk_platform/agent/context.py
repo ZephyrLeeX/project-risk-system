@@ -382,31 +382,11 @@ _REFERENCE_MARKERS = (
 )
 _CORRECTION_MARKERS = ("不是", "我说的是")
 _DOMAIN_TERMS = ("项目", "风险", "待办", "周报", "看板", "状态", "数量", "金额")
-_DOMAIN_FOLLOWUP_VERBS = (
-    "展开",
-    "说一下",
-    "详情",
-    "处理",
-    "查询",
-    "上报",
-    "完成",
-    "新增",
-    "修改",
-    "还有",
-    "多少",
-    "列表",
-)
 
 
 def _is_referential_shorthand(normalized: str) -> bool:
     return any(marker in normalized for marker in _REFERENCE_MARKERS) or any(
         marker in normalized for marker in _CORRECTION_MARKERS
-    )
-
-
-def _has_domain_query(normalized: str) -> bool:
-    return any(term in normalized for term in _DOMAIN_TERMS) or any(
-        verb in normalized for verb in _DOMAIN_FOLLOWUP_VERBS
     )
 
 
@@ -421,18 +401,26 @@ def _has_domain_anchor(context: AgentConversationContext) -> bool:
     )
 
 
-def inherits_domain_context(
+def is_contextual_shorthand(
     message: str, context: AgentConversationContext
 ) -> bool:
-    """Fail-closed domain context inheritance for referential shorthand.
+    """Whether an out-of-scope message is an anchored short reference/correction.
 
-    An otherwise out-of-scope message is admitted only when it is a short
-    referential shorthand that positively resolves to the established domain
-    context (the server-owned active project or the most recent complete
-    domain turn).  A bare ``这个`` attached to an arbitrary non-domain verb
-    (translate, compute tax, write an email) does NOT inherit, because it
-    carries no positive domain query intent.  Corrections (``不是 A，我说的是
-    B``) inherit the prior turn's domain-ness directly.
+    Three-state scope (see ``ScopeDecision``): layer 1 (``ScopePolicy.decide``)
+    hard-rejects a request only when it is *clearly* out of scope — a fresh
+    general request with no domain keyword and no established domain context
+    to inherit.  A short referential shorthand or correction ("不是 A，我说的是
+    B", "第二个", "这个…") that is anchored to a prior domain turn (the
+    server-owned active project, or a recent turn carrying a domain term) is
+    *contextually ambiguous*: deterministic text cannot tell a bare project
+    name ("江湾") from a non-domain topic ("天气") without an ever-expanding
+    blacklist, so it is deferred to the model-level ``AGENT_SCOPE_POLICY``
+    (layer 2) instead of being hard-admitted or hard-rejected here.  Layer 2
+    re-refuses anything genuinely out of scope ("不是，我说的是天气") even after
+    this gate lets it through.
+
+    A shorthand with no domain anchor to inherit from still fails closed —
+    "第二个展开说一下" with no prior domain turn has nothing to resolve to.
     """
 
     normalized = "".join(message.split())
@@ -440,18 +428,7 @@ def inherits_domain_context(
         return False
     if not _is_referential_shorthand(normalized):
         return False
-    if not _has_domain_anchor(context):
-        return False
-    # A correction ("不是 A，我说的是 B") is still a referential shorthand and
-    # reaches here, but it must — like every other shorthand — positively
-    # resolve to the domain via ``_has_domain_query``.  A bare "不是，帮我写封
-    # 邮件" / "不是，我想问天气" / "不是，给我翻译成英文" carries no domain
-    # intent and must fail closed even with a domain anchor; otherwise any
-    # request can smuggle past ScopePolicy by leading with a correction marker.
-    # The deterministic gate below is layer 1 of defense-in-depth; the
-    # model-level scope rule in ``ReadOnlyAgentCore._system_instruction`` is
-    # layer 2 and re-refuses out-of-scope requests even if this gate is bypassed.
-    return _has_domain_query(normalized)
+    return _has_domain_anchor(context)
 
 
 __all__ = [
@@ -460,6 +437,6 @@ __all__ = [
     "ConversationContextPolicy",
     "ConversationContextService",
     "ConversationMessage",
-    "inherits_domain_context",
+    "is_contextual_shorthand",
     "refers_to_active_project",
 ]

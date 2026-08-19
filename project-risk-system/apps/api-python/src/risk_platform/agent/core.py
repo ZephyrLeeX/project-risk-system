@@ -29,7 +29,7 @@ from risk_platform.model_types import JSONValue
 from .context import (
     ActiveProject,
     AgentConversationContext,
-    inherits_domain_context,
+    is_contextual_shorthand,
 )
 from .schemas import AgentToolResult, CandidateRisk
 from .scope import OUT_OF_SCOPE_MESSAGE, ScopeDecision, ScopePolicy
@@ -149,12 +149,22 @@ class ReadOnlyAgentCore:
         has_memory = conversation_context is not None and bool(
             conversation_context.summary or conversation_context.recent_messages
         )
-        if self._scope.decide(message) is ScopeDecision.OUT_OF_SCOPE and not (
-            has_memory
-            and conversation_context is not None
-            and inherits_domain_context(message, conversation_context)
-        ):
-            return AgentCoreOutcome(OUT_OF_SCOPE_MESSAGE, out_of_scope=True)
+        # Three-state scope gate.  ``ScopePolicy.decide`` is the context-free
+        # first layer: ALLOWED (clear domain signal) or OUT_OF_SCOPE.  An
+        # otherwise out-of-scope message that is an anchored short
+        # reference/correction ("不是 A，我说的是 B", "第二个", "这个…") is
+        # *contextually ambiguous* — deterministic text cannot confirm the
+        # domain without an ever-expanding blacklist, so it is deferred to the
+        # model-level AGENT_SCOPE_POLICY (layer 2) in the system instruction
+        # below rather than hard-rejected here.  Anything else stays
+        # OUT_OF_SCOPE and never reaches the provider.
+        if self._scope.decide(message) is ScopeDecision.OUT_OF_SCOPE:
+            if not (
+                has_memory
+                and conversation_context is not None
+                and is_contextual_shorthand(message, conversation_context)
+            ):
+                return AgentCoreOutcome(OUT_OF_SCOPE_MESSAGE, out_of_scope=True)
         started, calls, total = monotonic(), 0, 0
         repeated: dict[tuple[str, str], int] = {}
         resolved_active_project: ActiveProject | None = None

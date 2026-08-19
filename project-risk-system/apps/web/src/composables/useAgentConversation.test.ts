@@ -319,11 +319,14 @@ describe("Agent conversation runtime restore (RUNNING / WAITING_FOR_USER)", () =
         status: "RUNNING",
         streamUrl: "/agent/conversations/running-id/events",
         interaction: null,
+        resumeAfterEventId: "event-0",
       },
     } as never);
-    // The restored stream resumes the SAME execution and emits its terminal
-    // events (a delta + completed) in one chunk, so the turn lands without a
-    // re-send and the consumer does not reconnect past a clean EOF.
+    // The restored stream resumes the SAME execution FROM the snapshot cursor
+    // (resumeAfterEventId → ?after=event-0), then emits the terminal events
+    // (a delta + completed) written in the gap between the history snapshot
+    // and the SSE GET, so the turn lands without a re-send and the consumer
+    // does not reconnect past a clean EOF.
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValueOnce(
@@ -339,7 +342,7 @@ describe("Agent conversation runtime restore (RUNNING / WAITING_FOR_USER)", () =
 
     expect(mockedAgentApi.history).toHaveBeenCalledWith("running-id");
     expect(fetch).toHaveBeenCalledWith(
-      "/agent/conversations/running-id/events",
+      "/agent/conversations/running-id/events?after=event-0",
       expect.objectContaining({ method: "GET" }),
     );
     expect(agent.state.status).toBe("completed");
@@ -436,7 +439,7 @@ describe("Agent conversation runtime restore (RUNNING / WAITING_FOR_USER)", () =
 });
 
 describe("Agent conversation explicit cancel", () => {
-  it("aborts the live stream and marks the turn completed", async () => {
+  it("aborts the live stream and waits for the worker to reach terminal before completing", async () => {
     stubLocalStorage();
     mockedAgentApi.create.mockResolvedValue(envelope("cancel-id"));
     mockedAgentApi.cancelConversation.mockResolvedValue({
@@ -444,6 +447,24 @@ describe("Agent conversation explicit cancel", () => {
       streamUrl: null,
       interaction: null,
     } as never);
+    // The cancel POST returns while the execution is still RUNNING; the worker
+    // observes the flag asynchronously, so history.runtime reports RUNNING once
+    // then goes inactive.  cancel must NOT flip to completed until that happens.
+    mockedAgentApi.history
+      .mockResolvedValueOnce({
+        conversation: { id: "cancel-id" },
+        messages: [
+          { id: "m-1", role: "USER", content: "列出风险", createdAt: "", dataAsOf: null, sequence: 1 },
+        ],
+        runtime: { status: "RUNNING", streamUrl: null, interaction: null },
+      } as never)
+      .mockResolvedValueOnce({
+        conversation: { id: "cancel-id" },
+        messages: [
+          { id: "m-1", role: "USER", content: "列出风险", createdAt: "", dataAsOf: null, sequence: 1 },
+        ],
+        runtime: null,
+      } as never);
     const fetchMock = vi.fn(
       (_url: string, init: RequestInit) =>
         new Promise<Response>((_resolve, reject) => {
@@ -455,9 +476,6 @@ describe("Agent conversation explicit cancel", () => {
     vi.stubGlobal("fetch", fetchMock);
     const agent = useAgentConversation();
 
-    // The turn is streaming (awaiting the never-resolving SSE fetch); an
-    // explicit cancel calls the cancel endpoint, aborts the stream locally
-    // and ends the turn without a final assistant message.
     const sending = agent.send("列出风险");
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
     await agent.cancel();
@@ -465,8 +483,84 @@ describe("Agent conversation explicit cancel", () => {
 
     expect(mockedAgentApi.cancelConversation).toHaveBeenCalledWith("cancel-id");
     expect(fetchMock.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+    // Polled once while RUNNING, then again at terminal — completed only then.
+    expect(mockedAgentApi.history).toHaveBeenCalledTimes(2);
     expect(agent.state.status).toBe("completed");
     expect(agent.state.streamingText).toBe("");
+  });
+
+  it("blocks an immediate next send while the worker is still RUNNING, then recovers sendable at terminal", async () => {
+    stubLocalStorage();
+    mockedAgentApi.create.mockResolvedValue(envelope("cancel-block-id"));
+    mockedAgentApi.cancelConversation.mockResolvedValue({
+      status: "RUNNING",
+      streamUrl: null,
+      interaction: null,
+    } as never);
+    mockedAgentApi.continueConversation.mockResolvedValue({
+      userMessage: {
+        id: "m-next",
+        role: "USER",
+        content: "下一条消息",
+        createdAt: "",
+        dataAsOf: null,
+        sequence: 2,
+      },
+      streamUrl: "/agent/conversations/cancel-block-id/events",
+    } as never);
+    // history reports RUNNING on the first poll (worker has not yet observed
+    // the cancel flag) then inactive on the second — the window between them
+    // is when an impatient next send must be blocked instead of surfacing 409.
+    mockedAgentApi.history
+      .mockResolvedValueOnce({
+        conversation: { id: "cancel-block-id" },
+        messages: [
+          { id: "m-1", role: "USER", content: "列出风险", createdAt: "", dataAsOf: null, sequence: 1 },
+        ],
+        runtime: { status: "RUNNING", streamUrl: null, interaction: null },
+      } as never)
+      .mockResolvedValueOnce({
+        conversation: { id: "cancel-block-id" },
+        messages: [
+          { id: "m-1", role: "USER", content: "列出风险", createdAt: "", dataAsOf: null, sequence: 1 },
+        ],
+        runtime: null,
+      } as never);
+    const fetchMock = vi.fn(
+      (_url: string, init: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init.signal?.addEventListener("abort", () =>
+            reject(new DOMException("aborted", "AbortError")),
+          );
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const agent = useAgentConversation();
+
+    const sending = agent.send("列出风险");
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+
+    // cancel flips to "cancelling" synchronously; the worker is still RUNNING,
+    // so an immediate next send must be blocked at the guard — NOT dispatched
+    // to continueConversation, which the still-live execution answers 409.
+    const cancelPromise = agent.cancel();
+    await vi.waitFor(() => expect(mockedAgentApi.history).toHaveBeenCalledOnce());
+    expect(agent.state.status).toBe("cancelling");
+    await agent.send("下一条消息");
+    expect(mockedAgentApi.continueConversation).not.toHaveBeenCalled();
+
+    // Once the worker reaches terminal, cancel completes and the input is
+    // sendable again — a subsequent send dispatches to continueConversation.
+    await vi.waitFor(() => expect(agent.state.status).toBe("completed"));
+    const nextSend = agent.send("下一条消息");
+    await vi.waitFor(() =>
+      expect(mockedAgentApi.continueConversation).toHaveBeenCalledWith(
+        "cancel-block-id",
+        "下一条消息",
+      ),
+    );
+    agent.dispose();
+    await Promise.allSettled([sending, cancelPromise, nextSend]);
   });
 
   it("does not call the cancel endpoint when no conversation is active", async () => {

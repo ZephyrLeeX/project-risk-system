@@ -157,6 +157,7 @@ export type AgentConversationStatus =
   | "idle"
   | "loading"
   | "streaming"
+  | "cancelling"
   | "completed"
   | "error"
   | "disconnected";
@@ -282,7 +283,9 @@ export function applyFrame(
 
 /** A non-terminal event means the turn is streaming, unless it already ended. */
 function streamingOr(state: AgentConversationState): AgentConversationStatus {
-  return state.status === "completed" || state.status === "error"
+  return state.status === "completed" ||
+    state.status === "error" ||
+    state.status === "cancelling"
     ? state.status
     : "streaming";
 }

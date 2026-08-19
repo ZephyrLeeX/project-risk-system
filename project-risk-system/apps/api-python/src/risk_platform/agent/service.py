@@ -20,6 +20,7 @@ from .events import open_event_stream, request_cancellation
 from .interaction import interaction_view
 from .models import (
     AgentConversation,
+    AgentEvent,
     AgentExecution,
     AgentExecutionConfig,
     AgentExecutionStatus,
@@ -341,10 +342,22 @@ class AgentConversationService:
                 select(DurableTask.status).where(DurableTask.id == execution.taskId)
             )
             if task_status in _ACTIVE_TASK_STATUSES:
+                # Record the last observed AgentEvent id at snapshot time so the
+                # restore reconnects the stream *from this cursor*, not from the
+                # request-time tail.  See ``AgentConversationRuntime`` for the
+                # terminal-event race this closes.  ``None`` only when the turn
+                # has not yet written any event (a brand-new first turn).
+                resume_after_event_id = await session.scalar(
+                    select(AgentEvent.id)
+                    .where(AgentEvent.conversationId == conversation_id)
+                    .order_by(AgentEvent.sequence.desc())
+                    .limit(1)
+                )
                 return AgentConversationRuntime(
                     status=AgentExecutionStatus.RUNNING.value,
                     streamUrl=f"/api/agent/conversations/{conversation_id}/events",
                     interaction=None,
+                    resumeAfterEventId=resume_after_event_id,
                 )
         return None
 
