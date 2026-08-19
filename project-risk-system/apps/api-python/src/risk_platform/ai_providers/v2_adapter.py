@@ -31,6 +31,13 @@ DEEPSEEK_OFFICIAL_ORIGIN = "https://api.deepseek.com"
 MAX_RESPONSE_BYTES = 128 * 1024
 MAX_REQUEST_BYTES = 64 * 1024
 MAX_RETRY_AFTER_SECONDS = 10.0
+# The model name configured for a provider candidate is bounded at 128 bytes
+# (see ``v2_schemas.CreateProviderModelConfig.modelName`` and the
+# ``list_models`` ``> 128`` rejection).  The budget serializer sizes the
+# adapter's ``model`` wire field with this worst-case placeholder so the
+# provider-neutral measure is always >= the real encoded payload regardless of
+# which candidate the runtime selects.
+MAX_MODEL_NAME_BYTES = 128
 
 
 class ProviderType(StrEnum):
@@ -131,19 +138,31 @@ class ProviderChatRequest:
     response_format: ProviderResponseFormat | None = None
 
 
-def measure_provider_request(request: ProviderChatRequest) -> int:
-    """Provider-neutral serialized-byte budget for a full chat request.
+def _canonical_chat_payload(
+    request: ProviderChatRequest, model_name: str
+) -> dict[str, object]:
+    """The single canonical wire serialization shared by the adapter and the
+    provider-neutral request budget.
 
-    Unlike a tokenizer, this is a stable, conservative byte count.  It covers
-    everything the adapter actually puts on the wire: every message role,
-    content, ``tool_call_id``, assistant ``tool_calls`` (id, name and
-    arguments) and every tool definition (name, description and
-    ``input_schema``).  It is deliberately provider-neutral so the Agent core
-    can fail closed *before* any HTTP call, without depending on DeepSeek's
-    tokenizer or wire framing.
+    Both the DeepSeek adapter (``_chat_payload``) and the provider-neutral
+    ``measure_provider_request`` serialize through this function so the two can
+    never silently drift apart.  The structure mirrors exactly what the adapter
+    puts on the wire: the ``model`` field, every message role/content/
+    ``tool_call_id``, assistant ``tool_calls`` wrapped in ``type``/``function``
+    with ``arguments`` JSON-stringified (so quote/backslash escaping expansion
+    is counted), ``response_format`` and every tool definition wrapped in
+    ``type``/``function`` with ``parameters``.  ``measure_provider_request``
+    calls this with a worst-case ``model_name`` so its byte count is always >=
+    the real adapter-encoded payload size.
     """
 
-    payload: list[object] = []
+    if not request.messages:
+        raise ProviderError(
+            ProviderErrorClassification.INVALID_REQUEST,
+            retryable=False,
+            failover_allowed=False,
+        )
+    messages: list[dict[str, object]] = []
     for message in request.messages:
         item: dict[str, object] = {"role": message.role.value}
         if message.content is not None:
@@ -154,24 +173,55 @@ def measure_provider_request(request: ProviderChatRequest) -> int:
             item["tool_calls"] = [
                 {
                     "id": call.id,
-                    "name": call.name,
-                    "arguments": dict(call.arguments),
+                    "type": "function",
+                    "function": {
+                        "name": call.name,
+                        "arguments": json.dumps(
+                            dict(call.arguments), ensure_ascii=False, separators=(",", ":")
+                        ),
+                    },
                 }
                 for call in message.tool_calls
             ]
-        payload.append(item)
-    for tool in request.tools:
-        payload.append(
+        messages.append(item)
+    payload: dict[str, object] = {"model": model_name, "messages": messages}
+    if request.response_format is ProviderResponseFormat.JSON_OBJECT:
+        payload["response_format"] = {"type": "json_object"}
+    if request.tools:
+        payload["tools"] = [
             {
-                "name": tool.name,
-                "description": tool.description,
-                "input_schema": dict(tool.input_schema),
+                "type": "function",
+                "function": {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "parameters": dict(tool.input_schema),
+                },
             }
-        )
-    encoded = json.dumps(
-        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str
+            for tool in request.tools
+        ]
+    return payload
+
+
+def _encode_chat_payload(payload: dict[str, object]) -> bytes:
+    return json.dumps(
+        payload, ensure_ascii=False, separators=(",", ":")
     ).encode()
-    return len(encoded)
+
+
+def measure_provider_request(request: ProviderChatRequest) -> int:
+    """Provider-neutral serialized-byte budget for a full chat request.
+
+    Unlike a tokenizer, this is a stable, conservative byte count.  It shares
+    the canonical wire serializer with the DeepSeek adapter and sizes the
+    ``model`` field with the worst-case ``MAX_MODEL_NAME_BYTES`` placeholder, so
+    the result is always >= the real adapter-encoded payload size for any
+    configured candidate.  This lets the Agent core fail closed *before* any
+    HTTP call, without depending on DeepSeek's tokenizer, wire framing, or any
+    DeepSeek-specific field — only the provider-neutral ``ProviderChatRequest``.
+    """
+
+    payload = _canonical_chat_payload(request, "M" * MAX_MODEL_NAME_BYTES)
+    return len(_encode_chat_payload(payload))
 
 
 @dataclass(frozen=True, slots=True)
@@ -467,50 +517,7 @@ class DeepSeekOfficialAdapter:
 
     @staticmethod
     def _chat_payload(model_name: str, request: ProviderChatRequest) -> dict[str, object]:
-        if not request.messages:
-            raise ProviderError(
-                ProviderErrorClassification.INVALID_REQUEST,
-                retryable=False,
-                failover_allowed=False,
-            )
-        messages: list[dict[str, object]] = []
-        for message in request.messages:
-            item: dict[str, object] = {"role": message.role.value}
-            if message.content is not None:
-                item["content"] = message.content
-            if message.tool_call_id is not None:
-                item["tool_call_id"] = message.tool_call_id
-            if message.tool_calls:
-                item["tool_calls"] = [
-                    {
-                        "id": call.id,
-                        "type": "function",
-                        "function": {
-                            "name": call.name,
-                            "arguments": json.dumps(
-                                dict(call.arguments), ensure_ascii=False, separators=(",", ":")
-                            ),
-                        },
-                    }
-                    for call in message.tool_calls
-                ]
-            messages.append(item)
-        payload: dict[str, object] = {"model": model_name, "messages": messages}
-        if request.response_format is ProviderResponseFormat.JSON_OBJECT:
-            payload["response_format"] = {"type": "json_object"}
-        if request.tools:
-            payload["tools"] = [
-                {
-                    "type": "function",
-                    "function": {
-                        "name": tool.name,
-                        "description": tool.description,
-                        "parameters": dict(tool.input_schema),
-                    },
-                }
-                for tool in request.tools
-            ]
-        return payload
+        return _canonical_chat_payload(request, model_name)
 
     @classmethod
     def _tool_calls(cls, value: object) -> tuple[ProviderToolCall, ...]:

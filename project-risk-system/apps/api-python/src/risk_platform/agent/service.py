@@ -219,7 +219,13 @@ class AgentConversationService:
                 raise ApiError(
                     404, "AGENT_CONVERSATION_NOT_FOUND", "Agent 会话不存在或不属于当前用户"
                 )
-            messages = await AgentConversationRepository(session).messages(conversation.id)
+            # Restore the *latest* window, not the oldest 100: a forward-paged
+            # oldest window would hide the most recent turns of a long
+            # conversation after a refresh.  nextMessageSequence still reflects
+            # the true tail so the next send continues the same conversation.
+            messages = await AgentConversationRepository(session).latest_messages(
+                conversation.id
+            )
         return AgentConversationHistory(
             conversation=self._conversation(conversation),
             messages=[self._message(message) for message in messages],

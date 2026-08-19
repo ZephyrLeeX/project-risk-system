@@ -17,6 +17,11 @@ from sqlalchemy import create_engine, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from risk_platform.admin.models import User
+from risk_platform.agent.models import (
+    AgentConversation,
+    AgentMessage,
+    AgentMessageRole,
+)
 from risk_platform.agent.schemas import (
     ProjectDetailToolResponse,
     ProjectListToolResponse,
@@ -293,5 +298,60 @@ def test_conversation_persistence_owner_scope_and_frozen_retention(
         with pytest.raises(ApiError) as error:
             await app_service.history(identity(OTHER), created.conversation.id)
         assert error.value.code == "AGENT_CONVERSATION_NOT_FOUND"
+
+    asyncio.run(run())
+
+
+def test_history_restores_latest_window_for_long_conversation(
+    database: async_sessionmaker[AsyncSession],
+) -> None:
+    # A conversation with 150+ messages must restore the *latest* window, not
+    # the oldest 100: after a refresh the user should see the most recent
+    # USER/ASSISTANT turns and the next send continues the same conversation
+    # (nextMessageSequence reflects the true tail).
+    total = 150
+
+    async def run() -> None:
+        app_service = service(database)
+        conversation_id = uuid.uuid4()
+        async with transaction(database) as session:
+            now = datetime.now(UTC)
+            # lastMessageSequence starts at 0; the per-row trigger
+            # agent_messages_assign_sequence advances it by one per inserted
+            # message and requires each NEW.sequence to equal the running
+            # value, so sequences must be inserted in ascending order.
+            session.add(
+                AgentConversation(
+                    id=conversation_id,
+                    ownerUserId=OWNER,
+                    createdAt=now,
+                    updatedAt=now,
+                    expiresAt=now + timedelta(days=90),
+                    retentionConfigVersion="test",
+                )
+            )
+            await session.flush()
+            session.add_all(
+                AgentMessage(
+                    conversationId=conversation_id,
+                    sequence=sequence,
+                    role=AgentMessageRole.USER if sequence % 2 == 1 else AgentMessageRole.ASSISTANT,
+                    content=f"消息 {sequence}",
+                    traceId="t028-trace",
+                    dataAsOf=now,
+                )
+                for sequence in range(1, total + 1)
+            )
+            await session.flush()
+
+        history = await app_service.history(identity(), conversation_id)
+        # The latest 100 messages (sequences 51..150) are restored in ascending
+        # order; nothing older than 51 leaks into the window.
+        assert len(history.messages) == 100
+        assert [message.sequence for message in history.messages] == list(range(51, 151))
+        assert [message.content for message in history.messages][:2] == ["消息 51", "消息 52"]
+        assert history.messages[-1].content == "消息 150"
+        # The tail is the true last sequence + 1, so the next send continues.
+        assert history.nextMessageSequence == total + 1
 
     asyncio.run(run())

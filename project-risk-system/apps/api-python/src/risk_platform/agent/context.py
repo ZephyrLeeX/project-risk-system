@@ -72,6 +72,14 @@ class AgentConversationContext:
     recent_messages: tuple[ConversationMessage, ...]
     active_project: ActiveProject | None
     summarized_through_sequence: int
+    # ``True`` only when the service could not compress far enough (summarizer
+    # provider failure, pass exhaustion or an empty summary) to fit every
+    # unsummarized turn into the effective history budget.  A degraded context
+    # is explicitly *not* a complete memory: Core must refuse to run on it
+    # rather than answer as if the dropped middle turns never existed.  This
+    # flag is the only thing that distinguishes "we dropped history" from "the
+    # summary covers it", so it is never set silently.
+    context_degraded: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,14 +130,20 @@ class ConversationContextService:
             else self._policy.history_budget
         )
         passes = 0
+        # The compression threshold must be bounded by the *effective* history
+        # budget, not only the static policy trigger.  When the per-execution
+        # fixed overhead shrinks the real history budget below the configured
+        # trigger, compressing only at the trigger would let unsummarized
+        # history exceed the budget and be silently truncated by ``_result``.
+        # Using ``min(trigger, effective_budget)`` forces compression before any
+        # turn would have to be dropped.
+        trigger = min(self._policy.compression_trigger, effective_budget)
         while True:
             conversation, _, turns = await self._load(
                 conversation_id, current_user_message_id, UUID(identity.user.id)
             )
             active = await self._active_project(conversation, identity)
-            if self._context_size(conversation.contextSummary, turns) <= (
-                self._policy.compression_trigger
-            ):
+            if self._context_size(conversation.contextSummary, turns) <= trigger:
                 return self._result(conversation, turns, active, effective_budget)
             compressible = turns[: -self._policy.minimum_recent_turns]
             batch = self._bounded_prefix(compressible)
@@ -280,6 +294,14 @@ class ConversationContextService:
             selected.append(turn)
             used += turn.size
         selected.reverse()
+        # No-dropped-history invariant: every eligible turn (sequence >
+        # summarized_through_sequence) must either be carried in
+        # recent_messages or covered by the summary boundary.  ``turns`` holds
+        # exactly the eligible turns; if any did not fit the budget it is
+        # absent from ``selected`` and would be silently lost.  Surface that as
+        # an explicit degraded state instead of returning an incomplete memory
+        # that looks complete.
+        degraded = len(selected) < len(turns)
         messages: list[ConversationMessage] = []
         for turn in selected:
             messages.extend(
@@ -299,6 +321,7 @@ class ConversationContextService:
             recent_messages=tuple(messages),
             active_project=active,
             summarized_through_sequence=conversation.contextSummaryThroughSequence,
+            context_degraded=degraded,
         )
 
     def _bounded_prefix(self, turns: Sequence[_Turn]) -> list[_Turn]:

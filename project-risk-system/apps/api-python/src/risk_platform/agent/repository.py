@@ -48,3 +48,27 @@ class AgentConversationRepository:
                 )
             ).all()
         )
+
+    async def latest_messages(
+        self,
+        conversation_id: UUID,
+        *,
+        limit: int = 100,
+    ) -> list[AgentMessage]:
+        """The most recent ``limit`` messages in ascending sequence order.
+
+        ``messages`` pages forward from a cursor and so returns the *oldest*
+        window for a fresh restore; long conversations would otherwise show only
+        the earliest 100 turns after a refresh.  This returns the latest window
+        (DESC limit, reversed back to ASC) so a restore surfaces the most
+        recent USER/ASSISTANT turns the next message continues from.
+        """
+        rows = (
+            await self._session.scalars(
+                select(AgentMessage)
+                .where(AgentMessage.conversationId == conversation_id)
+                .order_by(AgentMessage.sequence.desc())
+                .limit(limit)
+            )
+        ).all()
+        return list(reversed(rows))

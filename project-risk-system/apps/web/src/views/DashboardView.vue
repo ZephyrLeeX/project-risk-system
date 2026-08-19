@@ -972,6 +972,7 @@ async function saveRiskLifecycle(): Promise<void> {
 }
 
 async function logout(): Promise<void> {
+  agent.reset();
   await auth.logout();
   await router.replace("/login");
 }
@@ -983,7 +984,10 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
-  agent.reset();
+  // Unmount only tears down the live stream; the persisted conversation-id
+  // reference is kept so a return to the dashboard rehydrates the same
+  // conversation. reset() (new conversation / logout) is what clears it.
+  agent.dispose();
 });
 </script>
 
@@ -2316,7 +2320,10 @@ onUnmounted(() => {
           重试
         </button>
         <button
-          v-else-if="agent.state.error.code === 'AGENT_EXECUTION_CONFIG_INVALID'"
+          v-else-if="
+            agent.state.error.code === 'AGENT_EXECUTION_CONFIG_INVALID'
+              || agent.state.error.code === 'AGENT_CONTEXT_TOO_LARGE'
+          "
           type="button"
           @click="startNewAgentConversation"
         >

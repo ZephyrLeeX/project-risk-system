@@ -35,8 +35,10 @@ from risk_platform.ai_providers.v2_adapter import (
     ProviderMessage,
     ProviderResponseFormat,
     ProviderRole,
+    ProviderToolCall,
     ProviderToolDefinition,
     ProviderType,
+    measure_provider_request,
 )
 from risk_platform.model_types import JSONValue
 from risk_platform.shared.crypto import KeyRing, SecretCipher
@@ -73,6 +75,132 @@ def test_chat_payload_translates_provider_neutral_json_mode() -> None:
     )
 
     assert payload["response_format"] == {"type": "json_object"}
+
+
+def _actual_encoded_size(model_name: str, chat_request: ProviderChatRequest) -> int:
+    """Bytes the DeepSeek adapter would actually put on the wire."""
+    payload = DeepSeekOfficialAdapter._chat_payload(model_name, chat_request)
+    return len(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode())
+
+
+def _nested_schema_tool() -> ProviderToolDefinition:
+    return ProviderToolDefinition(
+        "risk_create_proposal",
+        "上报风险草稿",
+        {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "amount": {"type": "number"},
+                "evidence": {"type": "array", "items": {"type": "string"}},
+                "nested": {
+                    "type": "object",
+                    "properties": {"a": {"type": "string"}, "b": {"type": "integer"}},
+                },
+            },
+            "required": ["title"],
+        },
+    )
+
+
+@pytest.mark.parametrize(
+    "model_name",
+    (
+        "deepseek-chat",
+        # Worst-case configured model name (v2_schemas caps modelName at 128).
+        "deepseek-" + "x" * 119,
+    ),
+)
+@pytest.mark.parametrize(
+    "chat_request",
+    (
+        # Chinese content only.
+        ProviderChatRequest(
+            (
+                ProviderMessage(ProviderRole.SYSTEM, "你是项目风险管理助手。"),
+                ProviderMessage(ProviderRole.USER, "当前有哪些高风险"),
+            )
+        ),
+        # Tool definitions with a nested JSON schema + response_format.
+        ProviderChatRequest(
+            (ProviderMessage(ProviderRole.USER, "上报风险"),),
+            (_nested_schema_tool(),),
+            response_format=ProviderResponseFormat.JSON_OBJECT,
+        ),
+        # Assistant tool_call with plain arguments + a tool result message.
+        ProviderChatRequest(
+            (
+                ProviderMessage(ProviderRole.USER, "查风险"),
+                ProviderMessage(
+                    ProviderRole.ASSISTANT,
+                    None,
+                    tool_calls=(
+                        ProviderToolCall("call-1", "risk_list", {"projectId": "p-1"}),
+                    ),
+                ),
+                ProviderMessage(ProviderRole.TOOL, '{"items":[]}', tool_call_id="call-1"),
+            ),
+            (_nested_schema_tool(),),
+        ),
+        # Quote/backslash-heavy arguments: the adapter JSON-stringifies
+        # ``arguments`` and then re-serializes the whole payload, so the
+        # escaping expansion must be counted by the measure.
+        ProviderChatRequest(
+            (
+                ProviderMessage(ProviderRole.USER, '用户说: "不要\\n换行"'),
+                ProviderMessage(
+                    ProviderRole.ASSISTANT,
+                    None,
+                    tool_calls=(
+                        ProviderToolCall(
+                            "call-2",
+                            "risk_create_proposal",
+                            {
+                                "title": '含"引号"和\\反斜杠\t制表符',
+                                "evidence": ['"q1"', 'back\\slash'],
+                            },
+                        ),
+                    ),
+                ),
+            ),
+            (_nested_schema_tool(),),
+        ),
+    ),
+)
+def test_measure_provider_request_covers_actual_deepseek_encoded_payload(
+    model_name: str, chat_request: ProviderChatRequest
+) -> None:
+    assert len(model_name) <= 128
+    actual = _actual_encoded_size(model_name, chat_request)
+    measured = measure_provider_request(chat_request)
+    assert measured >= actual, (measured, actual, model_name)
+
+
+def test_measure_provider_request_grows_with_backslash_heavy_arguments() -> None:
+    # The escape expansion is real and sized: a request whose tool-call
+    # arguments contain backslashes/quotes must measure strictly more than the
+    # same request with plain arguments, because ``arguments`` is
+    # JSON-stringified inside the payload.
+    plain = ProviderChatRequest(
+        (
+            ProviderMessage(
+                ProviderRole.ASSISTANT,
+                None,
+                tool_calls=(ProviderToolCall("c", "t", {"k": "plain"}),),
+            ),
+        )
+    )
+    heavy = ProviderChatRequest(
+        (
+            ProviderMessage(
+                ProviderRole.ASSISTANT,
+                None,
+                tool_calls=(ProviderToolCall("c", "t", {"k": '"q\\q"'}),),
+            ),
+        )
+    )
+    assert measure_provider_request(heavy) > measure_provider_request(plain)
+    assert measure_provider_request(heavy) >= _actual_encoded_size("m", heavy)
 
 
 class LocalOfficialGuard:

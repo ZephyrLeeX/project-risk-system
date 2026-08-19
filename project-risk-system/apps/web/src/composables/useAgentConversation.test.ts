@@ -220,3 +220,80 @@ describe("Agent conversation restore after refresh", () => {
     expect(agent.state.conversationId).toBeNull();
   });
 });
+
+describe("Agent conversation dispose vs reset lifecycle", () => {
+  it("dispose aborts the stream but keeps the conversation id and persisted reference", async () => {
+    const store = stubLocalStorage();
+    mockedAgentApi.create.mockResolvedValue(envelope("keep-id"));
+    const fetchMock = vi.fn(
+      (_url: string, init: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init.signal?.addEventListener("abort", () =>
+            reject(new DOMException("aborted", "AbortError")),
+          );
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const agent = useAgentConversation();
+
+    const send = agent.send("有哪些项目？");
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    agent.dispose();
+    await send;
+
+    // The live stream is aborted...
+    expect(fetchMock.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+    // ...but the conversation id, persisted reference and visible messages
+    // survive so a return to the dashboard rehydrates the same conversation.
+    expect(agent.state.conversationId).toBe("keep-id");
+    expect(store.get("risk-platform:agent-conversation-id")).toBe("keep-id");
+    expect(agent.state.messages).not.toEqual([]);
+  });
+
+  it("dispose clears the stream handle so reconnect becomes a no-op", async () => {
+    stubLocalStorage();
+    mockedAgentApi.create.mockResolvedValue(envelope("noop-id"));
+    const fetchMock = vi.fn(
+      (_url: string, init: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init.signal?.addEventListener("abort", () =>
+            reject(new DOMException("aborted", "AbortError")),
+          );
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const agent = useAgentConversation();
+
+    const send = agent.send("有哪些项目？");
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    agent.dispose();
+    await send;
+
+    fetchMock.mockClear();
+    await agent.reconnect();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("dispose keeps the reference so a fresh mount restores the same conversation", async () => {
+    const store = stubLocalStorage();
+    mockedAgentApi.create.mockResolvedValue(envelope("survive-id"));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null)));
+    const agent = useAgentConversation();
+    await agent.send("有哪些项目？");
+    agent.dispose();
+
+    // A fresh composable (new mount) reads the reference dispose preserved;
+    // reset() would have cleared it and forced a brand-new conversation.
+    const restored = useAgentConversation();
+    mockedAgentApi.history.mockResolvedValue({
+      conversation: { id: "survive-id" },
+      messages: [],
+      nextMessageSequence: 2,
+    } as never);
+    await restored.restore();
+
+    expect(mockedAgentApi.history).toHaveBeenCalledWith("survive-id");
+    expect(restored.state.conversationId).toBe("survive-id");
+    expect(store.get("risk-platform:agent-conversation-id")).toBe("survive-id");
+  });
+});

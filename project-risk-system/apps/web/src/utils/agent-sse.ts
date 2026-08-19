@@ -322,6 +322,7 @@ const AGENT_ERROR_LABELS: Record<string, string> = {
   AGENT_REPORT_CATEGORY_STALE: "风险分类已变更，请重新发起",
   AGENT_STREAM_IDLE_TIMEOUT: "Agent事件流空闲超时，请重新读取会话",
   AGENT_EXECUTION_CONFIG_INVALID: "Agent执行配置无效，请重新发起对话",
+  AGENT_CONTEXT_TOO_LARGE: "对话上下文超出限制，请新建对话后继续",
 };
 
 export function agentErrorLabel(code: string, fallback: string): string {

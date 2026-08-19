@@ -20,7 +20,7 @@ from risk_platform.agent.context import (
     inherits_domain_context,
     refers_to_active_project,
 )
-from risk_platform.agent.core import ContextBudget, ReadOnlyAgentCore
+from risk_platform.agent.core import AgentLoopError, ContextBudget, ReadOnlyAgentCore
 from risk_platform.agent.models import AgentConversation, AgentMessage, AgentMessageRole
 from risk_platform.agent.schemas import AgentToolResult
 from risk_platform.agent.tools import AgentToolRegistry
@@ -232,13 +232,20 @@ def test_provider_request_orders_summary_recent_and_current_message() -> None:
         ProviderRole.SYSTEM,
         ProviderRole.USER,
         ProviderRole.USER,
+        ProviderRole.USER,
         ProviderRole.ASSISTANT,
         ProviderRole.USER,
     ]
     assert request.messages[-1].content == "第二个展开说一下"
     assert "必须重新调用授权 tool" in (request.messages[0].content or "")
+    # Dynamic active-project facts ride a bounded SERVER_GROUNDING_DATA USER
+    # message, never the SYSTEM instruction.
+    grounding_message = request.messages[1]
+    assert grounding_message.role is ProviderRole.USER
+    assert "SERVER_GROUNDING_DATA" in (grounding_message.content or "")
+    assert "南岸项目" in (grounding_message.content or "")
     # The summary is fenced untrusted data on a USER message, never SYSTEM.
-    memory_message = request.messages[1]
+    memory_message = request.messages[2]
     assert memory_message.role is ProviderRole.USER
     assert "CONVERSATION_MEMORY_DATA" in (memory_message.content or "")
     assert "<untrusted_memory>" in (memory_message.content or "")
@@ -407,8 +414,16 @@ def test_no_unsummarized_history_is_silently_dropped_invariant() -> None:
     assert all(seq <= result.summarized_through_sequence for seq in dropped)
 
 
-def test_compression_failure_degrades_to_latest_complete_turns() -> None:
+def test_compression_failure_degrades_with_explicit_flag_not_silent_drop() -> None:
+    # When the summarizer provider fails and the unsummarized history cannot
+    # fit the effective budget, the service must NOT silently return a
+    # complete-looking memory with the middle turns dropped.  It returns the
+    # bounded recent window with ``context_degraded=True`` so Core refuses to
+    # run instead of answering over incomplete memory.
     conversation, messages, current = _conversation_fixture(4, content_size=100)
+    eligible_sequences = {
+        item.sequence for item in messages if item.sequence < current.sequence
+    }
 
     async def fail(*_args: object) -> str:
         raise ProviderError(
@@ -428,9 +443,122 @@ def test_compression_failure_degrades_to_latest_complete_turns() -> None:
         ),
     )
     result = asyncio.run(service.build(conversation.id, current.id, _identity(), ()))
+    carried = {item.sequence for item in result.recent_messages}
+    dropped = eligible_sequences - carried
+    assert dropped, "test must actually drop some eligible turns"
+    # Every dropped eligible turn has sequence > summaryThrough (nothing was
+    # summarized), so the only honest signal is the explicit degraded flag —
+    # never a silent, complete-looking return.
+    assert all(seq > result.summarized_through_sequence for seq in dropped)
+    assert result.context_degraded is True
     assert result.summary is None
-    assert [item.sequence for item in result.recent_messages] == [5, 6, 7, 8]
     assert conversation.contextSummaryVersion == 0
+
+
+def test_core_refuses_degraded_context_before_any_provider_call() -> None:
+    runtime = _Runtime()
+    with pytest.raises(AgentLoopError, match="AGENT_CONTEXT_TOO_LARGE"):
+        asyncio.run(
+            ReadOnlyAgentCore(
+                cast(ProviderV2Runtime, runtime), cast(AgentToolRegistry, _Tools())
+            ).run(
+                _identity(),
+                "现在有多少风险？",
+                conversation_context=AgentConversationContext(
+                    summary=None,
+                    recent_messages=(),
+                    active_project=None,
+                    summarized_through_sequence=0,
+                    context_degraded=True,
+                ),
+                candidate_snapshot=(),
+            )
+        )
+    assert runtime.requests == []
+
+
+def test_effective_budget_below_trigger_forces_compression_not_truncation() -> None:
+    # Finding (a): the static policy allows a 14 KiB trigger under a 16 KiB
+    # budget, but the per-execution effective budget (6 KiB) is smaller than
+    # both the trigger and the ~10 KiB of unsummarized history.  Compression
+    # must be driven by min(trigger, effective_budget) so the history is
+    # compressed rather than silently truncated to 6 KiB.
+    conversation, messages, current = _conversation_fixture(5, content_size=1000)
+    eligible_sequences = {
+        item.sequence for item in messages if item.sequence < current.sequence
+    }
+    calls: list[str] = []
+
+    async def summarize(_snapshot: object, _summary: str | None, transcript: str) -> str:
+        calls.append(transcript)
+        return "已压缩历史。"
+
+    service = _MemoryContextService(
+        conversation,
+        messages,
+        summarize,
+        ConversationContextPolicy(
+            history_budget=16 * 1024,
+            compression_trigger=14 * 1024,
+            compression_target=200,
+            summary_input_budget=10_000,
+        ),
+    )
+    result = asyncio.run(
+        service.build(
+            conversation.id,
+            current.id,
+            _identity(),
+            (),
+            history_budget=6 * 1024,
+        )
+    )
+    assert calls, "compression must run rather than truncate"
+    carried = {item.sequence for item in result.recent_messages}
+    dropped = eligible_sequences - carried
+    # No unsummarized turn is silently dropped: every dropped turn is covered
+    # by the summary boundary, and the context is not degraded.
+    assert all(seq <= result.summarized_through_sequence for seq in dropped)
+    assert result.context_degraded is False
+
+
+def test_max_pass_exhaustion_flags_degraded_not_silent_drop() -> None:
+    # Finding (c): when compression passes are exhausted before the
+    # unsummarized history fits the budget, the still-unsummarized middle turns
+    # cannot be silently omitted.  They must surface as an explicit degraded
+    # flag.  summary_input_budget holds one turn per batch, so two passes
+    # cannot compress enough of an 8-turn conversation.
+    conversation, messages, current = _conversation_fixture(8, content_size=100)
+    eligible_sequences = {
+        item.sequence for item in messages if item.sequence < current.sequence
+    }
+
+    async def summarize(_snapshot: object, _summary: str | None, transcript: str) -> str:
+        del transcript
+        return "已压缩历史。"
+
+    service = _MemoryContextService(
+        conversation,
+        messages,
+        summarize,
+        ConversationContextPolicy(
+            history_budget=500,
+            compression_trigger=300,
+            compression_target=80,
+            summary_input_budget=300,
+            max_compression_passes=2,
+        ),
+    )
+    result = asyncio.run(service.build(conversation.id, current.id, _identity(), ()))
+    carried = {item.sequence for item in result.recent_messages}
+    dropped = eligible_sequences - carried
+    unsummarized_dropped = {
+        seq for seq in dropped if seq > result.summarized_through_sequence
+    }
+    assert unsummarized_dropped, "test must drop unsummarized turns"
+    # Those unsummarized turns were not summarized and are not in
+    # recent_messages: the only honest outcome is the explicit degraded flag.
+    assert result.context_degraded is True
 
 
 def test_context_budget_is_unified_and_active_project_reference_is_explicit() -> None:

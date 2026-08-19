@@ -56,11 +56,14 @@ describe("live UI layout regressions", () => {
     expect(dashboardView).not.toContain(":placeholder=\"draftField");
   });
 
-  it("offers a new conversation only for the stale execution configuration", () => {
+  it("offers a new conversation for stale config or an oversize context", () => {
     expect(dashboardView).toContain(
       "agent.state.error.code === 'AGENT_EXECUTION_CONFIG_INVALID'",
     );
-    expect(dashboardView).toContain("v-else-if=\"agent.state.error.code");
+    expect(dashboardView).toContain(
+      "agent.state.error.code === 'AGENT_CONTEXT_TOO_LARGE'",
+    );
+    expect(dashboardView).toContain("v-else-if=\"");
     expect(dashboardView).toContain("@click=\"startNewAgentConversation\"");
   });
 

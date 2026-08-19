@@ -62,7 +62,7 @@ export function useAgentConversation() {
   let lastInteractionBody: AgentInteractionRequest | null = null;
 
   onScopeDispose(() => {
-    abortStream();
+    dispose();
   });
 
   function toStreamMessage(message: AgentMessageResponse): AgentStreamMessage {
@@ -168,10 +168,27 @@ export function useAgentConversation() {
     await respondInteraction({ action: "CANCEL" });
   }
 
-  /** Drop all conversation state and abort any active stream. */
+  /**
+   * Tear down the live stream without dropping the conversation.
+   *
+   * Used on component unmount: the in-flight SSE fetch is aborted and the
+   * transient stream handle is cleared (so a stale URL can never drive a
+   * reconnect), but the persisted conversation-id reference and the visible
+   * state are kept so a fresh mount's {@link restore} rehydrates the *same*
+   * authorized conversation instead of starting over. Contrast with
+   * {@link reset}, which clears the reference for a brand-new conversation.
+   */
+  function dispose(): void {
+    abortStream();
+    activeStreamUrl = null;
+    lastInteractionBody = null;
+  }
+
+  /** Drop all conversation state, clear the persisted reference, and start over. */
   function reset(): void {
     abortStream();
     activeStreamUrl = null;
+    lastInteractionBody = null;
     lastUserMessage.value = "";
     clearStoredConversationId();
     Object.assign(state, initialAgentState());
@@ -334,6 +351,7 @@ export function useAgentConversation() {
     respondInteraction,
     retryInteraction,
     cancelInteraction,
+    dispose,
     reset,
     restore,
   };

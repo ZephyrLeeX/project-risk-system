@@ -47,18 +47,25 @@ from .schemas import CandidateRisk
 
 
 def _project_selection_resume_context(selected: Mapping[str, JSONValue]) -> str:
-    """Render server-authorized selection facts for the internal Core prompt."""
+    """Render server-authorized selection *facts* as untrusted grounding data.
+
+    Only the dynamic selection facts (id/name/code/department/status) live
+    here; they are delivered as a bounded, explicitly-untrusted
+    ``SERVER_GROUNDING_DATA`` message, never promoted to SYSTEM instruction
+    authority.  The trust that the project was user-selected and
+    DataScope-revalidated is enforced by the code-level ``selected_project_id``
+    parameter (project_search removal and ``AGENT_PROJECT_REQUERY_FORBIDDEN``),
+    not by this text.  The static guidance to use ``selectedProjectId``
+    directly and never re-issue ``project_search`` lives in the SYSTEM
+    instruction.
+    """
 
     return (
-        "服务器已提供并完成当前 DataScope revalidation 的项目选择。"
         f"selectedProjectId={selected.get('id')}; "
         f"selectedProjectName={selected.get('name')}; "
         f"externalCode={selected.get('externalCode')}; "
         f"departmentName={selected.get('departmentName')}; "
         f"status={selected.get('status')}。"
-        "该项目已经由用户完成选择。后续需要 project_detail、risk_list 等项目精确查询时, "
-        "必须直接使用 selectedProjectId, 不得再次根据原始模糊用户文本调用 project_search。"
-        "请继续回答原问题。"
     )
 
 
