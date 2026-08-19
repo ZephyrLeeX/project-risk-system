@@ -13,6 +13,8 @@ export type AgentConversationEnvelope =
   OpenApi.components["schemas"]["AgentConversationEnvelope"];
 export type AgentConversationHistory =
   OpenApi.components["schemas"]["AgentConversationHistory"];
+export type AgentConversationRuntime =
+  OpenApi.components["schemas"]["AgentConversationRuntime"];
 export type AgentConversationResponse =
   OpenApi.components["schemas"]["AgentConversationResponse"];
 export type AgentMessageResponse =
@@ -69,6 +71,18 @@ export const agentApi = {
     return (
       await apiRequest<AgentConversationHistory>(
         `/agent/conversations/${encodeURIComponent(conversationId)}`,
+      )
+    ).data;
+  },
+
+  /** Cancel the live execution of a conversation (`POST /agent/conversations/{id}/cancel`). */
+  async cancelConversation(
+    conversationId: string,
+  ): Promise<AgentConversationRuntime> {
+    return (
+      await apiRequest<AgentConversationRuntime>(
+        `/agent/conversations/${encodeURIComponent(conversationId)}/cancel`,
+        { method: "POST" },
       )
     ).data;
   },

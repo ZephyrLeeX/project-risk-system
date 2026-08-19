@@ -442,8 +442,15 @@ def inherits_domain_context(
         return False
     if not _has_domain_anchor(context):
         return False
-    if any(marker in normalized for marker in _CORRECTION_MARKERS):
-        return True
+    # A correction ("不是 A，我说的是 B") is still a referential shorthand and
+    # reaches here, but it must — like every other shorthand — positively
+    # resolve to the domain via ``_has_domain_query``.  A bare "不是，帮我写封
+    # 邮件" / "不是，我想问天气" / "不是，给我翻译成英文" carries no domain
+    # intent and must fail closed even with a domain anchor; otherwise any
+    # request can smuggle past ScopePolicy by leading with a correction marker.
+    # The deterministic gate below is layer 1 of defense-in-depth; the
+    # model-level scope rule in ``ReadOnlyAgentCore._system_instruction`` is
+    # layer 2 and re-refuses out-of-scope requests even if this gate is bypassed.
     return _has_domain_query(normalized)
 
 

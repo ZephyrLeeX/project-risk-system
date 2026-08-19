@@ -10,6 +10,7 @@ vi.mock("@/api/agent", () => ({
     continueConversation: vi.fn(),
     history: vi.fn(),
     confirm: vi.fn(),
+    cancelConversation: vi.fn(),
   },
 }));
 
@@ -295,5 +296,186 @@ describe("Agent conversation dispose vs reset lifecycle", () => {
     expect(mockedAgentApi.history).toHaveBeenCalledWith("survive-id");
     expect(restored.state.conversationId).toBe("survive-id");
     expect(store.get("risk-platform:agent-conversation-id")).toBe("survive-id");
+  });
+});
+
+describe("Agent conversation runtime restore (RUNNING / WAITING_FOR_USER)", () => {
+  it("restores a RUNNING turn by reattaching the durable execution stream", async () => {
+    const store = stubLocalStorage();
+    store.set("risk-platform:agent-conversation-id", "running-id");
+    mockedAgentApi.history.mockResolvedValue({
+      conversation: { id: "running-id" },
+      messages: [
+        {
+          id: "m-1",
+          role: "USER",
+          content: "列出风险",
+          createdAt: "2026-08-17T00:00:00.000Z",
+          dataAsOf: null,
+          sequence: 1,
+        },
+      ],
+      runtime: {
+        status: "RUNNING",
+        streamUrl: "/agent/conversations/running-id/events",
+        interaction: null,
+      },
+    } as never);
+    // The restored stream resumes the SAME execution and emits its terminal
+    // events (a delta + completed) in one chunk, so the turn lands without a
+    // re-send and the consumer does not reconnect past a clean EOF.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValueOnce(
+        new Response(
+          'id: e1\nevent: message.delta\ndata: {"conversationId":"running-id","messageId":"m-2","sequence":2,"traceId":"t","occurredAt":"2026-08-17T00:00:00.000Z","text":"共 2 个高风险"}\n\nid: e2\nevent: completed\ndata: {"conversationId":"running-id","messageId":"m-2","sequence":3,"traceId":"t","occurredAt":"2026-08-17T00:00:01.000Z","dataAsOf":"2026-08-17T00:00:01.000Z"}\n\n',
+          { headers: { "Content-Type": "text/event-stream" } },
+        ),
+      ),
+    );
+    const agent = useAgentConversation();
+
+    await agent.restore();
+
+    expect(mockedAgentApi.history).toHaveBeenCalledWith("running-id");
+    expect(fetch).toHaveBeenCalledWith(
+      "/agent/conversations/running-id/events",
+      expect.objectContaining({ method: "GET" }),
+    );
+    expect(agent.state.status).toBe("completed");
+    expect(agent.state.messages.filter((m) => m.role === "ASSISTANT")).toHaveLength(1);
+    expect(agent.state.streamingText).toBe("");
+  });
+
+  it("restores a WAITING_FOR_USER turn by redisplaying the OPEN interaction card", async () => {
+    const store = stubLocalStorage();
+    store.set("risk-platform:agent-conversation-id", "waiting-id");
+    mockedAgentApi.history.mockResolvedValue({
+      conversation: { id: "waiting-id" },
+      messages: [
+        {
+          id: "m-1",
+          role: "USER",
+          content: "查询风险",
+          createdAt: "2026-08-17T00:00:00.000Z",
+          dataAsOf: null,
+          sequence: 1,
+        },
+      ],
+      runtime: {
+        status: "WAITING_FOR_USER",
+        streamUrl: null,
+        interaction: {
+          id: "interaction-1",
+          type: "PROJECT_SELECTION",
+          status: "OPEN",
+          conversationId: "waiting-id",
+          executionId: "exec-1",
+          candidates: [{ name: "南岸项目" }],
+          draft: null,
+          expiresAt: "2026-08-17T00:30:00.000Z",
+        },
+      },
+    } as never);
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const agent = useAgentConversation();
+
+    await agent.restore();
+
+    // A paused turn re-displays the card; no stream is opened and the user
+    // resolves the interaction (PROJECT_SELECTION / WRITE_CONFIRMATION) rather
+    // than re-typing.
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(agent.state.status).toBe("completed");
+    expect(agent.state.interaction).not.toBeNull();
+    expect(agent.state.interaction?.id).toBe("interaction-1");
+    expect(agent.state.interaction?.type).toBe("PROJECT_SELECTION");
+    expect(agent.state.interaction?.status).toBe("OPEN");
+    expect(agent.state.interaction?.candidates?.[0]).toMatchObject({ name: "南岸项目" });
+  });
+
+  it("leaves a COMPLETED turn as-is when no runtime is present", async () => {
+    const store = stubLocalStorage();
+    store.set("risk-platform:agent-conversation-id", "done-id");
+    mockedAgentApi.history.mockResolvedValue({
+      conversation: { id: "done-id" },
+      messages: [
+        {
+          id: "m-1",
+          role: "USER",
+          content: "列出风险",
+          createdAt: "2026-08-17T00:00:00.000Z",
+          dataAsOf: null,
+          sequence: 1,
+        },
+        {
+          id: "m-2",
+          role: "ASSISTANT",
+          content: "共 2 个",
+          createdAt: "2026-08-17T00:00:01.000Z",
+          dataAsOf: null,
+          sequence: 2,
+        },
+      ],
+      runtime: null,
+    } as never);
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const agent = useAgentConversation();
+
+    await agent.restore();
+
+    // COMPLETED / FAILED / CANCELLED / none — the turn is final and the
+    // restored messages are the source of truth; no stream, no interaction.
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(agent.state.status).toBe("completed");
+    expect(agent.state.interaction).toBeNull();
+    expect(agent.state.messages).toHaveLength(2);
+  });
+});
+
+describe("Agent conversation explicit cancel", () => {
+  it("aborts the live stream and marks the turn completed", async () => {
+    stubLocalStorage();
+    mockedAgentApi.create.mockResolvedValue(envelope("cancel-id"));
+    mockedAgentApi.cancelConversation.mockResolvedValue({
+      status: "RUNNING",
+      streamUrl: null,
+      interaction: null,
+    } as never);
+    const fetchMock = vi.fn(
+      (_url: string, init: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init.signal?.addEventListener("abort", () =>
+            reject(new DOMException("aborted", "AbortError")),
+          );
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const agent = useAgentConversation();
+
+    // The turn is streaming (awaiting the never-resolving SSE fetch); an
+    // explicit cancel calls the cancel endpoint, aborts the stream locally
+    // and ends the turn without a final assistant message.
+    const sending = agent.send("列出风险");
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    await agent.cancel();
+    await sending;
+
+    expect(mockedAgentApi.cancelConversation).toHaveBeenCalledWith("cancel-id");
+    expect(fetchMock.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+    expect(agent.state.status).toBe("completed");
+    expect(agent.state.streamingText).toBe("");
+  });
+
+  it("does not call the cancel endpoint when no conversation is active", async () => {
+    stubLocalStorage();
+    const agent = useAgentConversation();
+
+    await agent.cancel();
+
+    expect(mockedAgentApi.cancelConversation).not.toHaveBeenCalled();
+    expect(agent.state.status).toBe("idle");
   });
 });

@@ -213,9 +213,26 @@ export function useAgentConversation() {
       state.messages = history.messages
         .filter((message) => message.role === "USER" || message.role === "ASSISTANT")
         .map(toStreamMessage);
-      state.status = state.messages.length ? "completed" : "idle";
       state.streamingText = "";
       state.progress = null;
+      const runtime = history.runtime;
+      if (runtime && runtime.status === "RUNNING" && runtime.streamUrl) {
+        // A refresh mid-turn reattaches to the SAME durable execution instead
+        // of forcing a re-send; the stream resumes at the conversation tail
+        // (after=null → server starts at lastEventSequence).
+        activeStreamUrl = runtime.streamUrl;
+        state.status = "streaming";
+        await connectStream(runtime.streamUrl, null);
+      } else if (runtime && runtime.status === "WAITING_FOR_USER" && runtime.interaction) {
+        // Redisplay the OPEN interaction (project selection / write
+        // confirmation draft) so the user can resolve it without re-typing.
+        state.interaction = runtime.interaction;
+        state.status = "completed";
+      } else {
+        // COMPLETED / FAILED / CANCELLED / none — the turn is final and the
+        // restored messages are the source of truth.
+        state.status = state.messages.length ? "completed" : "idle";
+      }
     } catch (error) {
       // 404 / expired / revoked: drop the stale reference so the next send
       // starts a fresh conversation instead of looping on a dead id.
@@ -225,6 +242,30 @@ export function useAgentConversation() {
     } finally {
       sending.value = false;
     }
+  }
+
+  /**
+   * Explicitly cancel the live execution (`POST /agent/conversations/{id}/cancel`).
+   *
+   * Unlike transport disconnect (refresh / tab close), this is an intentional
+   * user action: the worker-polled cancel flag is set and the in-flight stream
+   * is aborted locally. The turn ends without a final assistant message; the
+   * already-visible USER message and history stay.
+   */
+  async function cancel(): Promise<void> {
+    if (!state.conversationId) return;
+    state.error = null;
+    try {
+      await agentApi.cancelConversation(state.conversationId);
+    } catch (error) {
+      applyRequestError(error);
+      return;
+    }
+    abortStream();
+    activeStreamUrl = null;
+    state.streamingText = "";
+    state.progress = null;
+    state.status = "completed";
   }
 
   async function connectStream(
@@ -351,6 +392,7 @@ export function useAgentConversation() {
     respondInteraction,
     retryInteraction,
     cancelInteraction,
+    cancel,
     dispose,
     reset,
     restore,

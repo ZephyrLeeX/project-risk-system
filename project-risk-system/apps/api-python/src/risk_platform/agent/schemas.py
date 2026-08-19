@@ -159,10 +159,25 @@ class AgentMessageRequest(StrictRequestModel):
     message: str = Field(min_length=1, max_length=4000)
 
 
+class AgentConversationRuntime(_Contract):
+    """Owner-scoped snapshot of the conversation's live execution.
+
+    Restored by ``history`` so a refresh reattaches to a RUNNING stream or
+    re-displays an OPEN interaction instead of forcing a re-send.  Absent
+    (``None``) when no execution is active, which keeps the happy-path restore
+    (``status == "completed"``) unchanged.
+    """
+
+    status: str
+    streamUrl: str | None = None
+    interaction: AgentInteractionResponse | None = None
+
+
 class AgentConversationHistory(_Contract):
     conversation: AgentConversationResponse
     messages: list[AgentMessageResponse]
     nextMessageSequence: int
+    runtime: AgentConversationRuntime | None = None
 
 
 class AgentMessagePage(_Contract):
@@ -332,6 +347,7 @@ __all__ = [
     "AgentConversationEnvelope",
     "AgentConversationHistory",
     "AgentConversationResponse",
+    "AgentConversationRuntime",
     "AgentHelpResponse",
     "AgentMessageEnvelope",
     "AgentMessagePage",

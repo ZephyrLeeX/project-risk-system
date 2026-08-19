@@ -107,8 +107,16 @@ def _nested_schema_tool() -> ProviderToolDefinition:
     "model_name",
     (
         "deepseek-chat",
-        # Worst-case configured model name (v2_schemas caps modelName at 128).
+        # 128 ASCII chars (v2_schemas caps modelName at 128 *characters*).
         "deepseek-" + "x" * 119,
+        # 128 CJK chars -> 384 wire bytes for the field value.
+        "风" * 128,
+        # 128 emoji -> 512 wire bytes.
+        "😀" * 128,
+        # 128 quote/backslash chars -> each is JSON-escaped (256 wire bytes).
+        '"\\' * 64,
+        # 128 control chars -> the true worst case (6 B each, 768 == measure).
+        "\x00" * 128,
     ),
 )
 @pytest.mark.parametrize(

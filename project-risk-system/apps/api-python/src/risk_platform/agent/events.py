@@ -173,53 +173,53 @@ async def _stream(
     keepalive_seconds: float,
 ) -> AsyncIterator[bytes]:
     terminal_seen = False
-    normal_close = False
     loop = asyncio.get_running_loop()
     # ``idle_seconds`` is retained as a call-compatible parameter for older
     # callers, but it is intentionally not a transport close threshold.
     del idle_seconds
     last_keepalive_at = loop.time()
-    try:
-        while True:
-            async with sessions() as session:
-                rows = list(
-                    (
-                        await session.scalars(
-                            select(AgentEvent)
-                            .where(
-                                AgentEvent.conversationId == conversation_id,
-                                AgentEvent.sequence > after_sequence,
-                            )
-                            .order_by(AgentEvent.sequence)
-                            .limit(MAX_PENDING_EVENTS)
+    while True:
+        async with sessions() as session:
+            rows = list(
+                (
+                    await session.scalars(
+                        select(AgentEvent)
+                        .where(
+                            AgentEvent.conversationId == conversation_id,
+                            AgentEvent.sequence > after_sequence,
                         )
-                    ).all()
-                )
-            if rows:
-                for row in rows:
-                    after_sequence = row.sequence
-                    terminal_seen = row.type in STREAM_CLOSE_EVENT_TYPES
-                    yield wire_event(row)
-                if terminal_seen:
-                    normal_close = True
-                    return
-                continue
-            status = await _latest_task_status(sessions, conversation_id)
-            now = loop.time()
-            if status in ACTIVE_STATUSES:
-                # This is an SSE comment, not an AgentEvent. It cannot change
-                # execution/task/business state. RUNNING remains connected while
-                # a provider, database, or tool call produces no durable event.
-                if now - last_keepalive_at >= keepalive_seconds:
-                    yield b": keepalive\n\n"
-                    last_keepalive_at = now
-            elif status not in ACTIVE_STATUSES:
-                normal_close = True
+                        .order_by(AgentEvent.sequence)
+                        .limit(MAX_PENDING_EVENTS)
+                    )
+                ).all()
+            )
+        if rows:
+            for row in rows:
+                after_sequence = row.sequence
+                terminal_seen = row.type in STREAM_CLOSE_EVENT_TYPES
+                yield wire_event(row)
+            if terminal_seen:
                 return
-            await asyncio.sleep(poll_interval)
-    finally:
-        if not normal_close and not terminal_seen:
-            await request_cancellation(sessions, conversation_id)
+            continue
+        status = await _latest_task_status(sessions, conversation_id)
+        now = loop.time()
+        if status in ACTIVE_STATUSES:
+            # This is an SSE comment, not an AgentEvent. It cannot change
+            # execution/task/business state. RUNNING remains connected while
+            # a provider, database, or tool call produces no durable event.
+            if now - last_keepalive_at >= keepalive_seconds:
+                yield b": keepalive\n\n"
+                last_keepalive_at = now
+        else:
+            # The durable task reached a terminal status (or none exists); the
+            # stream closes without touching business state. A transport
+            # disconnect earlier in the loop (client drop / generator close)
+            # likewise does NOT cancel the durable execution: only the explicit
+            # POST /cancel endpoint calls ``request_cancellation``, so a browser
+            # refresh leaves the turn running to self-terminate via its 90 s
+            # timeout/lease instead of canceling mid-flight.
+            return
+        await asyncio.sleep(poll_interval)
 
 
 async def request_cancellation(

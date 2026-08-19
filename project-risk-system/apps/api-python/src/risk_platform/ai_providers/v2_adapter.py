@@ -31,13 +31,18 @@ DEEPSEEK_OFFICIAL_ORIGIN = "https://api.deepseek.com"
 MAX_RESPONSE_BYTES = 128 * 1024
 MAX_REQUEST_BYTES = 64 * 1024
 MAX_RETRY_AFTER_SECONDS = 10.0
-# The model name configured for a provider candidate is bounded at 128 bytes
-# (see ``v2_schemas.CreateProviderModelConfig.modelName`` and the
-# ``list_models`` ``> 128`` rejection).  The budget serializer sizes the
-# adapter's ``model`` wire field with this worst-case placeholder so the
-# provider-neutral measure is always >= the real encoded payload regardless of
-# which candidate the runtime selects.
-MAX_MODEL_NAME_BYTES = 128
+# The model name configured for a provider candidate is bounded at 128
+# *characters* (``v2_schemas.CreateModelConfigRequest.modelName``:
+# ``max_length=128``) — a character limit, not a UTF-8/wire-byte limit, so 128
+# CJK chars (384 B), 128 emoji (512 B) or 128 control chars are all legal.  The
+# budget serializer sizes the adapter's ``model`` wire field with a placeholder
+# whose JSON-encoded form is >= any legal 128-char name: under
+# ``json.dumps(..., ensure_ascii=False)`` the most expensive character is a
+# JSON control char (U+0000-U+001F), always escaped to ``\uXXXX`` (6 bytes),
+# which dominates emoji (4 B) and CJK (3 B).  128 control chars -> 768 bytes for
+# the field value (770 with quotes), >= any legal 128-char name on the wire.
+MAX_MODEL_NAME_CHARS = 128
+_WORST_CASE_MODEL_NAME = "\x00" * MAX_MODEL_NAME_CHARS
 
 
 class ProviderType(StrEnum):
@@ -213,14 +218,16 @@ def measure_provider_request(request: ProviderChatRequest) -> int:
 
     Unlike a tokenizer, this is a stable, conservative byte count.  It shares
     the canonical wire serializer with the DeepSeek adapter and sizes the
-    ``model`` field with the worst-case ``MAX_MODEL_NAME_BYTES`` placeholder, so
-    the result is always >= the real adapter-encoded payload size for any
-    configured candidate.  This lets the Agent core fail closed *before* any
-    HTTP call, without depending on DeepSeek's tokenizer, wire framing, or any
-    DeepSeek-specific field — only the provider-neutral ``ProviderChatRequest``.
+    ``model`` field with the worst-case ``_WORST_CASE_MODEL_NAME`` placeholder
+    (128 JSON control chars -> 768 wire bytes), so the result is always >= the
+    real adapter-encoded payload size for any legal 128-character candidate
+    model name, including multibyte CJK/emoji and quote/backslash/control-heavy
+    names.  This lets the Agent core fail closed *before* any HTTP call, without
+    depending on DeepSeek's tokenizer, wire framing, or any DeepSeek-specific
+    field — only the provider-neutral ``ProviderChatRequest``.
     """
 
-    payload = _canonical_chat_payload(request, "M" * MAX_MODEL_NAME_BYTES)
+    payload = _canonical_chat_payload(request, _WORST_CASE_MODEL_NAME)
     return len(_encode_chat_payload(payload))
 
 

@@ -1,0 +1,457 @@
+"""T052 — owner-scoped conversation runtime restore on refresh/resume.
+
+These PostgreSQL acceptance tests pin the refresh/resume contract introduced by
+the conversation-context remediation:
+
+* a RUNNING turn restores a ``streamUrl`` (reattach the same durable execution);
+* a WAITING_FOR_USER turn restores the OPEN interaction (project selection or
+  write-confirmation draft) instead of forcing a re-send;
+* ``continue_conversation`` fails closed with 409 while an execution is active;
+* refresh creates no duplicate execution or message;
+* an explicit ``POST /cancel`` sets the worker-polled cancel flag, and an
+  interaction ``CANCEL`` on a WAITING_FOR_USER turn still cancels.
+
+Transport disconnect (refresh / tab close) no longer cancels the durable
+execution — that is covered by ``test_sse_transport_regression.py``.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import os
+import re
+import uuid
+from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from uuid import UUID, uuid4
+
+import pytest
+from alembic import command
+from alembic.config import Config
+from sqlalchemy import create_engine, func, select, text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from risk_platform.admin.models import User
+from risk_platform.agent.interaction import AgentInteractionService
+from risk_platform.agent.models import (
+    AgentConversation,
+    AgentExecution,
+    AgentExecutionConfig,
+    AgentExecutionStatus,
+    AgentInteraction,
+    AgentInteractionStatus,
+    AgentInteractionType,
+    AgentMessage,
+    AgentMessageRole,
+    MutationDraft,
+    MutationDraftOperation,
+)
+from risk_platform.agent.schemas import AgentInteractionRespondRequest
+from risk_platform.agent.service import AgentConversationService
+from risk_platform.auth.schemas import AuthenticatedUser
+from risk_platform.auth.service import SessionIdentity
+from risk_platform.db import create_database_engine, create_session_factory, transaction
+from risk_platform.reliability.core import enqueue_task
+from risk_platform.reliability.models import DurableTask, DurableTaskKind, DurableTaskStatus
+from risk_platform.shared.errors import ApiError
+
+ROOT = Path(__file__).resolve().parents[2]
+OWNER = UUID("00000000-0000-0000-0000-000000000052")
+OTHER = UUID("00000000-0000-0000-0000-000000000053")
+_PROJECT_CANDIDATE = {
+    "id": "00000000-0000-0000-0000-000000000040",
+    "name": "南岸项目",
+    "externalCode": "P-NAN",
+    "departmentName": "工程部",
+    "status": "DELIVERY",
+}
+
+
+@pytest.fixture(scope="module")
+def database() -> Iterator[async_sessionmaker[AsyncSession]]:
+    url = os.environ.get("TEST_DATABASE_URL")
+    if not url:
+        pytest.skip("TEST_DATABASE_URL 未配置; PostgreSQL Agent validation 未执行")
+    sync_url = re.sub(r"^postgresql(?:\+psycopg)?://", "postgresql+psycopg://", url)
+    schema = f"t052_{uuid.uuid4().hex}"
+    admin_engine = create_engine(sync_url)
+    with admin_engine.begin() as connection:
+        connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+    migration_engine = create_engine(sync_url, connect_args={"options": f"-csearch_path={schema}"})
+    with migration_engine.connect() as connection:
+        config = Config(ROOT / "alembic.ini")
+        config.attributes["connection"] = connection
+        command.upgrade(config, "head")
+        connection.commit()
+    migration_engine.dispose()
+    engine = create_database_engine(f"{sync_url}?options=-csearch_path%3D{schema}")
+    factory = create_session_factory(engine)
+    try:
+        asyncio.run(_seed(factory))
+        yield factory
+    finally:
+        asyncio.run(engine.dispose())
+        with admin_engine.begin() as connection:
+            connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
+        admin_engine.dispose()
+
+
+async def _seed(factory: async_sessionmaker[AsyncSession]) -> None:
+    async with transaction(factory) as session:
+        session.add_all(
+            (
+                User(
+                    id=OWNER,
+                    username="t052-owner",
+                    passwordHash="not-a-real-password-hash",
+                    displayName="T052 Owner",
+                ),
+                User(
+                    id=OTHER,
+                    username="t052-other",
+                    passwordHash="not-a-real-password-hash",
+                    displayName="T052 Other",
+                ),
+            )
+        )
+
+
+def identity(user_id: UUID = OWNER, permissions: list[str] | None = None) -> SessionIdentity:
+    return SessionIdentity(
+        session_id=uuid.uuid4(),
+        expires_at=datetime.now(UTC) + timedelta(hours=1),
+        user=AuthenticatedUser(
+            id=str(user_id),
+            username="t052",
+            displayName="T052",
+            departmentName=None,
+            roleCodes=["PROJECT_MANAGER"],
+            permissions=permissions or ["agent.use", "dashboard.view"],
+            dataScope="ALL",
+            mustChangePassword=False,
+        ),
+    )
+
+
+def service(database: async_sessionmaker[AsyncSession]) -> AgentConversationService:
+    return AgentConversationService(database, trace_id=lambda: "t052-trace")
+
+
+async def _seed_waiting_for_user(
+    factory: async_sessionmaker[AsyncSession],
+    *,
+    owner: UUID = OWNER,
+    interaction_type: AgentInteractionType = AgentInteractionType.PROJECT_SELECTION,
+    with_draft: bool = False,
+) -> tuple[UUID, UUID, UUID]:
+    """Seed a conversation paused on an OPEN interaction (no worker required)."""
+
+    async with transaction(factory) as session:
+        now = datetime.now(UTC)
+        conversation = AgentConversation(
+            ownerUserId=owner,
+            createdAt=now,
+            updatedAt=now,
+            expiresAt=now + timedelta(days=90),
+            retentionConfigVersion="test",
+        )
+        session.add(conversation)
+        await session.flush()
+        message = AgentMessage(
+            conversationId=conversation.id,
+            sequence=1,
+            role=AgentMessageRole.USER,
+            content="查询本周风险",
+            traceId="t052-trace",
+            dataAsOf=now,
+        )
+        session.add(message)
+        await session.flush()
+        task = await enqueue_task(
+            session,
+            DurableTaskKind.AGENT_EXECUTION,
+            f"agent-execution-test:{conversation.id}",
+            {
+                "conversation_id": str(conversation.id),
+                "user_message_id": str(message.id),
+            },
+        )
+        execution = AgentExecution(
+            conversationId=conversation.id,
+            taskId=task.id,
+            userMessageId=message.id,
+            requestedByUserId=owner,
+            status=AgentExecutionStatus.WAITING_FOR_USER,
+        )
+        session.add(execution)
+        await session.flush()
+        session.add(
+            AgentExecutionConfig(
+                id=uuid4(),
+                taskId=task.id,
+                conversationId=conversation.id,
+                userMessageId=message.id,
+                requestedByUserId=owner,
+                timeoutSeconds=90,
+            )
+        )
+        interaction = AgentInteraction(
+            executionId=execution.id,
+            conversationId=conversation.id,
+            ownerUserId=owner,
+            type=interaction_type,
+            status=AgentInteractionStatus.OPEN,
+            candidateOptions=[_PROJECT_CANDIDATE],
+            expiresAt=now + timedelta(minutes=30),
+        )
+        session.add(interaction)
+        await session.flush()
+        if with_draft:
+            session.add(
+                MutationDraft(
+                    interactionId=interaction.id,
+                    ownerUserId=owner,
+                    conversationId=conversation.id,
+                    executionId=execution.id,
+                    operation=MutationDraftOperation.RISK_CREATE,
+                    proposal={"title": "新风险", "level": "HIGH"},
+                    digest="sha256-test-digest",
+                    idempotencyKey=f"draft-{interaction.id}",
+                    expiresAt=now + timedelta(minutes=30),
+                )
+            )
+            await session.flush()
+        return conversation.id, execution.id, interaction.id
+
+
+async def _mark_terminal(
+    factory: async_sessionmaker[AsyncSession],
+    execution_id: UUID,
+    *,
+    execution_status: AgentExecutionStatus,
+    task_status: DurableTaskStatus,
+) -> None:
+    """Simulate the worker terminalizing a turn (raises DurableTaskCancelled)."""
+
+    async with transaction(factory) as session:
+        execution = await session.get(AgentExecution, execution_id)
+        assert execution is not None
+        execution.status = execution_status
+        execution.completedAt = datetime.now(UTC)
+        task = await session.get(DurableTask, execution.taskId)
+        assert task is not None
+        task.status = task_status
+        task.completedAt = datetime.now(UTC)
+
+
+def test_running_execution_restores_stream_url_and_is_idempotent(
+    database: async_sessionmaker[AsyncSession],
+) -> None:
+    async def run() -> None:
+        app_service = service(database)
+        created = await app_service.create(identity(), "列出本周高风险项目")
+        # The durable task is QUEUED; the execution is RUNNING → active.
+        first = await app_service.history(identity(), created.conversation.id)
+        assert first.runtime is not None
+        assert first.runtime.status == "RUNNING"
+        assert first.runtime.streamUrl == (
+            f"/api/agent/conversations/{created.conversation.id}/events"
+        )
+        assert first.runtime.interaction is None
+        # A refresh observes the SAME execution and creates no new message.
+        second = await app_service.history(identity(), created.conversation.id)
+        assert [m.sequence for m in second.messages] == [
+            m.sequence for m in first.messages
+        ]
+        assert second.runtime is not None
+        assert second.runtime.status == "RUNNING"
+        async with transaction(database) as session:
+            exec_count = await session.scalar(
+                select(func.count(AgentExecution.id)).where(
+                    AgentExecution.conversationId == created.conversation.id
+                )
+            )
+        assert exec_count == 1
+
+    asyncio.run(run())
+
+
+def test_waiting_for_user_restores_open_project_selection_interaction(
+    database: async_sessionmaker[AsyncSession],
+) -> None:
+    async def run() -> None:
+        app_service = service(database)
+        conversation_id, _execution_id, interaction_id = await _seed_waiting_for_user(
+            database, interaction_type=AgentInteractionType.PROJECT_SELECTION
+        )
+        history = await app_service.history(identity(), conversation_id)
+        assert history.runtime is not None
+        assert history.runtime.status == "WAITING_FOR_USER"
+        assert history.runtime.streamUrl is None
+        interaction = history.runtime.interaction
+        assert interaction is not None
+        assert interaction.id == interaction_id
+        assert interaction.type == "PROJECT_SELECTION"
+        assert interaction.status == "OPEN"
+        assert interaction.candidates[0]["name"] == "南岸项目"
+        assert interaction.draft is None
+
+    asyncio.run(run())
+
+
+def test_waiting_for_user_restores_open_write_confirmation_with_draft(
+    database: async_sessionmaker[AsyncSession],
+) -> None:
+    async def run() -> None:
+        app_service = service(database)
+        conversation_id, _execution_id, _interaction_id = await _seed_waiting_for_user(
+            database,
+            interaction_type=AgentInteractionType.WRITE_CONFIRMATION,
+            with_draft=True,
+        )
+        history = await app_service.history(identity(), conversation_id)
+        assert history.runtime is not None
+        assert history.runtime.status == "WAITING_FOR_USER"
+        interaction = history.runtime.interaction
+        assert interaction is not None
+        assert interaction.type == "WRITE_CONFIRMATION"
+        assert interaction.draft is not None
+        assert interaction.draft.get("title") == "新风险"
+
+    asyncio.run(run())
+
+
+def test_continue_conversation_fails_closed_with_409_while_active(
+    database: async_sessionmaker[AsyncSession],
+) -> None:
+    async def run() -> None:
+        app_service = service(database)
+        # RUNNING execution (durable task QUEUED) is still active.
+        running = await app_service.create(identity(), "列出本周高风险项目")
+        with pytest.raises(ApiError) as running_error:
+            await app_service.continue_conversation(
+                identity(), running.conversation.id, "继续追问"
+            )
+        assert running_error.value.status_code == 409
+        assert running_error.value.code == "AGENT_EXECUTION_ACTIVE"
+
+        # WAITING_FOR_USER is also active — a new message must not be sent.
+        conversation_id, _execution_id, _interaction_id = await _seed_waiting_for_user(database)
+        with pytest.raises(ApiError) as waiting_error:
+            await app_service.continue_conversation(
+                identity(), conversation_id, "继续追问"
+            )
+        assert waiting_error.value.status_code == 409
+        assert waiting_error.value.code == "AGENT_EXECUTION_ACTIVE"
+
+    asyncio.run(run())
+
+
+def test_refresh_does_not_duplicate_execution_or_messages(
+    database: async_sessionmaker[AsyncSession],
+) -> None:
+    async def run() -> None:
+        app_service = service(database)
+        created = await app_service.create(identity(), "列出本周高风险项目")
+        for _ in range(3):
+            history = await app_service.history(identity(), created.conversation.id)
+            assert history.runtime is not None
+        async with transaction(database) as session:
+            exec_count = await session.scalar(
+                select(func.count(AgentExecution.id)).where(
+                    AgentExecution.conversationId == created.conversation.id
+                )
+            )
+            msg_count = await session.scalar(
+                select(func.count(AgentMessage.id)).where(
+                    AgentMessage.conversationId == created.conversation.id
+                )
+            )
+        assert exec_count == 1
+        assert msg_count == 1
+
+    asyncio.run(run())
+
+
+def test_new_conversation_creates_independent_empty_context(
+    database: async_sessionmaker[AsyncSession],
+) -> None:
+    async def run() -> None:
+        app_service = service(database)
+        first = await app_service.create(identity(), "列出本周高风险项目")
+        assert first.userMessage.sequence == 1
+        # A fresh "新建对话" (no conversation_id) starts an independent context.
+        second = await app_service.create(identity(), "另一个项目的风险")
+        assert second.conversation.id != first.conversation.id
+        assert second.userMessage.sequence == 1
+        second_history = await app_service.history(identity(), second.conversation.id)
+        assert [m.content for m in second_history.messages] == ["另一个项目的风险"]
+
+    asyncio.run(run())
+
+
+def test_explicit_cancel_sets_flag_and_interaction_cancel_still_cancels(
+    database: async_sessionmaker[AsyncSession],
+) -> None:
+    async def run() -> None:
+        app_service = service(database)
+        created = await app_service.create(identity(), "列出本周高风险项目")
+        runtime = await app_service.cancel(identity(), created.conversation.id)
+        # Pre-worker: the flag is set, the task is still QUEUED → RUNNING runtime.
+        assert runtime.status == "RUNNING"
+        async with transaction(database) as session:
+            config = await session.scalar(
+                select(AgentExecutionConfig).where(
+                    AgentExecutionConfig.conversationId == created.conversation.id
+                )
+            )
+            execution = await session.scalar(
+                select(AgentExecution).where(
+                    AgentExecution.conversationId == created.conversation.id
+                )
+            )
+        assert config is not None
+        assert config.cancellationRequestedAt is not None
+        assert execution is not None
+        # Simulate the worker observing the flag and terminalizing the turn.
+        await _mark_terminal(
+            database,
+            execution.id,
+            execution_status=AgentExecutionStatus.CANCELLED,
+            task_status=DurableTaskStatus.CANCELLED,
+        )
+        terminal = await app_service.history(identity(), created.conversation.id)
+        assert terminal.runtime is None
+
+        # An interaction CANCEL on a WAITING_FOR_USER turn cancels directly.
+        conversation_id, _execution_id, interaction_id = await _seed_waiting_for_user(database)
+        interaction_service = AgentInteractionService(database)
+        response = await interaction_service.respond(
+            identity(),
+            interaction_id,
+            AgentInteractionRespondRequest(action="CANCEL"),
+            trace_id="t052-trace",
+        )
+        assert response.interaction.status == "CANCELLED"
+        cancelled = await app_service.history(identity(), conversation_id)
+        assert cancelled.runtime is None
+
+    asyncio.run(run())
+
+
+def test_history_runtime_is_owner_scoped(
+    database: async_sessionmaker[AsyncSession],
+) -> None:
+    async def run() -> None:
+        app_service = service(database)
+        created = await app_service.create(identity(), "列出本周高风险项目")
+        # Another owner cannot see — let alone restore — this conversation.
+        with pytest.raises(ApiError) as error:
+            await app_service.history(identity(OTHER), created.conversation.id)
+        assert error.value.code == "AGENT_CONVERSATION_NOT_FOUND"
+        with pytest.raises(ApiError) as cancel_error:
+            await app_service.cancel(identity(OTHER), created.conversation.id)
+        assert cancel_error.value.code == "AGENT_CONVERSATION_NOT_FOUND"
+
+    asyncio.run(run())

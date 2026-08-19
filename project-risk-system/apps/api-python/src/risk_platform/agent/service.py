@@ -16,23 +16,37 @@ from risk_platform.reliability.models import DurableTask, DurableTaskKind, Durab
 from risk_platform.retention.service import RetentionConfigurationRepository
 from risk_platform.shared.errors import ApiError
 
-from .events import open_event_stream
+from .events import open_event_stream, request_cancellation
+from .interaction import interaction_view
 from .models import (
     AgentConversation,
     AgentExecution,
     AgentExecutionConfig,
     AgentExecutionStatus,
+    AgentInteraction,
+    AgentInteractionStatus,
+    AgentInteractionType,
     AgentMessage,
     AgentMessageRole,
+    MutationDraft,
 )
+from .mutations import _display_proposal
 from .repository import AgentConversationRepository
 from .schemas import (
     AgentConversationEnvelope,
     AgentConversationHistory,
     AgentConversationResponse,
+    AgentConversationRuntime,
+    AgentInteractionResponse,
     AgentMessageEnvelope,
     AgentMessagePage,
     AgentMessageResponse,
+)
+
+_ACTIVE_TASK_STATUSES = (
+    DurableTaskStatus.QUEUED,
+    DurableTaskStatus.RUNNING,
+    DurableTaskStatus.RETRY_WAIT,
 )
 
 
@@ -127,22 +141,16 @@ class AgentConversationService:
                 .with_for_update()
             )
             if active_execution is not None:
-                active_config = await session.scalar(
-                    select(AgentExecutionConfig).where(
-                        AgentExecutionConfig.taskId == active_execution.taskId
-                    )
-                )
-                active_message = (
-                    None
-                    if active_config is None
-                    else await session.get(AgentMessage, active_config.userMessageId)
-                )
-                if active_message is None:
-                    raise RuntimeError("AGENT_EXECUTION_CONFIG_INVALID")
-                return AgentConversationEnvelope(
-                    conversation=self._conversation(conversation),
-                    userMessage=self._message(active_message),
-                    streamUrl=f"/api/agent/conversations/{conversation.id}/events",
+                # An execution is still live (RUNNING with an active durable task
+                # or WAITING_FOR_USER).  A new message must not be silently
+                # de-duplicated against the prior turn's userMessage: the UI
+                # restores the live turn via ``history.runtime`` or cancels it
+                # explicitly via POST /cancel.  Returning the stale envelope
+                # here would make a refresh look like a successful new send.
+                raise ApiError(
+                    409,
+                    "AGENT_EXECUTION_ACTIVE",
+                    "当前对话仍有进行中的执行，请先恢复或取消",
                 )
             user_message = AgentMessage(
                 conversationId=conversation.id,
@@ -212,7 +220,8 @@ class AgentConversationService:
         self, identity: SessionIdentity, conversation_id: UUID
     ) -> AgentConversationHistory:
         async with self._sessions() as session:
-            conversation = await AgentConversationRepository(session).owned(
+            repository = AgentConversationRepository(session)
+            conversation = await repository.owned(
                 conversation_id, UUID(identity.user.id)
             )
             if conversation is None:
@@ -223,13 +232,13 @@ class AgentConversationService:
             # oldest window would hide the most recent turns of a long
             # conversation after a refresh.  nextMessageSequence still reflects
             # the true tail so the next send continues the same conversation.
-            messages = await AgentConversationRepository(session).latest_messages(
-                conversation.id
-            )
+            messages = await repository.latest_messages(conversation.id)
+            runtime = await self._runtime(session, conversation.id)
         return AgentConversationHistory(
             conversation=self._conversation(conversation),
             messages=[self._message(message) for message in messages],
             nextMessageSequence=conversation.lastMessageSequence + 1,
+            runtime=runtime,
         )
 
     async def message_page(
@@ -256,6 +265,114 @@ class AgentConversationService:
             items=[self._message(message) for message in messages],
             nextAfterSequence=next_after,
         )
+
+    async def cancel(
+        self, identity: SessionIdentity, conversation_id: UUID
+    ) -> AgentConversationRuntime:
+        """Set the explicit cancel flag on the live execution and return its runtime.
+
+        This is the only path that calls ``request_cancellation``: a transport
+        disconnect (refresh / tab close / network drop) no longer cancels, so a
+        user must opt in.  Owner-scoped — a conversation that is not owned is a
+        404 before any state is touched.
+        """
+
+        owner_id = UUID(identity.user.id)
+        async with self._sessions() as session:
+            conversation = await AgentConversationRepository(session).owned(
+                conversation_id, owner_id
+            )
+            if conversation is None:
+                raise ApiError(
+                    404, "AGENT_CONVERSATION_NOT_FOUND", "Agent 会话不存在或不属于当前用户"
+                )
+        await request_cancellation(self._sessions, conversation_id)
+        async with self._sessions() as session:
+            runtime = await self._runtime(session, conversation_id)
+        if runtime is not None:
+            return runtime
+        # Nothing was active when the cancel landed (the turn already reached a
+        # terminal status between the UI affordance and the request).  Surface
+        # the latest execution's terminal status so the caller can sync instead
+        # of erroring on the race.
+        async with self._sessions() as session:
+            execution = await session.scalar(
+                select(AgentExecution)
+                .where(AgentExecution.conversationId == conversation_id)
+                .order_by(AgentExecution.createdAt.desc())
+                .limit(1)
+            )
+        if execution is None:
+            raise ApiError(409, "AGENT_NO_ACTIVE_EXECUTION", "当前对话没有进行中的执行")
+        return AgentConversationRuntime(
+            status=execution.status.value, streamUrl=None, interaction=None
+        )
+
+    async def _runtime(
+        self, session: AsyncSession, conversation_id: UUID
+    ) -> AgentConversationRuntime | None:
+        """Snapshot the latest execution's live state for restore-on-refresh.
+
+        ``None`` when no execution is active, which keeps the happy-path restore
+        (``status == "completed"``) unchanged.  An execution is active when it
+        is ``WAITING_FOR_USER`` (restore the OPEN interaction) or ``RUNNING``
+        with a durable task still in a non-terminal status (reattach the
+        stream); a ``RUNNING`` row whose task already terminated is stale and
+        treated as not-active so a refresh cannot reconnect-loop on a crashed
+        worker.
+        """
+
+        execution = await session.scalar(
+            select(AgentExecution)
+            .where(AgentExecution.conversationId == conversation_id)
+            .order_by(AgentExecution.createdAt.desc())
+            .limit(1)
+        )
+        if execution is None:
+            return None
+        if execution.status is AgentExecutionStatus.WAITING_FOR_USER:
+            return AgentConversationRuntime(
+                status=AgentExecutionStatus.WAITING_FOR_USER.value,
+                streamUrl=None,
+                interaction=await self._open_interaction(session, execution.id),
+            )
+        if execution.status is AgentExecutionStatus.RUNNING:
+            task_status = await session.scalar(
+                select(DurableTask.status).where(DurableTask.id == execution.taskId)
+            )
+            if task_status in _ACTIVE_TASK_STATUSES:
+                return AgentConversationRuntime(
+                    status=AgentExecutionStatus.RUNNING.value,
+                    streamUrl=f"/api/agent/conversations/{conversation_id}/events",
+                    interaction=None,
+                )
+        return None
+
+    async def _open_interaction(
+        self, session: AsyncSession, execution_id: UUID
+    ) -> AgentInteractionResponse | None:
+        """Restore the OPEN interaction (project selection or write confirmation)."""
+
+        interaction = await session.scalar(
+            select(AgentInteraction)
+            .where(
+                AgentInteraction.executionId == execution_id,
+                AgentInteraction.status == AgentInteractionStatus.OPEN,
+            )
+            .order_by(AgentInteraction.createdAt.desc())
+            .limit(1)
+        )
+        if interaction is None:
+            return None
+        view = interaction_view(interaction)
+        if interaction.type is AgentInteractionType.WRITE_CONFIRMATION:
+            draft = await session.scalar(
+                select(MutationDraft).where(MutationDraft.interactionId == interaction.id)
+            )
+            view.draft = (
+                None if draft is None else await _display_proposal(session, draft.proposal)
+            )
+        return view
 
     @staticmethod
     def _conversation(value: AgentConversation) -> AgentConversationResponse:

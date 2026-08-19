@@ -20,6 +20,7 @@ from .schemas import (
     AgentConfirmationResponse,
     AgentConversationEnvelope,
     AgentConversationHistory,
+    AgentConversationRuntime,
     AgentHelpResponse,
     AgentInteractionRespondRequest,
     AgentInteractionRespondResponse,
@@ -147,6 +148,19 @@ async def events(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.post(
+    "/conversations/{conversation_id}/cancel",
+    response_model=ApiResponse[AgentConversationRuntime],
+)
+async def cancel(
+    request: Request,
+    conversation_id: UUID,
+    identity: Annotated[SessionIdentity, Depends(require_permissions("agent.use"))],
+    service: Annotated[AgentConversationService, Depends(get_agent_service)],
+) -> ApiResponse[AgentConversationRuntime]:
+    return ok(request, await service.cancel(identity, conversation_id))
 
 
 @router.post(

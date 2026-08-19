@@ -13,7 +13,7 @@ from risk_platform.agent.context import (
 )
 from risk_platform.agent.core import AgentLoopError, AgentLoopLimits, ReadOnlyAgentCore
 from risk_platform.agent.schemas import AgentToolResult, CandidateRisk, CandidateRiskBasisType
-from risk_platform.agent.scope import ScopePolicy
+from risk_platform.agent.scope import OUT_OF_SCOPE_MESSAGE, ScopeDecision, ScopePolicy
 from risk_platform.agent.tools import AgentToolRegistry
 from risk_platform.agent.v2_execution import _project_selection_resume_context
 from risk_platform.ai_providers.v2_adapter import (
@@ -547,3 +547,109 @@ def test_non_domain_shorthand_with_memory_stays_out_of_scope() -> None:
     assert result.out_of_scope is True
     assert runtime.calls == 0
     assert tools.invocations == 0
+
+
+class _AlwaysAllowScope(ScopePolicy):
+    """A deliberately broken ScopePolicy that lets everything past layer 1."""
+
+    def decide(self, message: str) -> ScopeDecision:
+        return ScopeDecision.ALLOWED
+
+
+_OUT_OF_SCOPE_PROMPTS = (
+    "帮我写封邮件",
+    "今天北京天气怎么样",
+    "把这段翻译成英文",
+)
+
+
+class _ScopeAwareRuntime:
+    """A fake policy-aware provider that honors the static SYSTEM scope rule.
+
+    For an out-of-scope request it returns the fixed OUT_OF_SCOPE_MESSAGE with
+    no tool calls *only if* the SYSTEM instruction carries the server-owned
+    AGENT_SCOPE_POLICY — i.e. layer 2 is present.  If the rule is missing
+    (regression) it answers out-of-scope like a non-policy-aware model, so the
+    defense-in-depth test fails instead of silently passing.
+    """
+
+    def __init__(self) -> None:
+        self.requests: list[ProviderChatRequest] = []
+        self.calls = 0
+
+    async def candidate_snapshot(self) -> tuple[ProviderCandidate, ...]:
+        return ()
+
+    async def chat_snapshot(
+        self, _snapshot: tuple[ProviderCandidate, ...], request: ProviderChatRequest
+    ) -> ProviderChatResponse:
+        self.requests.append(request)
+        self.calls += 1
+        system = request.messages[0].content or ""
+        rule_present = (
+            "AGENT_SCOPE_POLICY" in system
+            and "不调用任何 tool" in system
+            and "不使用模型自身通用知识" in system
+            and OUT_OF_SCOPE_MESSAGE in system
+        )
+        if rule_present:
+            return _response(text=OUT_OF_SCOPE_MESSAGE)
+        return _response(text="好的，这是邮件草稿。")
+
+
+@pytest.mark.parametrize("message", _OUT_OF_SCOPE_PROMPTS)
+def test_model_scope_rule_refuses_out_of_scope_even_when_gate_bypassed(
+    message: str,
+) -> None:
+    # Layer 1 (deterministic ScopePolicy) is deliberately bypassed; the request
+    # must still be refused by the model-level scope rule in SYSTEM (layer 2).
+    runtime, tools = _ScopeAwareRuntime(), _Tools()
+    result = asyncio.run(
+        ReadOnlyAgentCore(
+            cast(ProviderV2Runtime, runtime),
+            cast(AgentToolRegistry, tools),
+            scope=_AlwaysAllowScope(),
+        ).run(_identity(), message, candidate_snapshot=())
+    )
+    assert runtime.calls == 1  # bypassed layer 1 -> reached the provider
+    system = cast(ProviderChatRequest, runtime.requests[0]).messages[0].content
+    assert system is not None
+    assert "AGENT_SCOPE_POLICY" in system
+    assert "不调用任何 tool" in system
+    assert "不使用模型自身通用知识" in system
+    assert OUT_OF_SCOPE_MESSAGE in system
+    # The policy-aware model refuses with the fixed message and no tool call.
+    assert result.text == OUT_OF_SCOPE_MESSAGE
+    assert tools.invocations == 0
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "这个项目还有哪些风险",
+        "第二个风险展开说一下",
+        "根据本周风险给出处理建议",
+    ),
+)
+def test_model_scope_rule_does_not_block_in_scope_business(message: str) -> None:
+    # Defense-in-depth must not over-block: in-scope business still reaches the
+    # provider and the business tool chain, even with the gate bypassed.
+    runtime, tools = (
+        _Runtime(
+            [
+                _response(ProviderToolCall("risk-1", "risk_list", {})),
+                _response(text="已查询并给出处理建议"),
+            ]
+        ),
+        _Tools(),
+    )
+    result = asyncio.run(
+        ReadOnlyAgentCore(
+            cast(ProviderV2Runtime, runtime),
+            cast(AgentToolRegistry, tools),
+            scope=_AlwaysAllowScope(),
+        ).run(_identity(), message, candidate_snapshot=())
+    )
+    assert result.out_of_scope is False
+    assert runtime.calls == 2
+    assert tools.invocations == 1

@@ -343,6 +343,16 @@
           "nextMessageSequence": {
             "title": "Nextmessagesequence",
             "type": "integer"
+          },
+          "runtime": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentConversationRuntime"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -394,6 +404,42 @@
           "lastEventSequence"
         ],
         "title": "AgentConversationResponse",
+        "type": "object"
+      },
+      "AgentConversationRuntime": {
+        "additionalProperties": false,
+        "description": "Owner-scoped snapshot of the conversation's live execution.\n\nRestored by ``history`` so a refresh reattaches to a RUNNING stream or\nre-displays an OPEN interaction instead of forcing a re-send.  Absent\n(``None``) when no execution is active, which keeps the happy-path restore\n(``status == \"completed\"``) unchanged.",
+        "properties": {
+          "interaction": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentInteractionResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "streamUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Streamurl"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "AgentConversationRuntime",
         "type": "object"
       },
       "AgentHelpResponse": {
@@ -854,6 +900,34 @@
           "traceId"
         ],
         "title": "ApiResponse[AgentConversationHistory]",
+        "type": "object"
+      },
+      "ApiResponse_AgentConversationRuntime_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/AgentConversationRuntime"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "traceId": {
+            "title": "Traceid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ],
+        "title": "ApiResponse[AgentConversationRuntime]",
         "type": "object"
       },
       "ApiResponse_AgentHelpResponse_": {
@@ -16183,6 +16257,49 @@
           }
         },
         "summary": "History",
+        "tags": [
+          "agent"
+        ]
+      }
+    },
+    "/api/agent/conversations/{conversation_id}/cancel": {
+      "post": {
+        "operationId": "cancel_api_agent_conversations__conversation_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Conversation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AgentConversationRuntime_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel",
         "tags": [
           "agent"
         ]

@@ -599,7 +599,8 @@ _PROJECT_TURN = (
     (
         ("这个项目还有待办吗", _ctx(active=ActiveProject(uuid4(), "南岸项目"))),
         ("第二个展开说一下", _ctx(recent=_RISK_TURN)),
-        ("不是 A，我说的是 B", _ctx(recent=_PROJECT_TURN)),
+        ("不是 A，我说的是 B 项目", _ctx(recent=_PROJECT_TURN)),
+        ("不是这个风险，是第二个风险", _ctx(recent=_RISK_TURN)),
     ),
 )
 def test_contextual_followup_inherits_domain_context(
@@ -615,6 +616,14 @@ def test_contextual_followup_inherits_domain_context(
         ("这个帮我翻译成英文", _ctx(recent=_RISK_TURN)),
         ("这个怎么算个人所得税", _ctx(recent=_RISK_TURN)),
         ("刚才那个帮我写封邮件", _ctx(recent=_RISK_TURN)),
+        # Correction marker but no positive domain referent -> fail closed even
+        # with a domain anchor (the F2 correction-bypass this remediates).
+        ("不是，帮我写封邮件", _ctx(recent=_RISK_TURN)),
+        ("不是，我想问天气", _ctx(recent=_RISK_TURN)),
+        ("不是，给我翻译成英文", _ctx(recent=_RISK_TURN)),
+        # The old buggy "不是 A，我说的是 B" (bare token, no domain term) now
+        # fails closed; a real correction carries a domain referent (B 项目).
+        ("不是 A，我说的是 B", _ctx(recent=_PROJECT_TURN)),
         # Shorthand with no domain anchor to inherit from.
         ("第二个展开说一下", _ctx()),
         # Not a referential shorthand at all.
@@ -696,7 +705,7 @@ def test_unique_authorized_project_search_refreshes_active_project() -> None:
             cast(ProviderV2Runtime, runtime), cast(AgentToolRegistry, _ProjectTools())
         ).run(
             _identity(),
-            "不是 A，我说的是 B",
+            "不是 A，我说的是 B 项目",
             conversation_context=AgentConversationContext(
                 summary=None,
                 recent_messages=(

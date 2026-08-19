@@ -954,6 +954,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/agent/conversations/{conversation_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel */
+        post: operations["cancel_api_agent_conversations__conversation_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agent/conversations/{conversation_id}/events": {
         parameters: {
             query?: never;
@@ -1964,6 +1981,7 @@ export interface components {
             messages: components["schemas"]["AgentMessageResponse"][];
             /** Nextmessagesequence */
             nextMessageSequence: number;
+            runtime?: components["schemas"]["AgentConversationRuntime"] | null;
         };
         /** AgentConversationResponse */
         AgentConversationResponse: {
@@ -1991,6 +2009,22 @@ export interface components {
              * Format: date-time
              */
             updatedAt: string;
+        };
+        /**
+         * AgentConversationRuntime
+         * @description Owner-scoped snapshot of the conversation's live execution.
+         *
+         *     Restored by ``history`` so a refresh reattaches to a RUNNING stream or
+         *     re-displays an OPEN interaction instead of forcing a re-send.  Absent
+         *     (``None``) when no execution is active, which keeps the happy-path restore
+         *     (``status == "completed"``) unchanged.
+         */
+        AgentConversationRuntime: {
+            interaction?: components["schemas"]["AgentInteractionResponse"] | null;
+            /** Status */
+            status: string;
+            /** Streamurl */
+            streamUrl?: string | null;
         };
         /** AgentHelpResponse */
         AgentHelpResponse: {
@@ -2152,6 +2186,16 @@ export interface components {
             /** Code */
             code: string;
             data: components["schemas"]["AgentConversationHistory"];
+            /** Message */
+            message: string;
+            /** Traceid */
+            traceId: string;
+        };
+        /** ApiResponse[AgentConversationRuntime] */
+        ApiResponse_AgentConversationRuntime_: {
+            /** Code */
+            code: string;
+            data: components["schemas"]["AgentConversationRuntime"];
             /** Message */
             message: string;
             /** Traceid */
@@ -8227,6 +8271,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_AgentConversationHistory_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_api_agent_conversations__conversation_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_AgentConversationRuntime_"];
                 };
             };
             /** @description Validation Error */
