@@ -130,7 +130,7 @@ def test_latest_upgrade_has_one_head_and_capability_constraints(
     capability_schema: Connection,
 ) -> None:
     config = Config(ROOT / "alembic.ini")
-    assert ScriptDirectory.from_config(config).get_heads() == ["20260818_0015"]
+    assert ScriptDirectory.from_config(config).get_heads() == ["20260819_0017"]
     inspector = inspect(capability_schema)
     assert {
         "agent_conversations",
@@ -141,6 +141,24 @@ def test_latest_upgrade_has_one_head_and_capability_constraints(
         "weekly_report_aggregates",
         "weekly_report_items",
     }.issubset(inspector.get_table_names())
+    conversation_columns = {
+        item["name"]: item for item in inspector.get_columns("agent_conversations")
+    }
+    assert {
+        "contextSummary",
+        "contextSummaryThroughSequence",
+        "contextSummaryVersion",
+        "contextUpdatedAt",
+        "activeProjectId",
+        "activeProjectName",
+    }.issubset(conversation_columns)
+    assert conversation_columns["contextSummaryThroughSequence"]["default"] == "0"
+    assert conversation_columns["contextSummaryVersion"]["default"] == "0"
+    conversation_checks = {
+        item["name"] for item in inspector.get_check_constraints("agent_conversations")
+    }
+    assert "agent_conversations_context_summary_through_nonnegative" in conversation_checks
+    assert "agent_conversations_context_summary_version_nonnegative" in conversation_checks
     assert {
         item["name"] for item in inspector.get_check_constraints("agent_confirmation_tokens")
     } == {

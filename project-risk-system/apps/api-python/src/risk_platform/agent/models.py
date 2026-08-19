@@ -99,6 +99,13 @@ class AgentConversation(Base):
         Index("agent_conversations_ownerUserId_expiresAt_idx", "ownerUserId", "expiresAt"),
         CheckConstraint('"lastMessageSequence" >= 0', name="last_message_sequence_nonnegative"),
         CheckConstraint('"lastEventSequence" >= 0', name="last_event_sequence_nonnegative"),
+        CheckConstraint(
+            '"contextSummaryThroughSequence" >= 0',
+            name="context_summary_through_nonnegative",
+        ),
+        CheckConstraint(
+            '"contextSummaryVersion" >= 0', name="context_summary_version_nonnegative"
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(UUIDType(as_uuid=True), primary_key=True, default=new_uuid)
@@ -128,6 +135,20 @@ class AgentConversation(Base):
     lastEventSequence: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("0")
     )
+    contextSummary: Mapped[str | None] = mapped_column(Text)
+    contextSummaryThroughSequence: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
+    contextSummaryVersion: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
+    contextUpdatedAt: Mapped[datetime | None] = mapped_column(
+        TIMESTAMP(timezone=True, precision=3)
+    )
+    activeProjectId: Mapped[UUID | None] = mapped_column(
+        UUIDType(as_uuid=True), ForeignKey("projects.id", ondelete="SET NULL")
+    )
+    activeProjectName: Mapped[str | None] = mapped_column(String(255))
 
 
 class AgentExecution(Base):

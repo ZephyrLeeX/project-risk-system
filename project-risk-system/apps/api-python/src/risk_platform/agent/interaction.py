@@ -27,6 +27,7 @@ from risk_platform.shared.errors import ApiError
 
 from .events import append_event
 from .models import (
+    AgentConversation,
     AgentEventType,
     AgentExecution,
     AgentExecutionConfig,
@@ -228,6 +229,18 @@ class AgentInteractionService:
                 if selected is None:
                     raise ApiError(409, "AGENT_INTERACTION_ACTION_INVALID", "该交互不支持此操作")
                 context = {"selectedProject": cast(dict[str, JSONValue], selected)}
+                conversation = await session.scalar(
+                    select(AgentConversation)
+                    .where(AgentConversation.id == row.conversationId)
+                    .with_for_update()
+                )
+                if conversation is None:
+                    raise ApiError(
+                        409, "AGENT_INTERACTION_CONTEXT_INVALID", "交互恢复上下文不可用"
+                    )
+                conversation.activeProjectId = UUID(str(selected["id"]))
+                conversation.activeProjectName = str(selected["name"])
+                conversation.contextUpdatedAt = now
             config_id = uuid4()
             new_task = await enqueue_task(
                 session,

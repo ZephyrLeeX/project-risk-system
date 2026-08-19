@@ -163,6 +163,12 @@ def test_metadata_has_final_prisma_tables_with_approved_audit_override() -> None
         "retentionConfigVersion",
         "lastMessageSequence",
         "lastEventSequence",
+        "contextSummary",
+        "contextSummaryThroughSequence",
+        "contextSummaryVersion",
+        "contextUpdatedAt",
+        "activeProjectId",
+        "activeProjectName",
     }
     expected["agent_messages"] = {
         "id",

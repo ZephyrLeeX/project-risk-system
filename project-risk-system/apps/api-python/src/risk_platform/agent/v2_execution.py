@@ -21,6 +21,12 @@ from risk_platform.reliability.core import TaskHandler, heartbeat
 from risk_platform.reliability.dispatcher import DurableTaskCancelled, DurableTaskFailure
 from risk_platform.reliability.models import DurableTask, DurableTaskStatus
 
+from .context import (
+    ActiveProject,
+    ConversationContextPolicy,
+    ConversationContextService,
+    refers_to_active_project,
+)
 from .core import AgentCoreOutcome, AgentLoopError, ProjectSelectionRequired, ReadOnlyAgentCore
 from .events import append_event, event_capacity_available
 from .models import (
@@ -71,6 +77,16 @@ class NativeAgentExecutionWorker:
     ) -> None:
         self._sessions = sessions
         self._core = core
+        budget = core.context_budget
+        self._conversation_context = ConversationContextService(
+            sessions,
+            core.summarize_conversation,
+            ConversationContextPolicy(
+                history_budget=budget.history_budget,
+                compression_trigger=budget.compression_trigger,
+                compression_target=budget.compression_target,
+            ),
+        )
         self._heartbeat_interval = heartbeat_interval
         self._attempt_timeout_seconds = attempt_timeout_seconds
 
@@ -102,7 +118,13 @@ class NativeAgentExecutionWorker:
                 config, execution, message, identity, task_id, lease_token
             )
             await self._complete(
-                config, message, task_id, lease_token, outcome.text, outcome.candidate_risks
+                config,
+                message,
+                task_id,
+                lease_token,
+                outcome.text,
+                outcome.candidate_risks,
+                outcome.active_project,
             )
         except ProjectSelectionRequired as required:
             await self._wait_for_project_selection(
@@ -253,6 +275,33 @@ class NativeAgentExecutionWorker:
         parameters = inspect.signature(self._core.run).parameters
         if "conversation_id" not in parameters:
             return await self._core.run(identity, message)
+        conversation_context = None
+        snapshot = None
+        if "conversation_context" in parameters:
+            snapshot = await self._core.candidate_snapshot()
+            conversation_context = await self._conversation_context.build(
+                config.conversationId,
+                config.userMessageId,
+                identity,
+                snapshot,
+            )
+            if (
+                selected_project_id is None
+                and conversation_context.active_project is not None
+                and refers_to_active_project(message)
+            ):
+                selected_project_id = conversation_context.active_project.id
+        if "conversation_context" in parameters:
+            return await self._core.run(
+                identity,
+                message,
+                context,
+                conversation_id=config.conversationId,
+                execution_id=None if execution is None else execution.id,
+                selected_project_id=selected_project_id,
+                conversation_context=conversation_context,
+                candidate_snapshot=snapshot,
+            )
         if context is None:
             if "selected_project_id" in parameters:
                 return await self._core.run(
@@ -419,6 +468,7 @@ class NativeAgentExecutionWorker:
         lease_token: UUID,
         text: str,
         candidate_risks: tuple[CandidateRisk, ...] = (),
+        active_project: ActiveProject | None = None,
     ) -> None:
         async with self._sessions.begin() as session:
             await self._assert_fence(session, config.id, task_id, lease_token)
@@ -433,6 +483,10 @@ class NativeAgentExecutionWorker:
                     retryable=False,
                     summary="missing conversation",
                 )
+            if active_project is not None:
+                conversation.activeProjectId = active_project.id
+                conversation.activeProjectName = active_project.name
+                conversation.contextUpdatedAt = datetime.now(UTC)
             execution = await session.scalar(
                 select(AgentExecution).where(AgentExecution.taskId == task_id).with_for_update()
             )

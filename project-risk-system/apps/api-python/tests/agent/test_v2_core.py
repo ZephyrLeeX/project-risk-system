@@ -225,10 +225,11 @@ def test_project_selection_resume_keeps_server_project_identity_and_uses_exact_q
         )
     )
     first_request = cast(ProviderChatRequest, runtime.requests[0])
-    resume_message = first_request.messages[1].content
-    assert resume_message is not None
-    assert str(project_id) in resume_message
-    assert "不得再次" in resume_message
+    system_message = first_request.messages[0].content
+    assert system_message is not None
+    assert str(project_id) in system_message
+    assert "不得再次" in system_message
+    assert first_request.messages[-1].content == "南岸项目有什么风险?"
     assert {tool.name for tool in first_request.tools} == {"project_detail", "risk_list"}
     assert result.text == "已完成项目风险查询"
     assert tools.invocations == 1
