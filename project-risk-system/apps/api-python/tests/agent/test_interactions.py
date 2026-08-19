@@ -3,6 +3,7 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
+from risk_platform.agent.interaction import _validate_action
 from risk_platform.agent.models import (
     AgentEventType,
     AgentExecutionStatus,
@@ -10,6 +11,7 @@ from risk_platform.agent.models import (
     AgentInteractionType,
 )
 from risk_platform.agent.schemas import AgentInteractionRespondRequest
+from risk_platform.shared.errors import ApiError
 
 
 def test_interaction_contract_keeps_project_selection_and_adds_write_confirmation() -> None:
@@ -47,3 +49,20 @@ def test_select_and_manual_input_are_strictly_mutually_exclusive() -> None:
         )
     with pytest.raises(ValidationError):
         AgentInteractionRespondRequest(action="CANCEL", projectId=project_id)
+
+
+@pytest.mark.parametrize(
+    ("interaction_type", "action"),
+    (
+        (AgentInteractionType.PROJECT_SELECTION, "CONFIRM"),
+        (AgentInteractionType.WRITE_CONFIRMATION, "SELECT"),
+        (AgentInteractionType.WRITE_CONFIRMATION, "MANUAL_INPUT"),
+    ),
+)
+def test_interaction_action_allowlist_fails_closed(
+    interaction_type: AgentInteractionType, action: str
+) -> None:
+    with pytest.raises(ApiError) as error:
+        _validate_action(interaction_type, action)
+    assert error.value.status_code == 409
+    assert error.value.code == "AGENT_INTERACTION_ACTION_INVALID"

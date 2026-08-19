@@ -11,6 +11,7 @@ from risk_platform.agent.core import AgentLoopError, AgentLoopLimits, ReadOnlyAg
 from risk_platform.agent.schemas import AgentToolResult, CandidateRisk, CandidateRiskBasisType
 from risk_platform.agent.scope import ScopePolicy
 from risk_platform.agent.tools import AgentToolRegistry
+from risk_platform.agent.v2_execution import _project_selection_resume_context
 from risk_platform.ai_providers.v2_adapter import (
     ProviderCandidate,
     ProviderChatRequest,
@@ -176,9 +177,47 @@ def test_weekly_advice_guidance_requires_grounding_and_fact_advice_split() -> No
         )
     )
     guidance = cast(ProviderChatRequest, runtime.requests[0]).messages[0].content
+    assert guidance is not None
     assert "必须先调用 weekly_report" in guidance
     assert "riskCount 为 0" in guidance
     assert "系统事实" in guidance and "AI处理建议" in guidance
+
+
+def test_project_selection_resume_keeps_server_project_identity_and_uses_exact_query() -> None:
+    project_id = uuid4()
+    runtime, tools = (
+        _Runtime(
+            [
+                _response(
+                    ProviderToolCall("risk-1", "risk_list", {"projectId": str(project_id)})
+                ),
+                _response(text="已完成项目风险查询"),
+            ]
+        ),
+        _Tools(),
+    )
+    result = asyncio.run(
+        ReadOnlyAgentCore(cast(ProviderV2Runtime, runtime), cast(AgentToolRegistry, tools)).run(
+            _identity(),
+            "南岸项目有什么风险?",
+            _project_selection_resume_context(
+                {
+                    "id": str(project_id),
+                    "name": "项目 A",
+                    "externalCode": "A-001",
+                    "departmentName": "南岸事业部",
+                    "status": "ACTIVE",
+                }
+            ),
+        )
+    )
+    first_request = cast(ProviderChatRequest, runtime.requests[0])
+    resume_message = first_request.messages[1].content
+    assert resume_message is not None
+    assert str(project_id) in resume_message
+    assert "不得再次" in resume_message
+    assert result.text == "已完成项目风险查询"
+    assert tools.invocations == 1
 
 
 def test_realistic_risk_report_reaches_provider_and_tool_loop() -> None:
@@ -219,6 +258,7 @@ def test_risk_report_system_guidance_prioritizes_proposal_without_optional_follo
     )
     request = cast(ProviderChatRequest, runtime.requests[0])
     system = request.messages[0].content
+    assert system is not None
     assert "必须优先调用 risk_create_proposal" in system
     assert "责任人和期望日期不是 RiskCreate 字段" in system
     assert "不得编造金额、日期、逾期天数或合同条款" in system

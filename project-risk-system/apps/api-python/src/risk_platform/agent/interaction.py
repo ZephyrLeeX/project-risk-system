@@ -47,6 +47,19 @@ from .schemas import (
 
 INTERACTION_TTL = timedelta(minutes=30)
 
+_PROJECT_SELECTION_ACTIONS = frozenset({"SELECT", "MANUAL_INPUT", "CANCEL"})
+_WRITE_CONFIRMATION_ACTIONS = frozenset({"CONFIRM", "CANCEL"})
+
+
+def _validate_action(interaction_type: AgentInteractionType, action: str) -> None:
+    allowed_actions = (
+        _PROJECT_SELECTION_ACTIONS
+        if interaction_type is AgentInteractionType.PROJECT_SELECTION
+        else _WRITE_CONFIRMATION_ACTIONS
+    )
+    if action not in allowed_actions:
+        raise ApiError(409, "AGENT_INTERACTION_ACTION_INVALID", "该交互不支持此操作")
+
 
 def interaction_view(row: AgentInteraction) -> AgentInteractionResponse:
     return AgentInteractionResponse(
@@ -79,6 +92,9 @@ class AgentInteractionService:
                     AgentInteraction.ownerUserId == UUID(identity.user.id),
                 )
             )
+        if interaction_type is None:
+            raise ApiError(404, "AGENT_INTERACTION_NOT_FOUND", "交互不存在或不属于当前用户")
+        _validate_action(interaction_type, payload.action)
         if interaction_type is AgentInteractionType.WRITE_CONFIRMATION and payload.action in {
             "CONFIRM",
             "CANCEL",
@@ -105,11 +121,13 @@ class AgentInteractionService:
         selected: dict[str, object] | None = None
         manual_candidates: list[dict[str, object]] = []
         if payload.action == "SELECT":
-            assert payload.projectId is not None
+            if payload.projectId is None:
+                raise ApiError(409, "AGENT_INTERACTION_ACTION_INVALID", "该交互不支持此操作")
             item = await self._projects.detail(identity, payload.projectId)
             selected = self._candidate(item)
         elif payload.action == "MANUAL_INPUT":
-            assert payload.projectName is not None
+            if payload.projectName is None:
+                raise ApiError(409, "AGENT_INTERACTION_ACTION_INVALID", "该交互不支持此操作")
             result = await self._projects.search(
                 identity, ProjectSearchQuery(keyword=payload.projectName, pageSize=20)
             )
@@ -207,7 +225,8 @@ class AgentInteractionService:
             if manual_candidates:
                 context = {"selectionCandidates": cast(list[JSONValue], manual_candidates)}
             else:
-                assert selected is not None
+                if selected is None:
+                    raise ApiError(409, "AGENT_INTERACTION_ACTION_INVALID", "该交互不支持此操作")
                 context = {"selectedProject": cast(dict[str, JSONValue], selected)}
             config_id = uuid4()
             new_task = await enqueue_task(

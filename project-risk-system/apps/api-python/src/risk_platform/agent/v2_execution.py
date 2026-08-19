@@ -40,6 +40,22 @@ from .mutations import MutationConfirmationRequired
 from .schemas import CandidateRisk
 
 
+def _project_selection_resume_context(selected: Mapping[str, JSONValue]) -> str:
+    """Render server-authorized selection facts for the internal Core prompt."""
+
+    return (
+        "服务器已提供并完成当前 DataScope revalidation 的项目选择。"
+        f"selectedProjectId={selected.get('id')}; "
+        f"selectedProjectName={selected.get('name')}; "
+        f"externalCode={selected.get('externalCode')}; "
+        f"departmentName={selected.get('departmentName')}; "
+        f"status={selected.get('status')}。"
+        "该项目已经由用户完成选择。后续需要 project_detail、risk_list 等项目精确查询时, "
+        "必须直接使用 selectedProjectId, 不得再次根据原始模糊用户文本调用 project_search。"
+        "请继续回答原问题。"
+    )
+
+
 class NativeAgentExecutionWorker:
     """Use the pre-existing fenced durable task and PostgreSQL event facts only."""
 
@@ -146,10 +162,7 @@ class NativeAgentExecutionWorker:
         selected = None if execution is None else execution.resumeContext.get("selectedProject")
         context = None
         if isinstance(selected, dict):
-            context = (
-                f"用户已选择项目: {selected.get('name')} "
-                f"(项目状态: {selected.get('status')})。请继续回答原问题。"
-            )
+            context = _project_selection_resume_context(selected)
         call = asyncio.create_task(
             self._invoke_core(identity, message.content, context, config, execution)
         )
