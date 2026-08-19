@@ -408,8 +408,13 @@
       },
       "AgentConversationRuntime": {
         "additionalProperties": false,
-        "description": "Owner-scoped snapshot of the conversation's live execution.\n\nRestored by ``history`` so a refresh reattaches to a RUNNING stream or\nre-displays an OPEN interaction instead of forcing a re-send.  Absent\n(``None``) when no execution is active, which keeps the happy-path restore\n(``status == \"completed\"``) unchanged.\n\n``resumeAfterEventId`` is the last observed AgentEvent id at snapshot time\nfor a RUNNING turn.  The restore must reconnect the stream with this cursor\n(``?after=<id>``), NOT ``null``: otherwise the SSE GET re-reads the\nconversation tail at request time and, if the worker wrote the terminal\nMESSAGE_DELTA/COMPLETED events in the gap between the history response and\nthe SSE GET, the stream opens *after* them, observes a terminal task, and\ncloses with no event — the UI goes ``disconnected`` and the assistant\nanswer is lost.  Resuming from the snapshot cursor replays exactly the\nevents written in that gap.",
+        "description": "Owner-scoped snapshot of the conversation's live execution.\n\nRestored by ``history`` so a refresh reattaches to a RUNNING stream or\nre-displays an OPEN interaction instead of forcing a re-send.  Absent\n(``None``) when no execution is active, which keeps the happy-path restore\n(``status == \"completed\"``) unchanged.\n\n``resumeAfterEventSequence`` is ``conversation.lastEventSequence`` at snapshot\ntime — always present (a fresh conversation is ``0``).  The restore MUST\nreconnect the stream with this sequence cursor (``?afterSequence=<n>``), NOT\n``null`` and NOT the event-id cursor: when the worker writes the terminal\nMESSAGE_DELTA/COMPLETED events in the gap between the history response and the\nSSE GET, ``after=None`` re-reads the conversation tail at request time and the\nstream opens *after* those events, observes a terminal task, and closes with\nno event — the UI goes ``disconnected`` and the assistant answer is lost.\nThe sequence cursor is always defined even on a brand-new first turn that has\nwritten zero events (where the event-id cursor is ``None`` and cannot be\nused), so it is the only cursor that closes the zero-event race.  Resuming\nfrom the snapshot sequence replays exactly the events written in that gap.\n``resumeAfterEventId`` is retained for a manual reconnect that already holds\na durable event id; the restore path prefers the sequence cursor.\n\n``cancellationRequested`` mirrors the active ``AgentExecutionConfig``'s\n``cancellationRequestedAt`` (set atomically by ``POST /cancel`` and observed\nby the worker at its next heartbeat boundary).  It is ``True`` while the\nworker is still ``RUNNING`` after an explicit cancel — the runtime ``status``\nstays ``RUNNING`` because the closed ``AgentExecution.status`` enum has no\n``CANCELLING`` value (ADR 0036), so this boolean is how a restore avoids\nreopening the normal stream and re-enabling the input while the turn is still\ndraining to a terminal status.",
         "properties": {
+          "cancellationRequested": {
+            "default": false,
+            "title": "Cancellationrequested",
+            "type": "boolean"
+          },
           "interaction": {
             "anyOf": [
               {
@@ -431,6 +436,11 @@
               }
             ],
             "title": "Resumeaftereventid"
+          },
+          "resumeAfterEventSequence": {
+            "default": 0,
+            "title": "Resumeaftereventsequence",
+            "type": "integer"
           },
           "status": {
             "title": "Status",
@@ -16346,6 +16356,23 @@
                 }
               ],
               "title": "After"
+            }
+          },
+          {
+            "in": "query",
+            "name": "afterSequence",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Aftersequence"
             }
           }
         ],

@@ -331,3 +331,44 @@ const AGENT_ERROR_LABELS: Record<string, string> = {
 export function agentErrorLabel(code: string, fallback: string): string {
   return AGENT_ERROR_LABELS[code] ?? fallback;
 }
+
+// ---------------------------------------------------------------------------
+// Stream resume cursor
+// ---------------------------------------------------------------------------
+
+/**
+ * Cursor used to resume an Agent SSE stream (ADR 0019).
+ *
+ * - `eventId`: a durable event UUID the client already applied — resumes with
+ *   `?after=<id>` (manual reconnect / retry after a transport drop).
+ * - `sequence`: the per-conversation monotonic sequence snapshotted by
+ *   `history.runtime.resumeAfterEventSequence` — resumes with
+ *   `?afterSequence=<n>`. This is the only cursor defined for a brand-new
+ *   turn that has written zero events, where the event-id cursor is `null`,
+ *   so the restore path always uses it.
+ * - `null`: request-time tail (the SSE subscription semantic; used only for a
+ *   fresh send that opens the stream at request time, never on restore).
+ */
+export type AgentStreamCursor =
+  | { kind: "eventId"; value: string }
+  | { kind: "sequence"; value: number }
+  | null;
+
+/**
+ * Append the resume cursor to the SSE stream URL as a query parameter.
+ *
+ * `eventId` → `?after=<id>`; `sequence` → `?afterSequence=<n>`; `null` leaves
+ * the URL untouched so the server reads the request-time tail.
+ */
+export function withResumeCursor(
+  streamUrl: string,
+  cursor: AgentStreamCursor,
+): string {
+  if (cursor === null) return streamUrl;
+  const separator = streamUrl.includes("?") ? "&" : "?";
+  const param =
+    cursor.kind === "eventId"
+      ? `after=${encodeURIComponent(cursor.value)}`
+      : `afterSequence=${cursor.value}`;
+  return `${streamUrl}${separator}${param}`;
+}

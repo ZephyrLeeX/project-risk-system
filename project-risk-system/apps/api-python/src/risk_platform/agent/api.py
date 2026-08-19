@@ -141,8 +141,9 @@ async def events(
     identity: Annotated[SessionIdentity, Depends(require_permissions("agent.use"))],
     service: Annotated[AgentConversationService, Depends(get_agent_service)],
     after: Annotated[UUID | None, Query()] = None,
+    after_sequence: Annotated[int | None, Query(alias="afterSequence", ge=0)] = None,
 ) -> StreamingResponse:
-    event_stream = await service.events(identity, conversation_id, after)
+    event_stream = await service.events(identity, conversation_id, after, after_sequence)
     return StreamingResponse(
         event_stream,
         media_type="text/event-stream",

@@ -124,12 +124,27 @@ async def open_event_stream(
     owner_id: UUID,
     after: UUID | None,
     *,
+    after_sequence: int | None = None,
     poll_interval: float = 1.0,
     idle_seconds: float = 60.0,
     keepalive_seconds: float = 15.0,
 ) -> AsyncIterator[bytes]:
-    """Validate before headers are sent, then return a PostgreSQL-backed stream."""
+    """Validate before headers are sent, then return a PostgreSQL-backed stream.
 
+    ``after`` and ``after_sequence`` are mutually exclusive cursors (both set is
+    a 422).  ``after`` is a durable event id the caller already holds (a manual
+    reconnect); ``after_sequence`` is the per-conversation monotonic sequence
+    snapshotted by ``history.runtime.resumeAfterEventSequence`` and is the only
+    cursor that is defined for a brand-new turn with zero events, where the
+    event-id cursor is ``None``.  When neither is set the stream reads the
+    request-time tail (the SSE subscription semantic).  ``after_sequence`` must
+    lie in ``[0, conversation.lastEventSequence]`` — a cursor beyond the durable
+    tail is unrecoverable (409) so the caller restarts from the conversation
+    rather than silently dropping the gap.
+    """
+
+    if after is not None and after_sequence is not None:
+        raise ApiError(422, "VALIDATION_ERROR", "after 与 afterSequence 不能同时提交")
     async with sessions() as session:
         conversation = await session.scalar(
             select(AgentConversation).where(
@@ -138,7 +153,7 @@ async def open_event_stream(
         )
         if conversation is None:
             raise ApiError(404, "AGENT_CONVERSATION_NOT_FOUND", "Agent 会话不存在或不属于当前用户")
-        after_sequence = conversation.lastEventSequence
+        cursor_sequence = conversation.lastEventSequence
         if after is not None:
             cursor = await session.scalar(
                 select(AgentEvent).where(
@@ -152,11 +167,20 @@ async def open_event_stream(
                     "事件游标无法恢复",
                     data={"restartFrom": "conversation"},
                 )
-            after_sequence = cursor.sequence
+            cursor_sequence = cursor.sequence
+        elif after_sequence is not None:
+            if after_sequence < 0 or after_sequence > conversation.lastEventSequence:
+                raise ApiError(
+                    409,
+                    "AGENT_EVENT_CURSOR_UNRECOVERABLE",
+                    "事件游标无法恢复",
+                    data={"restartFrom": "conversation"},
+                )
+            cursor_sequence = after_sequence
     return _stream(
         sessions,
         conversation_id,
-        after_sequence,
+        cursor_sequence,
         poll_interval=poll_interval,
         idle_seconds=idle_seconds,
         keepalive_seconds=keepalive_seconds,

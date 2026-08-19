@@ -151,7 +151,7 @@ class AgentConversationService:
                 raise ApiError(
                     409,
                     "AGENT_EXECUTION_ACTIVE",
-                    "当前对话仍有进行中的执行，请先恢复或取消",
+                    "当前对话仍有进行中的执行，请先恢复或取消",  # noqa: RUF001
                 )
             user_message = AgentMessage(
                 conversationId=conversation.id,
@@ -212,9 +212,14 @@ class AgentConversationService:
         identity: SessionIdentity,
         conversation_id: UUID,
         after: UUID | None,
+        after_sequence: int | None,
     ) -> AsyncIterator[bytes]:
         return await open_event_stream(
-            self._sessions, conversation_id, UUID(identity.user.id), after
+            self._sessions,
+            conversation_id,
+            UUID(identity.user.id),
+            after,
+            after_sequence=after_sequence,
         )
 
     async def history(
@@ -342,22 +347,43 @@ class AgentConversationService:
                 select(DurableTask.status).where(DurableTask.id == execution.taskId)
             )
             if task_status in _ACTIVE_TASK_STATUSES:
-                # Record the last observed AgentEvent id at snapshot time so the
-                # restore reconnects the stream *from this cursor*, not from the
-                # request-time tail.  See ``AgentConversationRuntime`` for the
-                # terminal-event race this closes.  ``None`` only when the turn
-                # has not yet written any event (a brand-new first turn).
+                # Snapshot the durable per-conversation tail so the restore
+                # reconnects the stream *from this sequence cursor*
+                # (``?afterSequence=<n>``), not from the request-time tail the
+                # SSE GET would otherwise re-read.  The sequence is always
+                # defined (a fresh conversation is 0), so unlike the event-id
+                # cursor it closes the zero-event race where a brand-new first
+                # turn has written no AgentEvent yet.  See
+                # ``AgentConversationRuntime`` for the terminal-event race.
+                last_event_sequence = await session.scalar(
+                    select(AgentConversation.lastEventSequence).where(
+                        AgentConversation.id == conversation_id
+                    )
+                )
                 resume_after_event_id = await session.scalar(
                     select(AgentEvent.id)
                     .where(AgentEvent.conversationId == conversation_id)
                     .order_by(AgentEvent.sequence.desc())
                     .limit(1)
                 )
+                # The cancel flag lives on the execution configuration (ADR 0028):
+                # the worker observes it at its next heartbeat boundary, so the
+                # execution is still RUNNING for a window after POST /cancel.
+                # Exposing it lets a restore stay ``cancelling`` instead of
+                # reopening the normal stream — the status enum has no
+                # ``CANCELLING`` value per ADR 0036.
+                cancellation_requested_at = await session.scalar(
+                    select(AgentExecutionConfig.cancellationRequestedAt).where(
+                        AgentExecutionConfig.taskId == execution.taskId
+                    )
+                )
                 return AgentConversationRuntime(
                     status=AgentExecutionStatus.RUNNING.value,
                     streamUrl=f"/api/agent/conversations/{conversation_id}/events",
                     interaction=None,
                     resumeAfterEventId=resume_after_event_id,
+                    resumeAfterEventSequence=int(last_event_sequence or 0),
+                    cancellationRequested=cancellation_requested_at is not None,
                 )
         return None
 

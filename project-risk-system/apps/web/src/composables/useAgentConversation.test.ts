@@ -320,13 +320,15 @@ describe("Agent conversation runtime restore (RUNNING / WAITING_FOR_USER)", () =
         streamUrl: "/agent/conversations/running-id/events",
         interaction: null,
         resumeAfterEventId: "event-0",
+        resumeAfterEventSequence: 1,
+        cancellationRequested: false,
       },
     } as never);
-    // The restored stream resumes the SAME execution FROM the snapshot cursor
-    // (resumeAfterEventId → ?after=event-0), then emits the terminal events
-    // (a delta + completed) written in the gap between the history snapshot
-    // and the SSE GET, so the turn lands without a re-send and the consumer
-    // does not reconnect past a clean EOF.
+    // The restored stream resumes the SAME execution FROM the snapshot sequence
+    // cursor (resumeAfterEventSequence → ?afterSequence=1), then emits the
+    // terminal events (a delta + completed) written in the gap between the
+    // history snapshot and the SSE GET, so the turn lands without a re-send and
+    // the consumer does not reconnect past a clean EOF.
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValueOnce(
@@ -342,7 +344,57 @@ describe("Agent conversation runtime restore (RUNNING / WAITING_FOR_USER)", () =
 
     expect(mockedAgentApi.history).toHaveBeenCalledWith("running-id");
     expect(fetch).toHaveBeenCalledWith(
-      "/agent/conversations/running-id/events?after=event-0",
+      "/agent/conversations/running-id/events?afterSequence=1",
+      expect.objectContaining({ method: "GET" }),
+    );
+    expect(agent.state.status).toBe("completed");
+    expect(agent.state.messages.filter((m) => m.role === "ASSISTANT")).toHaveLength(1);
+    expect(agent.state.streamingText).toBe("");
+  });
+
+  it("restores a brand-new RUNNING turn with zero events via ?afterSequence=0 (zero-event race)", async () => {
+    const store = stubLocalStorage();
+    store.set("risk-platform:agent-conversation-id", "fresh-id");
+    mockedAgentApi.history.mockResolvedValue({
+      conversation: { id: "fresh-id" },
+      messages: [
+        {
+          id: "m-1",
+          role: "USER",
+          content: "列出风险",
+          createdAt: "2026-08-17T00:00:00.000Z",
+          dataAsOf: null,
+          sequence: 1,
+        },
+      ],
+      // A brand-new first turn has written NO AgentEvent yet: the event-id
+      // cursor is null and cannot resume, but the sequence cursor is 0.
+      runtime: {
+        status: "RUNNING",
+        streamUrl: "/agent/conversations/fresh-id/events",
+        interaction: null,
+        resumeAfterEventId: null,
+        resumeAfterEventSequence: 0,
+        cancellationRequested: false,
+      },
+    } as never);
+    // The worker writes the terminal events in the REST→SSE gap; resuming
+    // from ?afterSequence=0 replays them so the answer is not lost.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValueOnce(
+        new Response(
+          'id: e1\nevent: message.delta\ndata: {"conversationId":"fresh-id","messageId":"m-2","sequence":1,"traceId":"t","occurredAt":"2026-08-17T00:00:00.000Z","text":"共 2 个高风险"}\n\nid: e2\nevent: completed\ndata: {"conversationId":"fresh-id","messageId":"m-2","sequence":2,"traceId":"t","occurredAt":"2026-08-17T00:00:01.000Z","dataAsOf":"2026-08-17T00:00:01.000Z"}\n\n',
+          { headers: { "Content-Type": "text/event-stream" } },
+        ),
+      ),
+    );
+    const agent = useAgentConversation();
+
+    await agent.restore();
+
+    expect(fetch).toHaveBeenCalledWith(
+      "/agent/conversations/fresh-id/events?afterSequence=0",
       expect.objectContaining({ method: "GET" }),
     );
     expect(agent.state.status).toBe("completed");
@@ -571,5 +623,122 @@ describe("Agent conversation explicit cancel", () => {
 
     expect(mockedAgentApi.cancelConversation).not.toHaveBeenCalled();
     expect(agent.state.status).toBe("idle");
+  });
+
+  it("stays cancelling past the 15s fast deadline while the worker is still RUNNING, then auto-reconciles at terminal", async () => {
+    vi.useFakeTimers();
+    const store = stubLocalStorage();
+    store.set("risk-platform:agent-conversation-id", "slow-cancel-id");
+    // restore (call 1) loads a COMPLETED turn; the subsequent cancel fast-poll
+    // (calls 2+) reports RUNNING until the worker terminates.
+    let workerTerminal = false;
+    let historyCalls = 0;
+    mockedAgentApi.history.mockImplementation(async () => {
+      historyCalls += 1;
+      if (historyCalls === 1) {
+        return {
+          conversation: { id: "slow-cancel-id" },
+          messages: [{ id: "m-1", role: "USER", content: "列出风险", createdAt: "", dataAsOf: null, sequence: 1 }],
+          runtime: null,
+        } as never;
+      }
+      return {
+        conversation: { id: "slow-cancel-id" },
+        messages: [{ id: "m-1", role: "USER", content: "列出风险", createdAt: "", dataAsOf: null, sequence: 1 }],
+        runtime: workerTerminal
+          ? null
+          : { status: "RUNNING", streamUrl: null, interaction: null, cancellationRequested: true },
+      } as never;
+    });
+    mockedAgentApi.cancelConversation.mockResolvedValue({
+      status: "RUNNING",
+      streamUrl: null,
+      interaction: null,
+      cancellationRequested: true,
+    } as never);
+    mockedAgentApi.continueConversation.mockResolvedValue({
+      userMessage: { id: "m-next", role: "USER", content: "下一条", createdAt: "", dataAsOf: null, sequence: 2 },
+      streamUrl: "/agent/conversations/slow-cancel-id/events",
+    } as never);
+    vi.stubGlobal("fetch", vi.fn());
+    const agent = useAgentConversation();
+
+    await agent.restore();
+    expect(agent.state.status).toBe("completed");
+
+    const cancelPromise = agent.cancel();
+    // Drain the fast 15 s deadline with the worker still RUNNING: the input
+    // must NOT be released (no premature flip to completed) — it stays 取消中.
+    await vi.advanceTimersByTimeAsync(15_500);
+    expect(agent.state.status).toBe("cancelling");
+    // An immediate next send is blocked at the guard — no continueConversation
+    // dispatch against the still-RUNNING execution (it would surface a 409).
+    await agent.send("下一条");
+    expect(mockedAgentApi.continueConversation).not.toHaveBeenCalled();
+
+    // The worker later terminates; the slow drain reconciles to completed and
+    // releases the input.
+    workerTerminal = true;
+    await vi.advanceTimersByTimeAsync(2_500);
+    expect(agent.state.status).toBe("completed");
+    await cancelPromise;
+  });
+
+  it("restores to cancelling when the runtime reports cancellationRequested (refresh during cancel)", async () => {
+    vi.useFakeTimers();
+    const store = stubLocalStorage();
+    store.set("risk-platform:agent-conversation-id", "refresh-cancel-id");
+    mockedAgentApi.history.mockResolvedValue({
+      conversation: { id: "refresh-cancel-id" },
+      messages: [{ id: "m-1", role: "USER", content: "列出风险", createdAt: "", dataAsOf: null, sequence: 1 }],
+      runtime: {
+        status: "RUNNING",
+        streamUrl: "/agent/conversations/refresh-cancel-id/events",
+        interaction: null,
+        resumeAfterEventId: null,
+        resumeAfterEventSequence: 0,
+        cancellationRequested: true,
+      },
+    } as never);
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const agent = useAgentConversation();
+
+    await agent.restore();
+
+    // A refresh during an explicit cancel does NOT reopen the normal stream
+    // and does NOT re-enable the input — it stays 取消中 and drains.
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(agent.state.status).toBe("cancelling");
+    // An immediate send is blocked while the turn is still draining.
+    await agent.send("下一条");
+    expect(mockedAgentApi.continueConversation).not.toHaveBeenCalled();
+    agent.dispose();
+  });
+
+  it("surfaces an error (not completed) when the cancel POST itself fails", async () => {
+    const store = stubLocalStorage();
+    store.set("risk-platform:agent-conversation-id", "fail-cancel-id");
+    mockedAgentApi.history.mockResolvedValue({
+      conversation: { id: "fail-cancel-id" },
+      messages: [{ id: "m-1", role: "USER", content: "列出风险", createdAt: "", dataAsOf: null, sequence: 1 }],
+      runtime: null,
+    } as never);
+    mockedAgentApi.cancelConversation.mockRejectedValue(
+      new ApiError("cancel forbidden", 403, "AGENT_FORBIDDEN"),
+    );
+    vi.stubGlobal("fetch", vi.fn());
+    const agent = useAgentConversation();
+
+    await agent.restore();
+    expect(agent.state.status).toBe("completed");
+
+    await agent.cancel();
+
+    // The cancel request failed → error, NOT completed (the input must not be
+    // released as if the turn ended cleanly).
+    expect(agent.state.status).toBe("error");
+    expect(agent.state.error?.code).toBe("AGENT_FORBIDDEN");
+    expect(mockedAgentApi.cancelConversation).toHaveBeenCalledWith("fail-cancel-id");
   });
 });

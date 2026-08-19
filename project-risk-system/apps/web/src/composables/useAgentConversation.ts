@@ -11,7 +11,9 @@ import {
   applyFrame,
   initialAgentState,
   parseSseFrames,
+  withResumeCursor,
   type AgentConversationState,
+  type AgentStreamCursor,
   type AgentStreamMessage,
 } from "@/utils/agent-sse";
 
@@ -56,6 +58,13 @@ function clearStoredConversationId(): void {
 const TERMINAL_POLL_DEADLINE_MS = 15_000;
 /** Cadence at which history.runtime is polled while an explicit cancel drains. */
 const TERMINAL_POLL_INTERVAL_MS = 400;
+/**
+ * Slow-phase cadence used after the fast {@link TERMINAL_POLL_DEADLINE_MS} has
+ * elapsed while the worker is still RUNNING.  Bounded only by the worker's own
+ * 90 s timeout/lease; an unmount stops it via the drain-generation token so a
+ * stuck worker cannot pin the input forever.
+ */
+const SLOW_POLL_INTERVAL_MS = 2000;
 
 export function useAgentConversation() {
   const state = reactive<AgentConversationState>(initialAgentState());
@@ -66,6 +75,13 @@ export function useAgentConversation() {
   let activeStreamUrl: string | null = null;
   let controller: AbortController | null = null;
   let lastInteractionBody: AgentInteractionRequest | null = null;
+  /**
+   * Generation token for the slow-phase cancel drain.  Bumped by
+   * {@link dispose} / {@link reset} so an unmount or a new conversation stops
+   * a still-running poll loop instead of reconciling against a conversation the
+   * user has left.
+   */
+  let drainGeneration = 0;
 
   onScopeDispose(() => {
     dispose();
@@ -129,7 +145,7 @@ export function useAgentConversation() {
     state.error = null;
     state.status = "streaming";
     try {
-      await connectStream(activeStreamUrl, state.lastEventId);
+      await connectStream(activeStreamUrl, eventIdCursor(state.lastEventId));
     } catch (error) {
       applyRequestError(error);
     } finally {
@@ -157,7 +173,7 @@ export function useAgentConversation() {
       if (result.streamUrl) {
         activeStreamUrl = result.streamUrl;
         state.status = "streaming";
-        await connectStream(result.streamUrl, state.lastEventId);
+        await connectStream(result.streamUrl, eventIdCursor(state.lastEventId));
       }
     } catch (error) {
       applyRequestError(error);
@@ -188,6 +204,7 @@ export function useAgentConversation() {
     abortStream();
     activeStreamUrl = null;
     lastInteractionBody = null;
+    drainGeneration += 1;
   }
 
   /** Drop all conversation state, clear the persisted reference, and start over. */
@@ -195,6 +212,7 @@ export function useAgentConversation() {
     abortStream();
     activeStreamUrl = null;
     lastInteractionBody = null;
+    drainGeneration += 1;
     lastUserMessage.value = "";
     clearStoredConversationId();
     Object.assign(state, initialAgentState());
@@ -223,20 +241,37 @@ export function useAgentConversation() {
       state.progress = null;
       const runtime = history.runtime;
       if (runtime && runtime.status === "RUNNING" && runtime.streamUrl) {
-        // A refresh mid-turn reattaches to the SAME durable execution instead
-        // of forcing a re-send.  The stream resumes from the snapshot cursor
-        // (resumeAfterEventId → ?after=<id>), NOT null: otherwise the SSE GET
-        // re-reads the conversation tail at request time and, if the worker
-        // wrote the terminal MESSAGE_DELTA/COMPLETED events in the gap between
-        // this history response and the SSE GET, the stream opens *after*
-        // them, observes a terminal task, and closes with no event — the UI
-        // goes disconnected and the assistant answer is lost.
-        activeStreamUrl = runtime.streamUrl;
-        state.status = "streaming";
-        await connectStream(
-          runtime.streamUrl,
-          runtime.resumeAfterEventId ?? null,
-        );
+        if (runtime.cancellationRequested) {
+          // A refresh during an explicit cancel: the worker is still RUNNING
+          // but the cancel flag is set, so do NOT reopen the normal stream (it
+          // would race the draining turn) and do NOT re-enable the input. Stay
+          // "cancelling" and poll the runtime on the slow cadence until the
+          // worker reaches a terminal status, then reconcile.  (ADR 0036: the
+          // closed AgentExecution.status enum has no CANCELLING value, so
+          // cancellationRequested is the restore signal.)
+          activeStreamUrl = null;
+          state.status = "cancelling";
+          void drainCancellation(history.conversation.id);
+        } else {
+          // A refresh mid-turn reattaches to the SAME durable execution instead
+          // of forcing a re-send.  The stream resumes from the snapshot
+          // sequence cursor (resumeAfterEventSequence → ?afterSequence=<n>),
+          // NOT null and NOT the event-id cursor: when the worker writes the
+          // terminal MESSAGE_DELTA/COMPLETED events in the gap between this
+          // history response and the SSE GET, after=null re-reads the
+          // conversation tail at request time and the stream opens *after*
+          // those events, observes a terminal task, and closes with no event —
+          // the UI goes disconnected and the assistant answer is lost. The
+          // sequence cursor is always defined (a brand-new turn is 0, where the
+          // event-id cursor is null), so it is the only cursor that also closes
+          // the zero-event race.
+          activeStreamUrl = runtime.streamUrl;
+          state.status = "streaming";
+          await connectStream(runtime.streamUrl, {
+            kind: "sequence",
+            value: runtime.resumeAfterEventSequence ?? 0,
+          });
+        }
       } else if (runtime && runtime.status === "WAITING_FOR_USER" && runtime.interaction) {
         // Redisplay the OPEN interaction (project selection / write
         // confirmation draft) so the user can resolve it without re-typing.
@@ -290,45 +325,94 @@ export function useAgentConversation() {
     // until the execution is no longer RUNNING, then reconcile and release.
     const terminalHistory = await waitForRuntimeInactive(state.conversationId);
     if (terminalHistory) {
-      state.messages = terminalHistory.messages
-        .filter((message) => message.role === "USER" || message.role === "ASSISTANT")
-        .map(toStreamMessage);
-      state.streamingText = "";
-      state.progress = null;
+      // Fast path: the worker reached a terminal status within the 15 s
+      // UI-poll deadline — reconcile any final assistant message (a cancel
+      // that lost the race against normal completion) and release the input.
+      reconcileTerminal(terminalHistory);
+      return;
     }
+    // Slow path: the 15 s deadline elapsed while the worker is still RUNNING.
+    // Do NOT flip to completed — that would re-enable the input and the next
+    // send would hit a misleading 409 AGENT_EXECUTION_ACTIVE.  Keep the status
+    // "cancelling" (input disabled, label "取消中", "已提交停止请求，后台任务
+    // 仍在结束中…") and drain the runtime on the slow cadence until the worker
+    // self-terminates, then reconcile.  An unmount stops the loop.
+    void drainCancellation(state.conversationId);
+  }
+
+  /** Reconcile visible messages from a terminal history and release the input. */
+  function reconcileTerminal(history: AgentConversationHistory): void {
+    state.messages = history.messages
+      .filter((message) => message.role === "USER" || message.role === "ASSISTANT")
+      .map(toStreamMessage);
+    state.streamingText = "";
+    state.progress = null;
     state.status = "completed";
+  }
+
+  /**
+   * Slow-phase drain after the fast 15 s cancel deadline elapsed while the
+   * worker is still RUNNING.  Keep the input locked ("取消中") and poll
+   * history.runtime on the slow cadence until the execution is no longer
+   * RUNNING, then reconcile to the terminal messages.  Stopped by
+   * {@link dispose} / {@link reset} via the generation token so an unmount
+   * cannot leave a rogue poll loop running against a conversation the user
+   * has left.
+   */
+  async function drainCancellation(conversationId: string): Promise<void> {
+    const generation = drainGeneration;
+    while (generation === drainGeneration) {
+      await delay(SLOW_POLL_INTERVAL_MS);
+      if (generation !== drainGeneration) return;
+      let history: AgentConversationHistory;
+      try {
+        history = await agentApi.history(conversationId);
+      } catch {
+        // history is best-effort during the slow drain; keep polling until the
+        // worker reaches a terminal status or the user unmounts.
+        continue;
+      }
+      const runtime = history.runtime;
+      if (!runtime || runtime.status !== "RUNNING") {
+        reconcileTerminal(history);
+        return;
+      }
+    }
   }
 
   async function connectStream(
     streamUrl: string,
-    after: string | null,
+    cursor: AgentStreamCursor,
   ): Promise<void> {
-    let cursor = after;
+    let resumeCursor = cursor;
     const reconnectDelays = [1000, 2000, 5000];
     for (let attempt = 0; attempt <= reconnectDelays.length; attempt += 1) {
       // Stop reconnecting the moment the turn is no longer streaming (an
       // explicit cancel set "cancelling" or a terminal event landed) so a
       // pending reconnect delay cannot race a cancel and open a rogue fetch.
       if (state.status !== "streaming") return;
-      const endedUnexpectedly = await connectStreamOnce(streamUrl, cursor);
+      const endedUnexpectedly = await connectStreamOnce(streamUrl, resumeCursor);
       if (!endedUnexpectedly || state.status !== "streaming") return;
       if (attempt === reconnectDelays.length) {
         markDisconnected();
         return;
       }
       await delay(reconnectDelays[attempt]!);
-      cursor = state.lastEventId;
+      // On reconnect, resume from the last applied durable event id (the
+      // transport cursor), not the snapshot sequence — the sequence cursor is
+      // only for the initial restore from a history snapshot.
+      resumeCursor = eventIdCursor(state.lastEventId);
     }
   }
 
   /** Consume one HTTP stream. A true result means EOF without a terminal event. */
   async function connectStreamOnce(
     streamUrl: string,
-    after: string | null,
+    cursor: AgentStreamCursor,
   ): Promise<boolean> {
     abortStream();
     controller = new AbortController();
-    const url = withResumeCursor(streamUrl, after);
+    const url = withResumeCursor(streamUrl, cursor);
     let response: Response;
     try {
       response = await fetch(url, {
@@ -439,10 +523,14 @@ export function useAgentConversation() {
   };
 }
 
-function withResumeCursor(streamUrl: string, after: string | null): string {
-  if (!after) return streamUrl;
-  const separator = streamUrl.includes("?") ? "&" : "?";
-  return `${streamUrl}${separator}after=${encodeURIComponent(after)}`;
+/**
+ * Build an `eventId` resume cursor from the last applied durable event id, or
+ * `null` when no event has been applied yet (the request-time tail semantic).
+ * Used on transport reconnect — the snapshot sequence cursor is only for the
+ * initial restore from a history snapshot.
+ */
+function eventIdCursor(lastEventId: string | null): AgentStreamCursor {
+  return lastEventId ? { kind: "eventId", value: lastEventId } : null;
 }
 
 function isAbort(error: unknown): boolean {

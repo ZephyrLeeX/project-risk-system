@@ -167,21 +167,37 @@ class AgentConversationRuntime(_Contract):
     (``None``) when no execution is active, which keeps the happy-path restore
     (``status == "completed"``) unchanged.
 
-    ``resumeAfterEventId`` is the last observed AgentEvent id at snapshot time
-    for a RUNNING turn.  The restore must reconnect the stream with this cursor
-    (``?after=<id>``), NOT ``null``: otherwise the SSE GET re-reads the
-    conversation tail at request time and, if the worker wrote the terminal
-    MESSAGE_DELTA/COMPLETED events in the gap between the history response and
-    the SSE GET, the stream opens *after* them, observes a terminal task, and
-    closes with no event — the UI goes ``disconnected`` and the assistant
-    answer is lost.  Resuming from the snapshot cursor replays exactly the
-    events written in that gap.
+    ``resumeAfterEventSequence`` is ``conversation.lastEventSequence`` at snapshot
+    time — always present (a fresh conversation is ``0``).  The restore MUST
+    reconnect the stream with this sequence cursor (``?afterSequence=<n>``), NOT
+    ``null`` and NOT the event-id cursor: when the worker writes the terminal
+    MESSAGE_DELTA/COMPLETED events in the gap between the history response and the
+    SSE GET, ``after=None`` re-reads the conversation tail at request time and the
+    stream opens *after* those events, observes a terminal task, and closes with
+    no event — the UI goes ``disconnected`` and the assistant answer is lost.
+    The sequence cursor is always defined even on a brand-new first turn that has
+    written zero events (where the event-id cursor is ``None`` and cannot be
+    used), so it is the only cursor that closes the zero-event race.  Resuming
+    from the snapshot sequence replays exactly the events written in that gap.
+    ``resumeAfterEventId`` is retained for a manual reconnect that already holds
+    a durable event id; the restore path prefers the sequence cursor.
+
+    ``cancellationRequested`` mirrors the active ``AgentExecutionConfig``'s
+    ``cancellationRequestedAt`` (set atomically by ``POST /cancel`` and observed
+    by the worker at its next heartbeat boundary).  It is ``True`` while the
+    worker is still ``RUNNING`` after an explicit cancel — the runtime ``status``
+    stays ``RUNNING`` because the closed ``AgentExecution.status`` enum has no
+    ``CANCELLING`` value (ADR 0036), so this boolean is how a restore avoids
+    reopening the normal stream and re-enabling the input while the turn is still
+    draining to a terminal status.
     """
 
     status: str
     streamUrl: str | None = None
     interaction: AgentInteractionResponse | None = None
     resumeAfterEventId: UUID | None = None
+    resumeAfterEventSequence: int = 0
+    cancellationRequested: bool = False
 
 
 class AgentConversationHistory(_Contract):

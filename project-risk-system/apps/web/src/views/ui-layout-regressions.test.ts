@@ -100,4 +100,23 @@ describe("live UI layout regressions", () => {
     expect(businessHeader).not.toContain("<b>3</b>");
   });
 
+  it("turns the send button into a durable stop button while a turn is streaming", () => {
+    // The agent form still submits via sendAgent() — the stop button is a
+    // type="button" so it never triggers a form submit / re-send.
+    expect(dashboardView).toContain('@submit.prevent="sendAgent()"');
+    expect(dashboardView).toContain("const agentCanStop = computed(");
+    // The stop control is shown only while a durable execution is active
+    // (streaming / disconnected); otherwise the submit button is shown.
+    expect(dashboardView).toContain('v-if="agentCanStop"');
+    expect(dashboardView).toContain('class="agent-stop"');
+    expect(dashboardView).toContain('type="button"');
+    // 停止 POSTs the explicit durable cancel — it does not just abort fetch.
+    expect(dashboardView).toContain('@click="agent.cancel()"');
+    expect(dashboardView).toContain("停止");
+    // The 2-column textarea+button grid is unchanged (no third button column).
+    expect(prototypePageStyles).toContain("grid-template-columns:1fr auto");
+    // The stop button gets a distinct red modifier over the shared base.
+    expect(prototypePageStyles).toContain("button.agent-stop");
+  });
+
 });

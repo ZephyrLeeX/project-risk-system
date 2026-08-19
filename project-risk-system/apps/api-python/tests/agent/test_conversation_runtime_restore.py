@@ -37,10 +37,10 @@ from risk_platform.agent.events import append_event, open_event_stream
 from risk_platform.agent.interaction import AgentInteractionService
 from risk_platform.agent.models import (
     AgentConversation,
+    AgentEventType,
     AgentExecution,
     AgentExecutionConfig,
     AgentExecutionStatus,
-    AgentEventType,
     AgentInteraction,
     AgentInteractionStatus,
     AgentInteractionType,
@@ -402,6 +402,10 @@ def test_explicit_cancel_sets_flag_and_interaction_cancel_still_cancels(
         runtime = await app_service.cancel(identity(), created.conversation.id)
         # Pre-worker: the flag is set, the task is still QUEUED → RUNNING runtime.
         assert runtime.status == "RUNNING"
+        # The cancel flag is mirrored on the runtime so a restore stays
+        # "cancelling" instead of reopening the normal stream while the worker
+        # is still RUNNING (ADR 0036 has no CANCELLING status value).
+        assert runtime.cancellationRequested is True
         async with transaction(database) as session:
             config = await session.scalar(
                 select(AgentExecutionConfig).where(
@@ -510,6 +514,12 @@ def test_running_restore_resumes_from_snapshot_cursor_not_request_time_tail(
         assert snapshot.runtime.status == "RUNNING"
         assert snapshot.runtime.resumeAfterEventId is not None
         cursor_id = snapshot.runtime.resumeAfterEventId
+        # The sequence cursor is always present (here 1, after the single
+        # PROGRESS event) and is what the frontend restore actually sends
+        # (?afterSequence=<n>); the cancel flag is not set on a live turn yet.
+        cursor_sequence = snapshot.runtime.resumeAfterEventSequence
+        assert cursor_sequence == 1
+        assert snapshot.runtime.cancellationRequested is False
         # Gap: the worker appends the terminal MESSAGE_DELTA + COMPLETED events
         # between the history snapshot and the SSE GET, then terminalizes the
         # execution.  Resuming from the snapshot cursor replays exactly these.
@@ -546,11 +556,193 @@ def test_running_restore_resumes_from_snapshot_cursor_not_request_time_tail(
         assert "event: message.delta" in cursor_joined
         assert "event: completed" in cursor_joined
         assert "共 2 个高风险" in cursor_joined
+        # The sequence cursor (the one the restore actually sends) replays the
+        # same gap events — and it is the only cursor defined for a brand-new
+        # turn with zero events, where the event-id cursor is None.
+        sequence_stream = await open_event_stream(
+            database,
+            conversation_id,
+            OWNER,
+            None,
+            after_sequence=cursor_sequence,
+            poll_interval=0.001,
+        )
+        sequence_joined = b"".join([chunk async for chunk in sequence_stream]).decode()
+        assert "event: message.delta" in sequence_joined
+        assert "event: completed" in sequence_joined
+        assert "共 2 个高风险" in sequence_joined
         # The buggy after=None path re-reads the tail at GET time and closes
         # with no event — pin that the snapshot cursor is what avoids the loss.
         buggy_stream = await open_event_stream(
             database, conversation_id, OWNER, None, poll_interval=0.001
         )
         assert [chunk async for chunk in buggy_stream] == []
+
+    asyncio.run(run())
+
+
+def test_zero_event_running_restore_uses_after_sequence_zero_and_replays_gap(
+    database: async_sessionmaker[AsyncSession],
+) -> None:
+    """The zero-event race closed by ``resumeAfterEventSequence``.
+
+    A brand-new RUNNING turn has written NO AgentEvent yet, so
+    ``resumeAfterEventId`` is None and cannot resume.  The runtime still exposes
+    ``resumeAfterEventSequence == 0`` (always present), and resuming with
+    ``?afterSequence=0`` replays the terminal events the worker writes in the
+    REST→SSE gap — the assistant answer is not lost.
+    """
+
+    async def run() -> None:
+        app_service = service(database)
+        created = await app_service.create(identity(), "列出本周高风险项目")
+        conversation_id = created.conversation.id
+        async with transaction(database) as session:
+            execution = await session.scalar(
+                select(AgentExecution).where(
+                    AgentExecution.conversationId == conversation_id
+                )
+            )
+            assert execution is not None
+            task = await session.get(DurableTask, execution.taskId)
+            assert task is not None
+            execution_id = execution.id
+            task_id = task.id
+        # Snapshot BEFORE any event is written: zero events.
+        snapshot = await app_service.history(identity(), conversation_id)
+        assert snapshot.runtime is not None
+        assert snapshot.runtime.status == "RUNNING"
+        assert snapshot.runtime.resumeAfterEventId is None
+        assert snapshot.runtime.resumeAfterEventSequence == 0
+        assert snapshot.runtime.cancellationRequested is False
+        # Gap: the worker writes the terminal events.
+        async with transaction(database) as session:
+            await append_event(
+                session,
+                conversation_id=conversation_id,
+                message_id=created.userMessage.id,
+                task_id=task_id,
+                event_type=AgentEventType.MESSAGE_DELTA,
+                payload={"text": "共 2 个高风险", "traceId": "t052-trace"},
+            )
+            await append_event(
+                session,
+                conversation_id=conversation_id,
+                message_id=created.userMessage.id,
+                task_id=task_id,
+                event_type=AgentEventType.COMPLETED,
+                payload={"traceId": "t052-trace"},
+            )
+        await _mark_terminal(
+            database,
+            execution_id,
+            execution_status=AgentExecutionStatus.COMPLETED,
+            task_status=DurableTaskStatus.SUCCEEDED,
+        )
+        # Restore FROM the zero-event sequence cursor: both gap events replay.
+        stream = await open_event_stream(
+            database,
+            conversation_id,
+            OWNER,
+            None,
+            after_sequence=0,
+            poll_interval=0.001,
+        )
+        joined = b"".join([chunk async for chunk in stream]).decode()
+        assert "event: message.delta" in joined
+        assert "event: completed" in joined
+        assert "共 2 个高风险" in joined
+
+    asyncio.run(run())
+
+
+def test_after_sequence_beyond_tail_is_unrecoverable(
+    database: async_sessionmaker[AsyncSession],
+) -> None:
+    """An ``afterSequence`` beyond the durable tail fails closed (409).
+
+    A cursor the server can no longer satisfy (snapshot sequence greater than
+    the conversation's ``lastEventSequence``) must not silently drop the gap —
+    it returns AGENT_EVENT_CURSOR_UNRECOVERABLE so the caller restarts from the
+    conversation instead of a stale cursor.
+    """
+
+    async def run() -> None:
+        app_service = service(database)
+        created = await app_service.create(identity(), "列出本周高风险项目")
+        conversation_id = created.conversation.id
+        snapshot = await app_service.history(identity(), conversation_id)
+        assert snapshot.runtime is not None
+        # A brand-new turn: lastEventSequence == 0.
+        assert snapshot.runtime.resumeAfterEventSequence == 0
+        with pytest.raises(ApiError) as error:
+            await open_event_stream(
+                database,
+                conversation_id,
+                OWNER,
+                None,
+                after_sequence=1,
+                poll_interval=0.001,
+            )
+        assert error.value.status_code == 409
+        assert error.value.code == "AGENT_EVENT_CURSOR_UNRECOVERABLE"
+
+    asyncio.run(run())
+
+
+def test_event_stream_owner_scope_is_404_before_cursor_detail(
+    database: async_sessionmaker[AsyncSession],
+) -> None:
+    """A non-owner gets 404 before any cursor detail is leaked.
+
+    The owner-scope check runs before the cursor is read or validated, so a
+    caller that does not own the conversation learns nothing about its event
+    tail or sequence (not 403, not a cursor error).
+    """
+
+    async def run() -> None:
+        app_service = service(database)
+        created = await app_service.create(identity(), "列出本周高风险项目")
+        conversation_id = created.conversation.id
+        # The owner can open the stream (validation passes; the generator is
+        # returned without being iterated here).
+        await open_event_stream(
+            database, conversation_id, OWNER, None, poll_interval=0.001
+        )
+        with pytest.raises(ApiError) as error:
+            await open_event_stream(
+                database,
+                conversation_id,
+                OTHER,
+                None,
+                after_sequence=0,
+                poll_interval=0.001,
+            )
+        assert error.value.status_code == 404
+        assert error.value.code == "AGENT_CONVERSATION_NOT_FOUND"
+
+    asyncio.run(run())
+
+
+def test_after_and_after_sequence_are_mutually_exclusive(
+    database: async_sessionmaker[AsyncSession],
+) -> None:
+    """Both cursors at once is a 422 — the two resume semantics conflict."""
+
+    async def run() -> None:
+        app_service = service(database)
+        created = await app_service.create(identity(), "列出本周高风险项目")
+        conversation_id = created.conversation.id
+        with pytest.raises(ApiError) as error:
+            await open_event_stream(
+                database,
+                conversation_id,
+                OWNER,
+                uuid4(),  # a bogus event id; the 422 fires before it is read
+                after_sequence=0,
+                poll_interval=0.001,
+            )
+        assert error.value.status_code == 422
+        assert error.value.code == "VALIDATION_ERROR"
 
     asyncio.run(run())

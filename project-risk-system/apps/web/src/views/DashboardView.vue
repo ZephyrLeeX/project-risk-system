@@ -108,11 +108,22 @@ const selectedInteractionCandidates = ref<string[]>([]);
 const manualProjectName = ref("");
 const manualProjectSearchOpen = ref(false);
 const interactionSubmitting = computed(() => agent.sending.value && agent.state.interaction?.type === "PROJECT_SELECTION");
-/** The agent input is disabled while a turn is in flight OR an explicit cancel is still draining to a terminal status. */
-const agentInputDisabled = computed(() => agent.sending.value || agent.state.status === "cancelling");
-/** Send-button label surfaces the cancelling drain as "取消中" instead of a stale "发送". */
+/**
+ * True while a durable execution is actively streaming (or the transport is
+ * disconnected while an execution is still active) — the moment the send
+ * button must become a stop button that POSTs the explicit durable cancel,
+ * never a form submit that re-sends the message.
+ */
+const agentCanStop = computed(
+  () => agent.state.status === "streaming" || agent.state.status === "disconnected",
+);
+/** The agent input is disabled while a turn is in flight, an explicit cancel is still draining, or a stop is available. */
+const agentInputDisabled = computed(
+  () => agent.sending.value || agent.state.status === "cancelling" || agentCanStop.value,
+);
+/** Submit-button label surfaces the cancelling drain as "取消中" and the in-flight send as "处理中". */
 const agentSendLabel = computed(() =>
-  agent.state.status === "cancelling" ? "取消中" : agent.sending.value ? "处理中" : "发送",
+  agent.state.status === "cancelling" ? "取消中" : agent.state.status === "loading" ? "处理中" : "发送",
 );
 const agentSuggestions = [
   "当前有哪些高风险？",
@@ -2348,7 +2359,15 @@ onUnmounted(() => {
           :disabled="agentInputDisabled"
           placeholder="输入关于项目、风险、回款或待办的问题"
         ></textarea>
-        <button type="submit" :disabled="agentInputDisabled">
+        <button
+          v-if="agentCanStop"
+          type="button"
+          class="agent-stop"
+          @click="agent.cancel()"
+        >
+          停止
+        </button>
+        <button v-else type="submit" :disabled="agentInputDisabled">
           {{ agentSendLabel }}
         </button>
       </form>
