@@ -1967,9 +1967,21 @@ export interface components {
             /** Resourcetype */
             resourceType: string;
         };
-        /** AgentConversationEnvelope */
+        /**
+         * AgentConversationEnvelope
+         * @description First-turn create response; also the source for the continue envelope.
+         *
+         *     ``resumeAfterEventSequence`` is ``conversation.lastEventSequence`` snapshotted
+         *     in the transaction that enqueues the durable task, BEFORE that task is
+         *     visible to the worker. The frontend opens the SSE stream with
+         *     ``?afterSequence=<n>`` so the terminal events the worker writes in the
+         *     POST→SSE gap are replayed instead of lost (the same race
+         *     ``AgentConversationRuntime.resumeAfterEventSequence`` closes on restore).
+         */
         AgentConversationEnvelope: {
             conversation: components["schemas"]["AgentConversationResponse"];
+            /** Resumeaftereventsequence */
+            resumeAfterEventSequence: number;
             /** Streamurl */
             streamUrl: string;
             userMessage: components["schemas"]["AgentMessageResponse"];
@@ -2083,6 +2095,11 @@ export interface components {
         /** AgentInteractionRespondResponse */
         AgentInteractionRespondResponse: {
             interaction: components["schemas"]["AgentInteractionResponse"];
+            /**
+             * Resumeaftereventsequence
+             * @default 0
+             */
+            resumeAfterEventSequence: number;
             /** Streamurl */
             streamUrl: string | null;
         };
@@ -2123,6 +2140,8 @@ export interface components {
         };
         /** AgentMessageEnvelope */
         AgentMessageEnvelope: {
+            /** Resumeaftereventsequence */
+            resumeAfterEventSequence: number;
             /** Streamurl */
             streamUrl: string;
             userMessage: components["schemas"]["AgentMessageResponse"];

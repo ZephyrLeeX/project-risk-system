@@ -10,6 +10,7 @@ vi.mock("@/api/agent", () => ({
     continueConversation: vi.fn(),
     history: vi.fn(),
     confirm: vi.fn(),
+    respondInteraction: vi.fn(),
     cancelConversation: vi.fn(),
   },
 }));
@@ -32,10 +33,11 @@ function stubLocalStorage(): Map<string, string> {
   return store;
 }
 
-function envelope(conversationId: string) {
+function envelope(conversationId: string, sequence = 0) {
   return {
     conversation: { id: conversationId },
     streamUrl: `/agent/conversations/${conversationId}/events`,
+    resumeAfterEventSequence: sequence,
     userMessage: {
       id: `message-${conversationId}`,
       role: "USER",
@@ -180,6 +182,7 @@ describe("Agent conversation restore after refresh", () => {
     mockedAgentApi.continueConversation.mockResolvedValue({
       userMessage: { id: "m-3", role: "USER", content: "第二个", createdAt: "", dataAsOf: null, sequence: 3 },
       streamUrl: "/agent/conversations/persist-id/events",
+      resumeAfterEventSequence: 0,
     } as never);
     const sending = restored.send("第二个");
     await vi.waitFor(() =>
@@ -559,6 +562,7 @@ describe("Agent conversation explicit cancel", () => {
         sequence: 2,
       },
       streamUrl: "/agent/conversations/cancel-block-id/events",
+      resumeAfterEventSequence: 0,
     } as never);
     // history reports RUNNING on the first poll (worker has not yet observed
     // the cancel flag) then inactive on the second — the window between them
@@ -659,6 +663,7 @@ describe("Agent conversation explicit cancel", () => {
     mockedAgentApi.continueConversation.mockResolvedValue({
       userMessage: { id: "m-next", role: "USER", content: "下一条", createdAt: "", dataAsOf: null, sequence: 2 },
       streamUrl: "/agent/conversations/slow-cancel-id/events",
+      resumeAfterEventSequence: 0,
     } as never);
     vi.stubGlobal("fetch", vi.fn());
     const agent = useAgentConversation();
@@ -740,5 +745,199 @@ describe("Agent conversation explicit cancel", () => {
     expect(agent.state.status).toBe("error");
     expect(agent.state.error?.code).toBe("AGENT_FORBIDDEN");
     expect(mockedAgentApi.cancelConversation).toHaveBeenCalledWith("fail-cancel-id");
+  });
+});
+
+describe("Agent conversation sequence baseline + drain hardening", () => {
+  it("opens the first send stream from the create envelope's resumeAfterEventSequence, not null", async () => {
+    stubLocalStorage();
+    mockedAgentApi.create.mockResolvedValue(envelope("baseline-id", 0));
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response(
+        'id: e1\nevent: message.delta\ndata: {"conversationId":"baseline-id","messageId":"m-2","sequence":1,"traceId":"t","occurredAt":"2026-08-17T00:00:00.000Z","text":"答复"}\n\nid: e2\nevent: completed\ndata: {"conversationId":"baseline-id","messageId":"m-2","sequence":2,"traceId":"t","occurredAt":"2026-08-17T00:00:01.000Z","dataAsOf":"2026-08-17T00:00:01.000Z"}\n\n',
+        { headers: { "Content-Type": "text/event-stream" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const agent = useAgentConversation();
+
+    await agent.send("有哪些项目？");
+
+    // The POST→SSE gap is closed with ?afterSequence=<baseline> (0 on a fresh
+    // conversation), NOT a request-time tail (null/absent). The terminal events
+    // the worker wrote in the gap must replay instead of being lost.
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "/agent/conversations/baseline-id/events?afterSequence=0",
+    );
+    expect(agent.state.status).toBe("completed");
+    expect(agent.state.messages.filter((m) => m.role === "ASSISTANT")).toHaveLength(1);
+  });
+
+  it("opens the continue stream from the continue envelope's resumeAfterEventSequence", async () => {
+    stubLocalStorage();
+    mockedAgentApi.continueConversation.mockResolvedValue({
+      userMessage: {
+        id: "m-cont",
+        role: "USER",
+        content: "继续",
+        createdAt: "2026-08-17T00:00:00.000Z",
+        dataAsOf: null,
+        sequence: 3,
+      },
+      streamUrl: "/agent/conversations/cont-id/events",
+      resumeAfterEventSequence: 5,
+    } as never);
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response(
+        'id: e1\nevent: message.delta\ndata: {"conversationId":"cont-id","messageId":"m-4","sequence":6,"traceId":"t","occurredAt":"2026-08-17T00:00:02.000Z","text":"答复二"}\n\nid: e2\nevent: completed\ndata: {"conversationId":"cont-id","messageId":"m-4","sequence":7,"traceId":"t","occurredAt":"2026-08-17T00:00:03.000Z","dataAsOf":"2026-08-17T00:00:03.000Z"}\n\n',
+        { headers: { "Content-Type": "text/event-stream" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const agent = useAgentConversation();
+    // A non-zero baseline from a prior conversation tail: the continue path
+    // resumes from it so gap events are not lost.
+    agent.state.conversationId = "cont-id";
+
+    await agent.send("继续");
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "/agent/conversations/cont-id/events?afterSequence=5",
+    );
+    expect(agent.state.status).toBe("completed");
+  });
+
+  it("opens the interaction-resume stream from the respond response's resumeAfterEventSequence", async () => {
+    stubLocalStorage();
+    mockedAgentApi.respondInteraction.mockResolvedValue({
+      interaction: {
+        id: "interaction-1",
+        type: "PROJECT_SELECTION",
+        status: "RESOLVED",
+        conversationId: "resp-id",
+        executionId: "exec-1",
+        candidates: [],
+        draft: null,
+        expiresAt: "2026-08-17T00:30:00.000Z",
+      },
+      streamUrl: "/agent/conversations/resp-id/events",
+      resumeAfterEventSequence: 3,
+    } as never);
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response(
+        'id: e1\nevent: message.delta\ndata: {"conversationId":"resp-id","messageId":"m-2","sequence":4,"traceId":"t","occurredAt":"2026-08-17T00:00:02.000Z","text":"已选择项目"}\n\nid: e2\nevent: completed\ndata: {"conversationId":"resp-id","messageId":"m-2","sequence":5,"traceId":"t","occurredAt":"2026-08-17T00:00:03.000Z","dataAsOf":"2026-08-17T00:00:03.000Z"}\n\n',
+        { headers: { "Content-Type": "text/event-stream" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const agent = useAgentConversation();
+    agent.state.conversationId = "resp-id";
+    agent.state.interaction = {
+      id: "interaction-1",
+      type: "PROJECT_SELECTION",
+      status: "OPEN",
+      conversationId: "resp-id",
+      executionId: "exec-1",
+      candidates: [],
+      draft: null,
+      expiresAt: "2026-08-17T00:30:00.000Z",
+    } as never;
+
+    await agent.respondInteraction({ action: "SELECT", projectId: "p-1" } as never);
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "/agent/conversations/resp-id/events?afterSequence=3",
+    );
+    expect(agent.state.status).toBe("completed");
+  });
+
+  it("does not release cancelling when the runtime reports WAITING_FOR_USER (still active)", async () => {
+    vi.useFakeTimers();
+    const store = stubLocalStorage();
+    store.set("risk-platform:agent-conversation-id", "wait-race-id");
+    // restore (call 1) loads a COMPLETED turn; the subsequent cancel fast-poll
+    // (calls 2+) reports a leaked WAITING_FOR_USER race, then later reconciles
+    // to a terminal runtime.
+    let workerTerminal = false;
+    let historyCalls = 0;
+    mockedAgentApi.history.mockImplementation(async () => {
+      historyCalls += 1;
+      if (historyCalls === 1) {
+        return {
+          conversation: { id: "wait-race-id" },
+          messages: [
+            {
+              id: "m-1",
+              role: "USER",
+              content: "列出风险",
+              createdAt: "",
+              dataAsOf: null,
+              sequence: 1,
+            },
+          ],
+          runtime: null,
+        } as never;
+      }
+      return {
+        conversation: { id: "wait-race-id" },
+        messages: [
+          {
+            id: "m-1",
+            role: "USER",
+            content: "列出风险",
+            createdAt: "",
+            dataAsOf: null,
+            sequence: 1,
+          },
+        ],
+        runtime: workerTerminal
+          ? null
+          : {
+              status: "WAITING_FOR_USER",
+              streamUrl: null,
+              interaction: {
+                id: "interaction-1",
+                type: "PROJECT_SELECTION",
+                status: "OPEN",
+                conversationId: "wait-race-id",
+                executionId: "exec-1",
+                candidates: [],
+                draft: null,
+                expiresAt: "2026-08-17T00:30:00.000Z",
+              },
+            },
+      } as never;
+    });
+    mockedAgentApi.cancelConversation.mockResolvedValue({
+      status: "RUNNING",
+      streamUrl: null,
+      interaction: null,
+      cancellationRequested: true,
+    } as never);
+    vi.stubGlobal("fetch", vi.fn());
+    const agent = useAgentConversation();
+
+    await agent.restore();
+    expect(agent.state.status).toBe("completed");
+
+    const cancelPromise = agent.cancel();
+    // Fast poll: the runtime keeps reporting WAITING_FOR_USER (an active
+    // status, NOT terminal) across the whole 15 s deadline — the input must
+    // NOT be released (no premature flip to completed, no stale OPEN
+    // interaction surfaced). It stays 取消中.
+    await vi.advanceTimersByTimeAsync(15_500);
+    expect(agent.state.status).toBe("cancelling");
+    // Slow drain: WAITING_FOR_USER is still active → keep polling, still
+    // cancelling. The post-core cancellation fence prevents this race on the
+    // backend; this keeps the input locked if it ever leaks through.
+    await vi.advanceTimersByTimeAsync(2_500);
+    expect(agent.state.status).toBe("cancelling");
+
+    // The worker later reaches a genuinely terminal status → reconcile +
+    // release.
+    workerTerminal = true;
+    await vi.advanceTimersByTimeAsync(2_500);
+    expect(agent.state.status).toBe("completed");
+    await cancelPromise;
   });
 });

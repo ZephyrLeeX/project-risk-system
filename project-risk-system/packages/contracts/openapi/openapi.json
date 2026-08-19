@@ -307,9 +307,14 @@
       },
       "AgentConversationEnvelope": {
         "additionalProperties": false,
+        "description": "First-turn create response; also the source for the continue envelope.\n\n``resumeAfterEventSequence`` is ``conversation.lastEventSequence`` snapshotted\nin the transaction that enqueues the durable task, BEFORE that task is\nvisible to the worker. The frontend opens the SSE stream with\n``?afterSequence=<n>`` so the terminal events the worker writes in the\nPOST→SSE gap are replayed instead of lost (the same race\n``AgentConversationRuntime.resumeAfterEventSequence`` closes on restore).",
         "properties": {
           "conversation": {
             "$ref": "#/components/schemas/AgentConversationResponse"
+          },
+          "resumeAfterEventSequence": {
+            "title": "Resumeaftereventsequence",
+            "type": "integer"
           },
           "streamUrl": {
             "title": "Streamurl",
@@ -322,7 +327,8 @@
         "required": [
           "conversation",
           "userMessage",
-          "streamUrl"
+          "streamUrl",
+          "resumeAfterEventSequence"
         ],
         "title": "AgentConversationEnvelope",
         "type": "object"
@@ -541,6 +547,11 @@
           "interaction": {
             "$ref": "#/components/schemas/AgentInteractionResponse"
           },
+          "resumeAfterEventSequence": {
+            "default": 0,
+            "title": "Resumeaftereventsequence",
+            "type": "integer"
+          },
           "streamUrl": {
             "anyOf": [
               {
@@ -631,6 +642,10 @@
       "AgentMessageEnvelope": {
         "additionalProperties": false,
         "properties": {
+          "resumeAfterEventSequence": {
+            "title": "Resumeaftereventsequence",
+            "type": "integer"
+          },
           "streamUrl": {
             "title": "Streamurl",
             "type": "string"
@@ -641,7 +656,8 @@
         },
         "required": [
           "userMessage",
-          "streamUrl"
+          "streamUrl",
+          "resumeAfterEventSequence"
         ],
         "title": "AgentMessageEnvelope",
         "type": "object"

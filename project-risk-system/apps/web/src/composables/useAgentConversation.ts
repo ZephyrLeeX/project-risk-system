@@ -113,6 +113,7 @@ export function useAgentConversation() {
     try {
       let streamUrl: string;
       let userMessage: AgentMessageResponse;
+      let baselineSequence: number;
       if (state.conversationId) {
         const envelope = await agentApi.continueConversation(
           state.conversationId,
@@ -120,17 +121,25 @@ export function useAgentConversation() {
         );
         streamUrl = envelope.streamUrl;
         userMessage = envelope.userMessage;
+        baselineSequence = envelope.resumeAfterEventSequence;
       } else {
         const envelope = await agentApi.create(message);
         state.conversationId = envelope.conversation.id;
         persistConversationId(envelope.conversation.id);
         streamUrl = envelope.streamUrl;
         userMessage = envelope.userMessage;
+        baselineSequence = envelope.resumeAfterEventSequence;
       }
       state.messages = [...state.messages, toStreamMessage(userMessage)];
       activeStreamUrl = streamUrl;
       state.status = "streaming";
-      await connectStream(streamUrl, null);
+      // Open the stream from the sequence baseline the POST response carried
+      // (create/continue), NOT null. The baseline is conversation
+      // .lastEventSequence snapshotted in the task-creating transaction before
+      // the worker could see the task; resuming from it replays the terminal
+      // events the worker writes in the POST→SSE gap instead of losing them
+      // (after=null re-reads the tail at GET time and opens past those events).
+      await connectStream(streamUrl, { kind: "sequence", value: baselineSequence });
     } catch (error) {
       applyRequestError(error);
     } finally {
@@ -173,7 +182,14 @@ export function useAgentConversation() {
       if (result.streamUrl) {
         activeStreamUrl = result.streamUrl;
         state.status = "streaming";
-        await connectStream(result.streamUrl, eventIdCursor(state.lastEventId));
+        // Resume the new execution from the sequence baseline the respond
+        // response carried (conversation.lastEventSequence at respond time),
+        // not the event-id cursor: the resumed execution's events are written
+        // in the POST→SSE gap and must replay instead of being lost.
+        await connectStream(result.streamUrl, {
+          kind: "sequence",
+          value: result.resumeAfterEventSequence ?? 0,
+        });
       }
     } catch (error) {
       applyRequestError(error);
@@ -373,7 +389,14 @@ export function useAgentConversation() {
         continue;
       }
       const runtime = history.runtime;
-      if (!runtime || runtime.status !== "RUNNING") {
+      // Only a terminal runtime (null — WAITING_FOR_USER and RUNNING are both
+      // active) releases the cancelling state. WAITING_FOR_USER must NOT be
+      // treated as terminal: a cancel that raced a PROJECT_SELECTION /
+      // WRITE_CONFIRMATION transition would otherwise surface a stale OPEN
+      // interaction and re-enable the input for a turn the user stopped. The
+      // backend post-core cancellation fence prevents that race; this keeps
+      // the input locked if it ever leaks through.
+      if (!runtime) {
         reconcileTerminal(history);
         return;
       }
@@ -563,7 +586,11 @@ async function waitForRuntimeInactive(
   while (Date.now() < deadline) {
     try {
       const history = await agentApi.history(conversationId);
-      if (!history.runtime || history.runtime.status !== "RUNNING") {
+      // Release only on a terminal runtime (null). WAITING_FOR_USER is still
+      // active (the turn has not drained to a terminal status), so keep
+      // polling until the deadline; the slow drain takes over if the worker
+      // is still running or has leaked a WAITING_FOR_USER race.
+      if (!history.runtime) {
         return history;
       }
     } catch {

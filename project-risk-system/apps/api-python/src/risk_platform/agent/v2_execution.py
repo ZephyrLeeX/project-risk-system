@@ -37,10 +37,13 @@ from .models import (
     AgentExecutionConfig,
     AgentExecutionStatus,
     AgentInteraction,
+    AgentInteractionAction,
     AgentInteractionStatus,
     AgentInteractionType,
     AgentMessage,
     AgentMessageRole,
+    MutationDraft,
+    MutationDraftStatus,
 )
 from .mutations import MutationConfirmationRequired
 from .schemas import CandidateRisk
@@ -139,6 +142,11 @@ class NativeAgentExecutionWorker:
             )
             return
         except MutationConfirmationRequired:
+            # The core created the OPEN WRITE_CONFIRMATION interaction + draft
+            # and moved the execution to WAITING_FOR_USER before raising; if a
+            # cancel arrived mid-proposal, abandon the proposal instead of
+            # leaving an OPEN confirmation for a cancelled turn.
+            await self._abort_write_confirmation_if_cancelled(task_id, config)
             return
         except AgentLoopError as error:
             await self._error(payload, task_id, lease_token, error.code, retryable=False)
@@ -434,6 +442,7 @@ class NativeAgentExecutionWorker:
             raise DurableTaskFailure(
                 "AGENT_EXECUTION_CONFIG_INVALID", retryable=False, summary="missing execution"
             )
+        cancelled = False
         async with self._sessions.begin() as session:
             execution = await session.scalar(
                 select(AgentExecution)
@@ -449,33 +458,68 @@ class NativeAgentExecutionWorker:
                 raise DurableTaskFailure(
                     "AGENT_EXECUTION_CONFIG_INVALID", retryable=False, summary="missing message"
                 )
-            interaction = AgentInteraction(
-                executionId=execution.id,
-                conversationId=execution.conversationId,
-                ownerUserId=execution.requestedByUserId,
-                type=AgentInteractionType.PROJECT_SELECTION,
-                status=AgentInteractionStatus.OPEN,
-                candidateOptions=[cast(JSONValue, item) for item in candidates],
-                resumeContext=execution.resumeContext,
-                expiresAt=datetime.now(UTC) + timedelta(minutes=30),
+            # Post-core cancellation fence: a cancel that landed between the
+            # core raising ProjectSelectionRequired (or a resumed
+            # selectionCandidates turn) and this state transition must not
+            # create an OPEN PROJECT_SELECTION interaction for a cancelled
+            # turn. Re-read the flag fresh in this transaction; on cancel,
+            # terminalize the execution CANCELLED here and raise OUTSIDE the
+            # ``async with`` so the terminalization commits. Raising inside
+            # would roll it back and leave the execution RUNNING: when this
+            # method is reached via the ``except ProjectSelectionRequired``
+            # handler, a raise from within that handler is NOT caught by the
+            # sibling ``except DurableTaskCancelled`` in ``__call__`` (which
+            # would otherwise terminalize), so this method must terminalize
+            # itself — mirroring ``_abort_write_confirmation_if_cancelled``.
+            # The interaction is never created (the raise precedes it), so no
+            # OPEN PROJECT_SELECTION is left for a cancelled turn.
+            fence_config = await session.scalar(
+                select(AgentExecutionConfig).where(AgentExecutionConfig.taskId == task_id)
             )
-            session.add(interaction)
-            await session.flush()
-            execution.status = AgentExecutionStatus.WAITING_FOR_USER
-            execution.updatedAt = datetime.now(UTC)
-            await self._append(
-                session,
-                execution,
-                message,
-                task_id,
-                AgentEventType.INTERACTION_REQUIRED,
-                {
-                    "interactionId": str(interaction.id),
-                    "type": interaction.type.value,
-                    "candidates": [cast(object, item) for item in candidates],
-                },
-                message.id,
-            )
+            if fence_config is None or fence_config.cancellationRequestedAt is not None:
+                now = datetime.now(UTC)
+                if execution.status not in {
+                    AgentExecutionStatus.COMPLETED,
+                    AgentExecutionStatus.CANCELLED,
+                }:
+                    execution.status = AgentExecutionStatus.CANCELLED
+                    execution.completedAt = now
+                cancelled = True
+            else:
+                interaction = AgentInteraction(
+                    executionId=execution.id,
+                    conversationId=execution.conversationId,
+                    ownerUserId=execution.requestedByUserId,
+                    type=AgentInteractionType.PROJECT_SELECTION,
+                    status=AgentInteractionStatus.OPEN,
+                    candidateOptions=[cast(JSONValue, item) for item in candidates],
+                    resumeContext=execution.resumeContext,
+                    expiresAt=datetime.now(UTC) + timedelta(minutes=30),
+                )
+                session.add(interaction)
+                await session.flush()
+                execution.status = AgentExecutionStatus.WAITING_FOR_USER
+                execution.updatedAt = datetime.now(UTC)
+                await self._append(
+                    session,
+                    execution,
+                    message,
+                    task_id,
+                    AgentEventType.INTERACTION_REQUIRED,
+                    {
+                        "interactionId": str(interaction.id),
+                        "type": interaction.type.value,
+                        "candidates": [cast(object, item) for item in candidates],
+                    },
+                    message.id,
+                )
+        # The transaction above committed either the CANCELLED terminalization
+        # (cancel fence) or the OPEN interaction + WAITING_FOR_USER (happy
+        # path). Raising outside the ``async with`` keeps the terminalization;
+        # the dispatcher's ``DurableTaskCancelled`` path then marks the task
+        # CANCELLED.
+        if cancelled:
+            raise DurableTaskCancelled
 
     async def _complete(
         self,
@@ -488,7 +532,18 @@ class NativeAgentExecutionWorker:
         active_project: ActiveProject | None = None,
     ) -> None:
         async with self._sessions.begin() as session:
-            await self._assert_fence(session, config.id, task_id, lease_token)
+            fence_config = await self._assert_fence(session, config.id, task_id, lease_token)
+            assert fence_config is not None  # _assert_fence raises when optional=False
+            # Post-core cancellation fence: a cancel that landed between the
+            # core returning and this completion must not write a normal
+            # COMPLETED assistant result for a turn the user asked to stop.
+            # _assert_fence re-read the config fresh in this transaction, so
+            # cancellationRequestedAt is current; raising here rolls the
+            # transaction back so no COMPLETED event or assistant message is
+            # appended, and the DurableTaskCancelled handler terminalizes the
+            # execution CANCELLED.
+            if fence_config.cancellationRequestedAt is not None:
+                raise DurableTaskCancelled
             conversation = await session.scalar(
                 select(AgentConversation)
                 .where(AgentConversation.id == config.conversationId)
@@ -665,6 +720,64 @@ class NativeAgentExecutionWorker:
             if execution is not None:
                 execution.status = status
                 execution.completedAt = datetime.now(UTC)
+
+    async def _abort_write_confirmation_if_cancelled(
+        self,
+        task_id: UUID,
+        config: AgentExecutionConfig,
+    ) -> None:
+        """Abandon a write proposal whose core finished during an explicit cancel.
+
+        The core creates the OPEN WRITE_CONFIRMATION interaction + draft and
+        moves the execution to WAITING_FOR_USER inside its own transaction
+        BEFORE raising ``MutationConfirmationRequired``, so by the time the
+        worker catches it the paused state already exists. Re-read the cancel
+        flag; if a cancel arrived while the core was proposing, close the
+        interaction + draft (CANCELLED), terminalize the execution CANCELLED,
+        and raise ``DurableTaskCancelled`` so the dispatcher marks the task
+        CANCELLED — leaving no OPEN confirmation for a turn the user asked to
+        stop. If no cancel is pending, return and leave the OPEN confirmation
+        for the user to resolve.
+        """
+
+        async with self._sessions.begin() as session:
+            fresh = await session.get(AgentExecutionConfig, config.id)
+            if fresh is None or fresh.cancellationRequestedAt is None:
+                return
+            execution = await session.scalar(
+                select(AgentExecution).where(AgentExecution.taskId == task_id).with_for_update()
+            )
+            if execution is None:
+                return
+            now = datetime.now(UTC)
+            if execution.status not in {
+                AgentExecutionStatus.COMPLETED,
+                AgentExecutionStatus.CANCELLED,
+            }:
+                execution.status = AgentExecutionStatus.CANCELLED
+                execution.completedAt = now
+            interaction = await session.scalar(
+                select(AgentInteraction)
+                .where(
+                    AgentInteraction.executionId == execution.id,
+                    AgentInteraction.status == AgentInteractionStatus.OPEN,
+                )
+                .with_for_update()
+            )
+            if interaction is not None:
+                interaction.status = AgentInteractionStatus.CANCELLED
+                interaction.responseAction = AgentInteractionAction.CANCEL
+                interaction.resolvedAt = now
+                draft = await session.scalar(
+                    select(MutationDraft).where(MutationDraft.interactionId == interaction.id)
+                )
+                if draft is not None:
+                    draft.status = MutationDraftStatus.CANCELLED
+                    draft.resolvedAt = now
+        # The cleanup transaction committed above; raise OUTSIDE the ``async
+        # with`` so the dispatcher's DurableTaskCancelled path marks the task
+        # CANCELLED (raising inside would roll the cleanup back).
+        raise DurableTaskCancelled
 
     async def _append(
         self,

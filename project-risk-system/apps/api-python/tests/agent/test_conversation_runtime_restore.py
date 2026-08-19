@@ -54,6 +54,7 @@ from risk_platform.agent.service import AgentConversationService
 from risk_platform.auth.schemas import AuthenticatedUser
 from risk_platform.auth.service import SessionIdentity
 from risk_platform.db import create_database_engine, create_session_factory, transaction
+from risk_platform.projects.models import Project, ProjectStatus
 from risk_platform.reliability.core import enqueue_task
 from risk_platform.reliability.models import DurableTask, DurableTaskKind, DurableTaskStatus
 from risk_platform.shared.errors import ApiError
@@ -744,5 +745,176 @@ def test_after_and_after_sequence_are_mutually_exclusive(
             )
         assert error.value.status_code == 422
         assert error.value.code == "VALIDATION_ERROR"
+
+    asyncio.run(run())
+
+
+def test_create_envelope_sequence_baseline_is_zero(
+    database: async_sessionmaker[AsyncSession],
+) -> None:
+    """A brand-new conversation's create envelope carries a zero sequence baseline.
+
+    ``resumeAfterEventSequence`` is ``conversation.lastEventSequence`` snapshotted
+    in the transaction that enqueues the durable task, before the worker can see
+    it.  A fresh conversation has written no AgentEvent, so the baseline is 0 —
+    defined where the event-id cursor would be None and cannot resume.
+    """
+
+    async def run() -> None:
+        app_service = service(database)
+        created = await app_service.create(identity(), "列出本周高风险项目")
+        assert created.resumeAfterEventSequence == 0
+
+    asyncio.run(run())
+
+
+def test_continue_envelope_sequence_baseline_is_prior_tail(
+    database: async_sessionmaker[AsyncSession],
+) -> None:
+    """A continue envelope snapshots the durable tail before the new task.
+
+    After a terminal first turn that wrote two events (PROGRESS + COMPLETED),
+    ``lastEventSequence`` is 2.  ``continue_conversation`` snapshots that value
+    inside the transaction that enqueues the next task, before it is visible to
+    the worker — so the new turn's gap events replay from ``afterSequence=2``
+    instead of being lost.
+    """
+
+    async def run() -> None:
+        app_service = service(database)
+        created = await app_service.create(identity(), "列出本周高风险项目")
+        assert created.resumeAfterEventSequence == 0
+        conversation_id = created.conversation.id
+        async with transaction(database) as session:
+            execution = await session.scalar(
+                select(AgentExecution).where(
+                    AgentExecution.conversationId == conversation_id
+                )
+            )
+            assert execution is not None
+            task = await session.get(DurableTask, execution.taskId)
+            assert task is not None
+            execution_id = execution.id
+            task_id = task.id
+        # First turn writes two events, then terminalizes.
+        async with transaction(database) as session:
+            await append_event(
+                session,
+                conversation_id=conversation_id,
+                message_id=created.userMessage.id,
+                task_id=task_id,
+                event_type=AgentEventType.PROGRESS,
+                payload={"stage": "thinking", "traceId": "t052-trace"},
+            )
+            await append_event(
+                session,
+                conversation_id=conversation_id,
+                message_id=created.userMessage.id,
+                task_id=task_id,
+                event_type=AgentEventType.COMPLETED,
+                payload={"traceId": "t052-trace"},
+            )
+        await _mark_terminal(
+            database,
+            execution_id,
+            execution_status=AgentExecutionStatus.COMPLETED,
+            task_status=DurableTaskStatus.SUCCEEDED,
+        )
+        # The continue envelope snapshots the tail (2) before enqueuing the
+        # new task; creating the USER message does not advance lastEventSequence
+        # (only AgentEvent INSERTs do, via the trigger).
+        continued = await app_service.continue_conversation(
+            identity(), conversation_id, "继续追问"
+        )
+        assert continued.resumeAfterEventSequence == 2
+
+    asyncio.run(run())
+
+
+def test_project_selection_respond_envelope_sequence_baseline_replays_gap(
+    database: async_sessionmaker[AsyncSession],
+) -> None:
+    """A PROJECT_SELECTION SELECT response snapshots the tail and closes the gap.
+
+    ``respond`` enqueues the resumed task and appends INTERACTION_RESOLVED in the
+    same transaction, then snapshots ``lastEventSequence`` (now reflecting the
+    RESOLVED event) as ``resumeAfterEventSequence``.  Resuming the stream from
+    that baseline replays the resumed execution's terminal events written in the
+    POST→SSE gap — the assistant answer is not lost.
+    """
+
+    async def run() -> None:
+        conversation_id, execution_id, interaction_id = await _seed_waiting_for_user(
+            database, interaction_type=AgentInteractionType.PROJECT_SELECTION
+        )
+        # The SELECT path re-validates the project against the real projects
+        # table (and the owner's data scope), so seed the candidate project.
+        async with transaction(database) as session:
+            session.add(
+                Project(
+                    id=UUID(_PROJECT_CANDIDATE["id"]),
+                    name=str(_PROJECT_CANDIDATE["name"]),
+                    externalCode=str(_PROJECT_CANDIDATE["externalCode"]),
+                    status=ProjectStatus.DELIVERY,
+                    createdAt=datetime.now(UTC),
+                    updatedAt=datetime.now(UTC),
+                )
+            )
+        interaction_service = AgentInteractionService(database)
+        response = await interaction_service.respond(
+            identity(),
+            interaction_id,
+            AgentInteractionRespondRequest(
+                action="SELECT", projectId=UUID(_PROJECT_CANDIDATE["id"])
+            ),
+            trace_id="t052-trace",
+        )
+        assert response.streamUrl is not None
+        baseline = response.resumeAfterEventSequence
+        # INTERACTION_RESOLVED advanced lastEventSequence past 0.
+        assert baseline >= 1
+        # The resumed execution reuses the same execution row with a new task id.
+        async with transaction(database) as session:
+            execution = await session.get(AgentExecution, execution_id)
+            assert execution is not None
+            resumed_task_id = execution.taskId
+            message_id = execution.userMessageId
+        # The resumed execution writes its terminal events in the POST→SSE gap.
+        async with transaction(database) as session:
+            await append_event(
+                session,
+                conversation_id=conversation_id,
+                message_id=message_id,
+                task_id=resumed_task_id,
+                event_type=AgentEventType.MESSAGE_DELTA,
+                payload={"text": "已选择项目", "traceId": "t052-trace"},
+            )
+            await append_event(
+                session,
+                conversation_id=conversation_id,
+                message_id=message_id,
+                task_id=resumed_task_id,
+                event_type=AgentEventType.COMPLETED,
+                payload={"traceId": "t052-trace"},
+            )
+        await _mark_terminal(
+            database,
+            execution_id,
+            execution_status=AgentExecutionStatus.COMPLETED,
+            task_status=DurableTaskStatus.SUCCEEDED,
+        )
+        # Resume from the respond baseline: the gap events replay.
+        stream = await open_event_stream(
+            database,
+            conversation_id,
+            OWNER,
+            None,
+            after_sequence=baseline,
+            poll_interval=0.001,
+        )
+        joined = b"".join([chunk async for chunk in stream]).decode()
+        assert "event: message.delta" in joined
+        assert "event: completed" in joined
+        assert "已选择项目" in joined
 
     asyncio.run(run())

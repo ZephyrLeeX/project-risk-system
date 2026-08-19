@@ -272,9 +272,22 @@ class AgentInteractionService:
                     timeoutSeconds=90,
                 )
             )
+            # Snapshot the durable event sequence in the SAME transaction that
+            # enqueues the resumed task, before it commits and the task is
+            # visible to the worker. The INTERACTION_RESOLVED event appended
+            # above already advanced lastEventSequence; this scalar re-reads
+            # the current value so the frontend opens the SSE stream with
+            # ?afterSequence=<n> and replays the resumed execution's events
+            # (the POST→SSE gap) instead of losing them.
+            resume_after_sequence = await session.scalar(
+                select(AgentConversation.lastEventSequence).where(
+                    AgentConversation.id == row.conversationId
+                )
+            )
             return AgentInteractionRespondResponse(
                 interaction=interaction_view(row),
                 streamUrl=f"/api/agent/conversations/{row.conversationId}/events",
+                resumeAfterEventSequence=int(resume_after_sequence or 0),
             )
 
     async def _write_interaction_view(

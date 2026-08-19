@@ -75,7 +75,11 @@ class AgentConversationService:
         envelope = await self._create(
             identity, message, conversation_id=conversation_id, status="continued"
         )
-        return AgentMessageEnvelope(userMessage=envelope.userMessage, streamUrl=envelope.streamUrl)
+        return AgentMessageEnvelope(
+            userMessage=envelope.userMessage,
+            streamUrl=envelope.streamUrl,
+            resumeAfterEventSequence=envelope.resumeAfterEventSequence,
+        )
 
     async def _create(
         self,
@@ -201,10 +205,19 @@ class AgentConversationService:
             )
             await session.refresh(conversation)
             await session.refresh(user_message)
+        # Snapshot the durable event sequence INSIDE the task-creating
+        # transaction, before it commits and the task becomes visible to the
+        # worker. The frontend opens the SSE stream with this sequence cursor
+        # (?afterSequence=<n>); when the worker writes the terminal
+        # MESSAGE_DELTA/COMPLETED events in the POST→SSE gap, the stream
+        # replays them instead of opening past the tail and losing the answer.
+        # lastEventSequence is 0 on a brand-new conversation (zero events),
+        # so this cursor is defined even where the event-id cursor is None.
         return AgentConversationEnvelope(
             conversation=self._conversation(conversation),
             userMessage=self._message(user_message),
             streamUrl=f"/api/agent/conversations/{conversation.id}/events",
+            resumeAfterEventSequence=conversation.lastEventSequence,
         )
 
     async def events(

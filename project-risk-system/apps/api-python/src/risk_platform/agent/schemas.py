@@ -57,14 +57,26 @@ class AgentConversationResponse(_Contract):
 
 
 class AgentConversationEnvelope(_Contract):
+    """First-turn create response; also the source for the continue envelope.
+
+    ``resumeAfterEventSequence`` is ``conversation.lastEventSequence`` snapshotted
+    in the transaction that enqueues the durable task, BEFORE that task is
+    visible to the worker. The frontend opens the SSE stream with
+    ``?afterSequence=<n>`` so the terminal events the worker writes in the
+    POST→SSE gap are replayed instead of lost (the same race
+    ``AgentConversationRuntime.resumeAfterEventSequence`` closes on restore).
+    """
+
     conversation: AgentConversationResponse
     userMessage: AgentMessageResponse
     streamUrl: str
+    resumeAfterEventSequence: int
 
 
 class AgentMessageEnvelope(_Contract):
     userMessage: AgentMessageResponse
     streamUrl: str
+    resumeAfterEventSequence: int
 
 
 class AgentInteractionResponse(_Contract):
@@ -110,6 +122,16 @@ class AgentInteractionRespondRequest(StrictRequestModel):
 class AgentInteractionRespondResponse(_Contract):
     interaction: AgentInteractionResponse
     streamUrl: str | None
+    # The SSE sequence baseline for the durable execution this response starts
+    # (PROJECT_SELECTION SELECT / MANUAL_INPUT). It is
+    # ``conversation.lastEventSequence`` snapshotted in the same transaction
+    # that enqueues the resumed task, BEFORE that task is visible to the
+    # worker — so the frontend opens the stream with ``?afterSequence=<n>``
+    # and the terminal events the worker writes in the POST→SSE gap are
+    # replayed instead of lost. ``0`` (the default) is returned by the
+    # WRITE_CONFIRMATION / interaction-CANCEL paths that start no execution
+    # (``streamUrl is None``); the frontend ignores it then.
+    resumeAfterEventSequence: int = 0
 
 
 class MutationProposalRequest(StrictRequestModel):
