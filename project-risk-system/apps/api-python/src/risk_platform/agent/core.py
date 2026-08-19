@@ -85,6 +85,7 @@ class ReadOnlyAgentCore:
         *,
         conversation_id: UUID | None = None,
         execution_id: UUID | None = None,
+        selected_project_id: UUID | None = None,
     ) -> AgentCoreOutcome:
         if self._scope.decide(message) is ScopeDecision.OUT_OF_SCOPE:
             return AgentCoreOutcome(OUT_OF_SCOPE_MESSAGE, out_of_scope=True)
@@ -122,7 +123,9 @@ class ReadOnlyAgentCore:
         ]
         definitions = tuple(
             ProviderToolDefinition(item["name"], item["description"], item["argumentsSchema"])  # type: ignore[arg-type]
-            for item in self._tools.catalogue(identity)
+            for item in self._tools.catalogue(
+                identity, selected_project_id=selected_project_id
+            )
         )
         # The candidate tuple is deliberately captured once per execution.
         # Provider-admin changes made while this loop is running must only
@@ -146,6 +149,8 @@ class ReadOnlyAgentCore:
                 calls += 1
                 if calls > self._limits.max_tool_calls:
                     raise AgentLoopError("AGENT_MAX_TOOL_CALLS")
+                if selected_project_id is not None and call.name == "project_search":
+                    raise AgentLoopError("AGENT_PROJECT_REQUERY_FORBIDDEN")
                 key = (call.name, self._canonical(call.arguments))
                 repeated[key] = repeated.get(key, 0) + 1
                 if repeated[key] > self._limits.duplicate_call_threshold:

@@ -85,8 +85,20 @@ class _Tools:
     def __init__(self) -> None:
         self.invocations = 0
 
-    def catalogue(self, _identity: SessionIdentity) -> list[dict[str, object]]:
-        return [{"name": "risk_list", "description": "risks", "argumentsSchema": {}}]
+    def catalogue(
+        self,
+        _identity: SessionIdentity,
+        *,
+        selected_project_id: object | None = None,
+    ) -> list[dict[str, object]]:
+        tools: list[dict[str, object]] = [
+            {"name": "project_search", "description": "search", "argumentsSchema": {}},
+            {"name": "project_detail", "description": "detail", "argumentsSchema": {}},
+            {"name": "risk_list", "description": "risks", "argumentsSchema": {}},
+        ]
+        if selected_project_id is not None:
+            return [item for item in tools if item["name"] != "project_search"]
+        return list(tools)
 
     async def invoke(
         self, _identity: SessionIdentity, name: str, arguments: object, *, trace_id: str
@@ -209,6 +221,7 @@ def test_project_selection_resume_keeps_server_project_identity_and_uses_exact_q
                     "status": "ACTIVE",
                 }
             ),
+            selected_project_id=project_id,
         )
     )
     first_request = cast(ProviderChatRequest, runtime.requests[0])
@@ -216,8 +229,39 @@ def test_project_selection_resume_keeps_server_project_identity_and_uses_exact_q
     assert resume_message is not None
     assert str(project_id) in resume_message
     assert "不得再次" in resume_message
+    assert {tool.name for tool in first_request.tools} == {"project_detail", "risk_list"}
     assert result.text == "已完成项目风险查询"
     assert tools.invocations == 1
+
+
+def test_project_selection_resume_rejects_hostile_project_requery() -> None:
+    project_id = uuid4()
+    runtime, tools = _Runtime(
+        [_response(ProviderToolCall("hostile-1", "project_search", {"query": "南岸"}))]
+    ), _Tools()
+
+    with pytest.raises(AgentLoopError, match="AGENT_PROJECT_REQUERY_FORBIDDEN"):
+        asyncio.run(
+            ReadOnlyAgentCore(
+                cast(ProviderV2Runtime, runtime), cast(AgentToolRegistry, tools)
+            ).run(
+                _identity(),
+                "南岸项目有什么风险?",
+                _project_selection_resume_context(
+                    {
+                        "id": str(project_id),
+                        "name": "项目 A",
+                        "externalCode": "A-001",
+                        "departmentName": "南岸事业部",
+                        "status": "ACTIVE",
+                    }
+                ),
+                selected_project_id=project_id,
+            )
+        )
+
+    assert runtime.calls == 1
+    assert tools.invocations == 0
 
 
 def test_realistic_risk_report_reaches_provider_and_tool_loop() -> None:

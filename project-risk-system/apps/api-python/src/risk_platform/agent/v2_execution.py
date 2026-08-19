@@ -161,10 +161,22 @@ class NativeAgentExecutionWorker:
 
         selected = None if execution is None else execution.resumeContext.get("selectedProject")
         context = None
+        selected_project_id = None
         if isinstance(selected, dict):
             context = _project_selection_resume_context(selected)
+            try:
+                selected_project_id = UUID(str(selected["id"]))
+            except (KeyError, TypeError, ValueError):
+                raise AgentLoopError("AGENT_EXECUTION_CONFIG_INVALID") from None
         call = asyncio.create_task(
-            self._invoke_core(identity, message.content, context, config, execution)
+            self._invoke_core(
+                identity,
+                message.content,
+                context,
+                config,
+                execution,
+                selected_project_id=selected_project_id,
+            )
         )
         started = asyncio.get_running_loop().time()
         try:
@@ -227,6 +239,8 @@ class NativeAgentExecutionWorker:
         context: str | None,
         config: AgentExecutionConfig,
         execution: AgentExecution | None,
+        *,
+        selected_project_id: UUID | None,
     ) -> AgentCoreOutcome:
         """Invoke the V2 core while keeping old test doubles source-compatible.
 
@@ -240,11 +254,28 @@ class NativeAgentExecutionWorker:
         if "conversation_id" not in parameters:
             return await self._core.run(identity, message)
         if context is None:
+            if "selected_project_id" in parameters:
+                return await self._core.run(
+                    identity,
+                    message,
+                    conversation_id=config.conversationId,
+                    execution_id=None if execution is None else execution.id,
+                    selected_project_id=selected_project_id,
+                )
             return await self._core.run(
                 identity,
                 message,
                 conversation_id=config.conversationId,
                 execution_id=None if execution is None else execution.id,
+            )
+        if "selected_project_id" in parameters:
+            return await self._core.run(
+                identity,
+                message,
+                context,
+                conversation_id=config.conversationId,
+                execution_id=None if execution is None else execution.id,
+                selected_project_id=selected_project_id,
             )
         return await self._core.run(
             identity,

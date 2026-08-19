@@ -135,6 +135,12 @@ def test_tool_registry_is_closed_and_help_is_permission_filtered() -> None:
         "weekly_report",
         "weekly_report_detail",
     }
+    assert "project_search" in {
+        item["name"] for item in registry.catalogue(identity())
+    }
+    assert "project_search" not in {
+        item["name"] for item in registry.catalogue(identity(), selected_project_id=uuid.uuid4())
+    }
     assert registry.help(identity(permissions=["agent.use"])) == []
 
     with pytest.raises(ApiError) as error:

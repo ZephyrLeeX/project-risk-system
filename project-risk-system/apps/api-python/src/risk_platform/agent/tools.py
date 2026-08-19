@@ -284,7 +284,12 @@ class AgentToolRegistry:
             provenance=f"agent-tool:{name}:{trace_id}",
         )
 
-    def catalogue(self, identity: SessionIdentity) -> list[dict[str, object]]:
+    def catalogue(
+        self,
+        identity: SessionIdentity,
+        *,
+        selected_project_id: UUID | None = None,
+    ) -> list[dict[str, object]]:
         """Return the closed Provider catalogue without callable internals."""
 
         return [
@@ -295,6 +300,7 @@ class AgentToolRegistry:
             }
             for tool in self._tools
             if set(tool.required_permissions).issubset(identity.user.permissions)
+            and not (selected_project_id is not None and tool.name == "project_search")
         ]
 
     @staticmethod
