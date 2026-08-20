@@ -1,0 +1,38 @@
+{
+  "name": "project-risk-system",
+  "version": "0.1.0",
+  "private": true,
+  "description": "项目风险管理平台正式工程",
+  "license": "UNLICENSED",
+  "packageManager": "pnpm@11.9.0",
+  "engines": {
+    "node": ">=22.13.0 <25",
+    "pnpm": ">=11.9.0 <12"
+  },
+  "scripts": {
+    "env:init": "node scripts/init-local-env.mjs",
+    "db:up": "docker compose --env-file .env -f infra/docker-compose.yml -f infra/docker-compose.host-postgres.yml up -d postgres",
+    "db:down": "docker compose --env-file .env -f infra/docker-compose.yml -f infra/docker-compose.host-postgres.yml down",
+    "db:status": "docker compose --env-file .env -f infra/docker-compose.yml -f infra/docker-compose.host-postgres.yml ps",
+    "db:logs": "docker compose --env-file .env -f infra/docker-compose.yml -f infra/docker-compose.host-postgres.yml logs --tail=100 postgres",
+    "dev": "pnpm dev:web",
+    "dev:web": "pnpm --filter @risk-platform/web dev",
+    "dev:api": "uv run --project apps/api --frozen uvicorn risk_platform.main:app --reload --host 0.0.0.0 --port 3000",
+    "build": "pnpm -r --if-present build",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm -r --if-present test",
+    "test:e2e": "playwright test --config=e2e/playwright.config.ts e2e/agent-v2.spec.ts",
+    "check": "pnpm typecheck && pnpm test && pnpm build",
+    "api:lint": "uv run --project apps/api --frozen ruff check apps/api",
+    "api:typecheck": "uv run --project apps/api --frozen mypy apps/api/src",
+    "api:test": "uv run --project apps/api --frozen pytest -ra apps/api/tests",
+    "api:check": "pnpm api:lint && pnpm api:typecheck && pnpm api:test",
+    "contracts:export": "uv run --project apps/api --frozen risk-platform-openapi packages/contracts/openapi/openapi.json",
+    "contracts:gen": "pnpm --filter @risk-platform/contracts gen",
+    "contracts:sync": "pnpm contracts:export && pnpm contracts:gen",
+    "contracts:check": "pnpm contracts:sync && git diff --exit-code -- packages/contracts/openapi packages/contracts/src/generated"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.55.0"
+  }
+}
