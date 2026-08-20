@@ -224,13 +224,12 @@ class ReadOnlyAgentCore:
         # model-level AGENT_SCOPE_POLICY (layer 2) in the system instruction
         # below rather than hard-rejected here.  Anything else stays
         # OUT_OF_SCOPE and never reaches the provider.
-        if self._scope.decide(message) is ScopeDecision.OUT_OF_SCOPE:
-            if not (
-                has_memory
-                and conversation_context is not None
-                and is_contextual_shorthand(message, conversation_context)
-            ):
-                return AgentCoreOutcome(OUT_OF_SCOPE_MESSAGE, out_of_scope=True)
+        if self._scope.decide(message) is ScopeDecision.OUT_OF_SCOPE and not (
+            has_memory
+            and conversation_context is not None
+            and is_contextual_shorthand(message, conversation_context)
+        ):
+            return AgentCoreOutcome(OUT_OF_SCOPE_MESSAGE, out_of_scope=True)
         started, calls, total = monotonic(), 0, 0
         repeated: dict[tuple[str, str], int] = {}
         resolved_active_project: ActiveProject | None = None
