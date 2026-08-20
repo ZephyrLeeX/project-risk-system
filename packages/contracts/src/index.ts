@@ -223,6 +223,8 @@ export interface RoleListItem {
   isSystem: boolean;
   enabled: boolean;
   defaultDataScope: DataScopeType;
+  /** Server-owned scope boundary (single source: admin/users/policy.py). */
+  allowedDataScopes: DataScopeType[];
   userCount: number;
   permissionCodes: string[];
   updatedAt: string;

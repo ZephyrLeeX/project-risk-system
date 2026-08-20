@@ -13384,6 +13384,13 @@
       "risk_platform__admin__roles__schemas__RoleResponse": {
         "additionalProperties": false,
         "properties": {
+          "allowedDataScopes": {
+            "items": {
+              "$ref": "#/components/schemas/DataScopeType"
+            },
+            "title": "Alloweddatascopes",
+            "type": "array"
+          },
           "code": {
             "title": "Code",
             "type": "string"
@@ -13442,6 +13449,7 @@
           "isSystem",
           "enabled",
           "defaultDataScope",
+          "allowedDataScopes",
           "userCount",
           "permissionCodes",
           "updatedAt"

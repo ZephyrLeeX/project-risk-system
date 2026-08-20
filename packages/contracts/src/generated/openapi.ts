@@ -5511,6 +5511,8 @@ export interface components {
         };
         /** RoleResponse */
         risk_platform__admin__roles__schemas__RoleResponse: {
+            /** Alloweddatascopes */
+            allowedDataScopes: components["schemas"]["DataScopeType"][];
             /** Code */
             code: string;
             defaultDataScope: components["schemas"]["DataScopeType"];
