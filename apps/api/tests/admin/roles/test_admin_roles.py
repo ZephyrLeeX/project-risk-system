@@ -186,6 +186,19 @@ def test_role_api_mutations_and_negative_audits(
             system_role = next(
                 item for item in roles.json()["data"] if item["code"] == "SYSTEM_ADMIN"
             )
+            # allowedDataScopes is served from the single source of truth in
+            # admin/users/policy.py — the frontend consumes this field instead
+            # of maintaining a second copy that can drift.
+            by_code = {item["code"]: item["allowedDataScopes"] for item in roles.json()["data"]}
+            assert by_code["SYSTEM_ADMIN"] == ["ALL"]
+            assert by_code["RISK_ADMIN"] == ["ALL", "ASSIGNED"]
+            assert by_code["PROJECT_MANAGER"] == [
+                "OWNED",
+                "ASSIGNED",
+                "OWNED_OR_ASSIGNED",
+                "NONE",
+            ]
+            assert by_code["VIEWER_AUDITOR"] == ["ASSIGNED", "NONE"]
             rejected = await client.patch(
                 f"/api/admin/roles/{system_role['id']}",
                 headers={"origin": "https://web.internal"},

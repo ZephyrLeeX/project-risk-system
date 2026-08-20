@@ -56,6 +56,8 @@ const form = reactive<UserMutationRequest>({
   enabled: true,
 });
 const ownedProjectKeyword = ref("");
+/** Transient warning when switching roles silently resets a user's data scope. */
+const scopeResetNotice = ref("");
 const oneTimePassword = ref("");
 const passwordUserName = ref("");
 /** Transient copy-success toast; never carries the password itself. */
@@ -77,19 +79,13 @@ const scopeOptions: Array<{ value: DataScopeType; label: string }> = [
   { value: "ASSIGNED", label: "被授权项目" },
   { value: "NONE", label: "无项目数据" },
 ];
-const allowedScopeValuesByRole: Partial<Record<string, DataScopeType[]>> = {
-  SYSTEM_ADMIN: ["ALL"],
-  RISK_ADMIN: ["ALL", "ASSIGNED"],
-  PROJECT_MANAGER: ["OWNED_OR_ASSIGNED", "OWNED", "ASSIGNED", "NONE"],
-  VIEWER_AUDITOR: ["ASSIGNED", "NONE"],
-};
 const selectedRole = computed(() =>
   roles.value.find((role) => role.id === form.roleId),
 );
 const availableScopeOptions = computed(() => {
-  const roleCode = selectedRole.value?.code;
-  if (!roleCode) return scopeOptions;
-  const allowed = allowedScopeValuesByRole[roleCode];
+  // The server owns the role→scope boundary (RoleResponse.allowedDataScopes,
+  // single source in apps/api admin/users/policy.py); no local copy to drift.
+  const allowed = selectedRole.value?.allowedDataScopes;
   if (!allowed) return scopeOptions;
   return scopeOptions.filter((option) => allowed.includes(option.value));
 });
@@ -183,6 +179,11 @@ watch(
     const currentScopeAllowed = availableScopeOptions.value.some(
       (option) => option.value === form.dataScope,
     );
+    if (editingUserId.value) {
+      scopeResetNotice.value = currentScopeAllowed
+        ? ""
+        : `原数据范围不适用于“${selectedRole.value.name}”，保存后将使用该角色的默认范围。`;
+    }
     if (!editingUserId.value || !currentScopeAllowed) {
       form.dataScope = selectedRole.value.defaultDataScope;
     }
@@ -304,6 +305,7 @@ function openCreate(): void {
     enabled: true,
   });
   ownedProjectKeyword.value = "";
+  scopeResetNotice.value = "";
   errorMessage.value = "";
   drawerOpen.value = true;
 }
@@ -323,6 +325,7 @@ function openEdit(user: AdminUserListItem): void {
     enabled: user.status !== "DISABLED",
   });
   ownedProjectKeyword.value = "";
+  scopeResetNotice.value = "";
   errorMessage.value = "";
   drawerOpen.value = true;
 }
@@ -793,6 +796,9 @@ function getErrorMessage(error: unknown): string {
                 <span>{{ scope.label }}</span>
               </label>
             </div>
+            <p v-if="scopeResetNotice" class="scope-reset-notice" role="status">
+              {{ scopeResetNotice }}
+            </p>
             <div v-if="selectedProjectsVisible" class="project-selector">
               <strong>指定授权项目</strong>
               <p v-if="projects.length === 0">

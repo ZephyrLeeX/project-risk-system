@@ -26,12 +26,22 @@ describe("user management owned-project binding regressions", () => {
     expect(view).toContain('v-if="ownedProjectsVisible" class="owned-project-selector"');
   });
 
-  it("limits risk admins to all or explicitly assigned projects", () => {
-    expect(view).toContain('RISK_ADMIN: ["ALL", "ASSIGNED"]');
+  it("limits scopes to the server-owned role boundary", () => {
+    // The boundary comes from RoleResponse.allowedDataScopes (single source:
+    // apps/api admin/users/policy.py) — no local role→scope copy to drift.
+    expect(view).toContain("selectedRole.value?.allowedDataScopes");
     expect(view).toContain("availableScopeOptions");
     expect(view).toContain('v-for="scope in availableScopeOptions"');
+    expect(view).not.toContain("allowedScopeValuesByRole");
     expect(view).toContain('selectedRole.value.code !== "PROJECT_MANAGER"');
     expect(view).toContain("form.ownedProjectIds = []");
+  });
+
+  it("warns instead of silently resetting an edited user's scope", () => {
+    expect(view).toContain("scopeResetNotice");
+    expect(view).toContain('v-if="scopeResetNotice" class="scope-reset-notice"');
+    expect(view).toContain("原数据范围不适用于");
+    expect(view).toContain("scopeResetNotice.value = \"\"");
   });
 
   it("offers select-all and cancel-all over the recommended projects", () => {

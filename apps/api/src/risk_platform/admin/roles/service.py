@@ -17,12 +17,21 @@ from risk_platform.admin.roles.schemas import (
     RoleResponse,
     UpdateRoleRequest,
 )
+from risk_platform.admin.users.policy import allowed_scopes_for_role
 from risk_platform.audit.models import AuditActorType
 from risk_platform.audit.service import AuditService
 from risk_platform.auth.service import SessionIdentity
 from risk_platform.db import transaction
-from risk_platform.rbac.models import Permission, Role, RolePermission, UserRole
+from risk_platform.rbac.models import DataScopeType, Permission, Role, RolePermission, UserRole
 from risk_platform.shared.errors import ApiError
+
+_SCOPE_DISPLAY_ORDER = tuple(DataScopeType)
+
+
+def _scope_order(scopes: frozenset[DataScopeType] | None) -> list[DataScopeType]:
+    """Deterministic ordering for the wire list (``None`` means unconstrained)."""
+
+    return [scope for scope in _SCOPE_DISPLAY_ORDER if scopes is None or scope in scopes]
 
 
 class AdminRolesService:
@@ -166,6 +175,7 @@ class AdminRolesService:
         updated_at = role.updatedAt
         if updated_at is None:
             raise RuntimeError("role updated timestamp was not populated")
+        allowed = allowed_scopes_for_role(role.code)
         return RoleResponse(
             id=str(role.id),
             code=role.code,
@@ -174,6 +184,9 @@ class AdminRolesService:
             isSystem=role.isSystem,
             enabled=role.enabled,
             defaultDataScope=role.defaultDataScope,
+            # Custom roles have no fixed boundary and stay unconstrained; the
+            # single source of truth is admin.users.policy (see its docstring).
+            allowedDataScopes=_scope_order(allowed),
             userCount=int(user_count or 0),
             permissionCodes=permission_codes,
             updatedAt=updated_at.astimezone(UTC).isoformat(timespec="milliseconds").replace(

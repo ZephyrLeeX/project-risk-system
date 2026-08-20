@@ -24,6 +24,7 @@ class RoleResponse(StrictRequestModel):
     isSystem: bool
     enabled: bool
     defaultDataScope: DataScopeType
+    allowedDataScopes: list[DataScopeType]
     userCount: int
     permissionCodes: list[str]
     updatedAt: str

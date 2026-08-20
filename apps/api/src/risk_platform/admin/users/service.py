@@ -16,7 +16,10 @@ from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from risk_platform.admin.models import Department, User, UserStatus
-from risk_platform.admin.users.policy import validate_scope_for_role
+from risk_platform.admin.users.policy import (
+    validate_owned_projects_for_role,
+    validate_scope_for_role,
+)
 from risk_platform.admin.users.schemas import (
     AdminUserResponse,
     DepartmentResponse,
@@ -125,6 +128,7 @@ class AdminUsersService:
             role = await self._role_or_error(session, UUID(payload.roleId))
             data_scope = DataScopeType(payload.dataScope)
             validate_scope_for_role(role.code, data_scope)
+            validate_owned_projects_for_role(role.code, payload.ownedProjectIds)
             project_ids = await self._validate_project_scopes(
                 session, data_scope, payload.projectIds
             )
@@ -164,6 +168,7 @@ class AdminUsersService:
             role = await self._role_or_error(session, UUID(payload.roleId))
             data_scope = DataScopeType(payload.dataScope)
             validate_scope_for_role(role.code, data_scope)
+            validate_owned_projects_for_role(role.code, payload.ownedProjectIds)
             project_ids = await self._validate_project_scopes(
                 session, data_scope, payload.projectIds
             )
