@@ -55,6 +55,30 @@ class AgentConversationResponse(_Contract):
     lastEventSequence: int
 
 
+class AgentConversationListItem(_Contract):
+    """Lightweight row for the "my history" list.
+
+    ``title`` is derived from the conversation's first USER message (trimmed to
+    ~40 characters, falling back to "新会话" when the conversation has no user
+    text). It is NOT a stored column — no migration is needed. ``updatedAt``
+    drives the DESC ordering the list is served in.
+    """
+
+    id: UUID
+    title: str
+    createdAt: datetime
+    updatedAt: datetime
+    activeProjectName: str | None
+    lastMessageSequence: int
+
+
+class AgentConversationListPage(_Contract):
+    items: list[AgentConversationListItem]
+    page: int
+    pageSize: int
+    total: int
+
+
 class AgentConversationEnvelope(_Contract):
     """First-turn create response; also the source for the continue envelope.
 
@@ -428,6 +452,8 @@ __all__ = [
     "AgentConfirmationResponse",
     "AgentConversationEnvelope",
     "AgentConversationHistory",
+    "AgentConversationListItem",
+    "AgentConversationListPage",
     "AgentConversationResponse",
     "AgentConversationRuntime",
     "AgentHelpResponse",

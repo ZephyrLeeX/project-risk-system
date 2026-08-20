@@ -1,3 +1,4 @@
+import { isReactive, reactive, ref } from "vue";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -105,5 +106,62 @@ describe("system config overview contract", () => {
     const publishResponse = requireSystemConfigOverview(overview());
 
     expect(cloneConfigSnapshot(publishResponse.snapshot)).toEqual(snapshot());
+  });
+});
+
+describe("cloneConfigSnapshot with Vue reactive proxies", () => {
+  // Regression: SystemConfigView passes ``original.value`` / ``draft.value``
+  // (deeply reactive ``ref`` values) into ``cloneConfigSnapshot`` on
+  // 放弃更改 / 保存并发布. ``structuredClone`` throws ``DataCloneError`` on
+  // those Proxies, which used to surface as SystemConfigContractError and
+  // froze the page.
+
+  it("clones a reactive() snapshot without throwing and returns a plain copy", () => {
+    const source = reactive(snapshot());
+    const clone = cloneConfigSnapshot(source);
+
+    expect(clone).toEqual(snapshot());
+    expect(isReactive(clone)).toBe(false);
+
+    clone.mail.syncIntervalMinutes = 60;
+    expect(source.mail.syncIntervalMinutes).toBe(30);
+  });
+
+  it("clones the value of a ref() snapshot without throwing and returns a plain copy", () => {
+    const source = ref(snapshot());
+    const clone = cloneConfigSnapshot(source.value);
+
+    expect(clone).toEqual(snapshot());
+    expect(isReactive(clone)).toBe(false);
+
+    clone.aliases.push({
+      id: null,
+      projectId: "p1",
+      projectName: "项目A",
+      projectCode: null,
+      projectOwnerName: null,
+      alias: "A",
+      source: "manual",
+      note: null,
+      isActive: true,
+      hitCount: 0,
+      lastHitAt: null,
+    });
+    expect(source.value.aliases).toHaveLength(0);
+  });
+
+  it("still throws the controlled contract error for a non-snapshot proxy", () => {
+    const proxy = reactive({ not: "a snapshot" });
+
+    expect(() => cloneConfigSnapshot(proxy)).toThrow(SYSTEM_CONFIG_CONTRACT_ERROR);
+  });
+
+  it("still deep-copies a plain (non-proxy) snapshot", () => {
+    const plain = snapshot();
+    const clone = cloneConfigSnapshot(plain);
+
+    clone.categories[0]!.name = "改";
+    expect(plain.categories[0]!.name).toBe("交付风险");
+    expect(clone.categories[0]!.name).toBe("改");
   });
 });

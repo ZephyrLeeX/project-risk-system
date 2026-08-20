@@ -715,9 +715,9 @@ export interface DashboardRiskDetail extends DashboardRiskListItem {
 }
 
 export interface ResolvedRiskListItem extends DashboardRiskListItem {
-  resolvedAt: string;
-  resolvedByName: string;
-  resolutionReason: string;
+  resolvedAt: string | null;
+  resolvedByName: string | null;
+  resolutionReason: string | null;
 }
 
 export interface ResolvedRiskListResponse

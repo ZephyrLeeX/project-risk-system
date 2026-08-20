@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, toRaw } from "vue";
 
 import type {
   ConfigRiskLevel,
@@ -108,13 +108,17 @@ function discardChanges(): void {
 function openCategory(index?: number): void {
   editingCategoryIndex.value = index ?? null;
   const existing = index === undefined ? undefined : draft.value?.categories[index];
-  categoryForm.value = existing ? structuredClone(existing) : emptyCategory();
+  // ``existing`` is a deep reactive Proxy (``draft`` is a ``ref``), which
+  // ``structuredClone`` rejects with ``DataCloneError`` — unwrap it first.
+  categoryForm.value = existing ? structuredClone(toRaw(existing)) : emptyCategory();
   categoryOpen.value = true;
 }
 
 function saveCategory(): void {
   if (!draft.value) return;
-  const form = categoryForm.value;
+  // ``categoryForm.value`` is a deep reactive Proxy (``ref``), so unwrap
+  // before cloning into the draft — same ``structuredClone`` Proxy guard.
+  const form = toRaw(categoryForm.value);
   form.code = form.code.trim().toUpperCase().replace(/[\s-]+/g, "_");
   form.name = form.name.trim();
   form.keywords = [...new Set(form.keywords.map((item) => item.trim()).filter(Boolean))];

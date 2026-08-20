@@ -927,7 +927,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** List Conversations */
+        get: operations["list_conversations_api_agent_conversations_get"];
         put?: never;
         /** Create */
         post: operations["create_api_agent_conversations_post"];
@@ -1995,6 +1996,49 @@ export interface components {
             nextMessageSequence: number;
             runtime?: components["schemas"]["AgentConversationRuntime"] | null;
         };
+        /**
+         * AgentConversationListItem
+         * @description Lightweight row for the "my history" list.
+         *
+         *     ``title`` is derived from the conversation's first USER message (trimmed to
+         *     ~40 characters, falling back to "新会话" when the conversation has no user
+         *     text). It is NOT a stored column — no migration is needed. ``updatedAt``
+         *     drives the DESC ordering the list is served in.
+         */
+        AgentConversationListItem: {
+            /** Activeprojectname */
+            activeProjectName: string | null;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Lastmessagesequence */
+            lastMessageSequence: number;
+            /** Title */
+            title: string;
+            /**
+             * Updatedat
+             * Format: date-time
+             */
+            updatedAt: string;
+        };
+        /** AgentConversationListPage */
+        AgentConversationListPage: {
+            /** Items */
+            items: components["schemas"]["AgentConversationListItem"][];
+            /** Page */
+            page: number;
+            /** Pagesize */
+            pageSize: number;
+            /** Total */
+            total: number;
+        };
         /** AgentConversationResponse */
         AgentConversationResponse: {
             /**
@@ -2241,6 +2285,16 @@ export interface components {
             /** Code */
             code: string;
             data: components["schemas"]["AgentConversationHistory"];
+            /** Message */
+            message: string;
+            /** Traceid */
+            traceId: string;
+        };
+        /** ApiResponse[AgentConversationListPage] */
+        ApiResponse_AgentConversationListPage_: {
+            /** Code */
+            code: string;
+            data: components["schemas"]["AgentConversationListPage"];
             /** Message */
             message: string;
             /** Traceid */
@@ -5257,11 +5311,71 @@ export interface components {
         };
         /** ReleaseRetentionHoldRequest */
         ReleaseRetentionHoldRequest: Record<string, never>;
+        /**
+         * ResolvedRiskItem
+         * @description A resolved risk list item carrying the resolution record inline.
+         *
+         *     The resolved list must return these fields directly from the same
+         *     DataScope/RBAC query as ``RiskItem`` (the row already joins the resolver
+         *     user) so the frontend never fans out to per-risk ``RiskDetail`` calls.
+         */
+        ResolvedRiskItem: {
+            /** Actualcollectedamountyuan */
+            actualCollectedAmountYuan: string | null;
+            category: components["schemas"]["RiskCategoryOption"];
+            /** Departmentname */
+            departmentName: string | null;
+            /** Description */
+            description: string;
+            /** Detectedat */
+            detectedAt: string;
+            /** Evidence */
+            evidence: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            level: components["schemas"]["ProjectRiskLevel"];
+            /** Projectexternalcode */
+            projectExternalCode: string | null;
+            /**
+             * Projectid
+             * Format: uuid
+             */
+            projectId: string;
+            /** Projectname */
+            projectName: string;
+            /** Projectownername */
+            projectOwnerName: string | null;
+            /** Remainingamountyuan */
+            remainingAmountYuan: string | null;
+            /** Reportername */
+            reporterName: string | null;
+            /** Resolutionreason */
+            resolutionReason: string | null;
+            /** Resolvedat */
+            resolvedAt: string | null;
+            /** Resolvedbyname */
+            resolvedByName: string | null;
+            /** Sourcelabel */
+            sourceLabel: string;
+            sourceType: components["schemas"]["RiskSourceType"];
+            status: components["schemas"]["RiskStatus"];
+            /** Suggestion */
+            suggestion: string | null;
+            /** Title */
+            title: string;
+            /** Updatedat */
+            updatedAt: string;
+            /** Weekcode */
+            weekCode: string | null;
+        };
         /** ResolvedRiskPage */
         ResolvedRiskPage: {
             dataScope: components["schemas"]["DataScopeType"];
             /** Items */
-            items: components["schemas"]["RiskItem"][];
+            items: components["schemas"]["ResolvedRiskItem"][];
             /** Owners */
             owners: string[];
             /** Page */
@@ -8262,6 +8376,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiResponse_AgentConfirmationResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_conversations_api_agent_conversations_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                pageSize?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_AgentConversationListPage_"];
                 };
             };
             /** @description Validation Error */

@@ -29,7 +29,7 @@ from risk_platform.projects.models import Project, ProjectRiskLevel
 from risk_platform.rbac.models import DataScopeType, UserProjectScope
 from risk_platform.risks.api import get_risks_service
 from risk_platform.risks.api import router as risks_router
-from risk_platform.risks.models import Risk, RiskCategory, RiskSourceType
+from risk_platform.risks.models import Risk, RiskCategory, RiskSourceType, RiskStatus
 from risk_platform.risks.service import RisksService
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -211,6 +211,78 @@ def test_dashboard_routes_apply_all_five_scopes_and_do_not_leak(
             else:
                 assert detail.status_code == 404
                 assert detail.json()["code"] == "NOT_FOUND"
+        finally:
+            await client.aclose()
+
+    asyncio.run(scenario())
+
+
+def test_resolved_risk_list_returns_resolution_record_inline_without_fanout(
+    dashboard_database: async_sessionmaker[AsyncSession],
+) -> None:
+    """The resolved list carries the resolution record on each item directly.
+
+    The frontend renders resolvedAt / resolvedByName / resolutionReason from the
+    list payload (never a per-item RiskDetail fan-out). This test asserts the
+    fields are present on the scoped query and that the DataScope filter still
+    applies to resolved risks.
+    """
+
+    async def scenario() -> None:
+        async with transaction(dashboard_database) as session:
+            now = datetime.now(UTC)
+            owned_id = await session.scalar(select(Project.id).where(Project.name == "本人负责"))
+            outside_id = await session.scalar(select(Project.id).where(Project.name == "范围外"))
+            category_id = await session.scalar(
+                select(RiskCategory.id).where(RiskCategory.code == "T020")
+            )
+            assert owned_id is not None and outside_id is not None and category_id is not None
+            session.add_all(
+                (
+                    Risk(
+                        projectId=owned_id,
+                        categoryId=category_id,
+                        title="已解除本人风险",
+                        description="已解除本人风险",
+                        level=ProjectRiskLevel.HIGH,
+                        sourceType=RiskSourceType.MANUAL,
+                        dedupeFingerprint="t020-resolved-owned",
+                        detectedAt=now,
+                        status=RiskStatus.RESOLVED,
+                        resolvedAt=now,
+                        resolvedById=USER_ID,
+                        resolutionReason="整改完成，已验收",  # noqa: RUF001
+                    ),
+                    Risk(
+                        projectId=outside_id,
+                        categoryId=category_id,
+                        title="范围外已解除风险",
+                        description="范围外已解除风险",
+                        level=ProjectRiskLevel.HIGH,
+                        sourceType=RiskSourceType.MANUAL,
+                        dedupeFingerprint="t020-resolved-outside",
+                        detectedAt=now,
+                        status=RiskStatus.RESOLVED,
+                        resolvedAt=now,
+                        resolvedById=USER_ID,
+                        resolutionReason="范围外解除",
+                    ),
+                )
+            )
+        client = await _client(dashboard_database, _identity(DataScopeType.OWNED))
+        try:
+            resolved = await client.get("/api/risks/resolved")
+            assert resolved.status_code == 200
+            payload = resolved.json()
+            assert payload["code"] == "OK"
+            items = payload["data"]["items"]
+            assert {item["title"] for item in items} == {"已解除本人风险"}
+            item = next(item for item in items if item["title"] == "已解除本人风险")
+            assert {"resolvedAt", "resolvedByName", "resolutionReason"} <= item.keys()
+            assert item["status"] == "RESOLVED"
+            assert item["resolvedByName"] == "T020"
+            assert item["resolutionReason"] == "整改完成，已验收"  # noqa: RUF001
+            assert item["resolvedAt"] is not None
         finally:
             await client.aclose()
 

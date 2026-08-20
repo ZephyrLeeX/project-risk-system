@@ -124,12 +124,22 @@ export function requireSystemConfigOverview(value: unknown): SystemConfigOvervie
 }
 
 export function cloneConfigSnapshot(value: unknown): SystemConfigSnapshot {
+  // Validation first: never clone an unvalidated payload, and never let a
+  // clone failure stand in for a malformed one.
   if (!isConfigSnapshot(value)) {
     throw new SystemConfigContractError();
   }
 
+  // ``isConfigSnapshot`` guarantees the value is pure JSON data (primitives,
+  // string arrays, plain objects), so a JSON round-trip is an exact deep
+  // copy. Unlike ``structuredClone`` it is safe for Vue reactive ``ref()`` /
+  // ``reactive()`` Proxies, which ``structuredClone`` rejects with
+  // ``DataCloneError`` — SystemConfigView passes ``original.value`` /
+  // ``draft.value`` (reactive refs) here. The try/catch only normalizes a
+  // genuinely un-serializable input (e.g. a circular extra property) into the
+  // controlled contract error; it never swallows a real failure.
   try {
-    return structuredClone(value);
+    return JSON.parse(JSON.stringify(value)) as SystemConfigSnapshot;
   } catch {
     throw new SystemConfigContractError();
   }

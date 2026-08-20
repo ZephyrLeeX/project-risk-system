@@ -28,6 +28,10 @@ export type AgentInteractionResponse =
   OpenApi.components["schemas"]["AgentInteractionRespondResponse"];
 export type AgentInteractionRequest =
   OpenApi.components["schemas"]["AgentInteractionRespondRequest"];
+export type AgentConversationListItem =
+  OpenApi.components["schemas"]["AgentConversationListItem"];
+export type AgentConversationListPage =
+  OpenApi.components["schemas"]["AgentConversationListPage"];
 
 export interface AgentMessageQuery {
   afterSequence?: number;
@@ -71,6 +75,22 @@ export const agentApi = {
     return (
       await apiRequest<AgentConversationHistory>(
         `/agent/conversations/${encodeURIComponent(conversationId)}`,
+      )
+    ).data;
+  },
+
+  /** My accessible conversations, newest activity first (`GET /agent/conversations`). */
+  async listConversations(
+    page = 1,
+    pageSize = 20,
+  ): Promise<AgentConversationListPage> {
+    const params = new URLSearchParams({
+      page: String(page),
+      pageSize: String(pageSize),
+    });
+    return (
+      await apiRequest<AgentConversationListPage>(
+        `/agent/conversations?${params.toString()}`,
       )
     ).data;
   },

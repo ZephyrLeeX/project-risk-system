@@ -26,13 +26,16 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID, uuid4
 
+import httpx2
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, func, select, text
+from sqlalchemy import create_engine, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from risk_platform.admin.models import User
+from risk_platform.agent.api import get_agent_service
+from risk_platform.agent.api import router as agent_router
 from risk_platform.agent.events import append_event, open_event_stream
 from risk_platform.agent.interaction import AgentInteractionService
 from risk_platform.agent.models import (
@@ -54,8 +57,11 @@ from risk_platform.agent.models import (
 )
 from risk_platform.agent.schemas import AgentInteractionRespondRequest
 from risk_platform.agent.service import AgentConversationService
+from risk_platform.app import AppComposition, create_app
+from risk_platform.auth.api import current_identity
 from risk_platform.auth.schemas import AuthenticatedUser
 from risk_platform.auth.service import SessionIdentity
+from risk_platform.config import Settings
 from risk_platform.db import create_database_engine, create_session_factory, transaction
 from risk_platform.projects.models import Project, ProjectStatus
 from risk_platform.reliability.core import enqueue_task
@@ -1166,3 +1172,254 @@ def test_write_confirmation_cancel_terminalizes_execution_and_continues(
         assert continued.userMessage.content == "继续追问"
 
     asyncio.run(run())
+
+
+async def _seed_history_conversation(
+    factory: async_sessionmaker[AsyncSession],
+    *,
+    owner: UUID,
+    first_user_message: str | None,
+    updated_at: datetime,
+    expires_in: timedelta = timedelta(days=90),
+) -> UUID:
+    """Seed a conversation the list endpoint should serve (no execution needed)."""
+
+    async with transaction(factory) as session:
+        now = datetime.now(UTC)
+        conversation = AgentConversation(
+            ownerUserId=owner,
+            createdAt=now,
+            updatedAt=updated_at,
+            expiresAt=now + expires_in,
+            retentionConfigVersion="test",
+            activeProjectName="南岸项目" if first_user_message else None,
+        )
+        session.add(conversation)
+        await session.flush()
+        if first_user_message is not None:
+            session.add(
+                AgentMessage(
+                    conversationId=conversation.id,
+                    sequence=1,
+                    role=AgentMessageRole.USER,
+                    content=first_user_message,
+                    traceId="t052-trace",
+                    dataAsOf=now,
+                )
+            )
+            # The assign-sequence trigger bumps updatedAt to CURRENT_TIMESTAMP on
+            # message insert. Flush the message first so that trigger runs, then
+            # restore the seeded value with a direct UPDATE the trigger can no
+            # longer clobber. (Re-assigning the Python attribute would be a no-op:
+            # the session still tracks the value set at construction.)
+            await session.flush()
+            await session.execute(
+                update(AgentConversation)
+                .where(AgentConversation.id == conversation.id)
+                .values(updatedAt=updated_at)
+            )
+        return conversation.id
+
+
+def test_conversation_list_is_owner_scoped_ordered_and_paginated(
+    database: async_sessionmaker[AsyncSession],
+) -> None:
+    """GET /agent/conversations returns only the caller's accessible rows.
+
+    Owner scope, expiry exclusion, ``updatedAt`` DESC ordering, pagination and
+    first-USER-message title derivation are pinned here. A conversation owned by
+    another user never leaks into the caller's page.
+    """
+
+    # The module schema is shared with the sibling tests (all seeded under
+    # ``OWNER``), so this test isolates its rows behind dedicated owner UUIDs
+    # instead of reusing the module constants.
+    list_owner = UUID("00000000-0000-0000-0000-000000000071")
+    list_other = UUID("00000000-0000-0000-0000-000000000072")
+
+    async def scenario() -> None:
+        # The dedicated owners must exist as users (ownerUserId is FK-bound).
+        async with transaction(database) as session:
+            session.add_all(
+                (
+                    User(
+                        id=list_owner,
+                        username="t052-list-owner",
+                        passwordHash="not-a-real-password-hash",
+                        displayName="T052 List Owner",
+                    ),
+                    User(
+                        id=list_other,
+                        username="t052-list-other",
+                        passwordHash="not-a-real-password-hash",
+                        displayName="T052 List Other",
+                    ),
+                )
+            )
+        base = datetime.now(UTC)
+        latest = await _seed_history_conversation(
+            database,
+            owner=list_owner,
+            first_user_message=" 列出本周全部高风险项目 ",
+            updated_at=base,
+        )
+        middle = await _seed_history_conversation(
+            database,
+            owner=list_owner,
+            first_user_message=(
+                "这是用于测试标题截断的一段非常长非常长的用户消息，"  # noqa: RUF001
+                "用来验证超过四十个字符时会显示省略号"
+            ),
+            updated_at=base - timedelta(minutes=30),
+        )
+        oldest = await _seed_history_conversation(
+            database,
+            owner=list_owner,
+            first_user_message=None,
+            updated_at=base - timedelta(hours=1),
+        )
+        # A conversation owned by another user must never surface for the caller.
+        other_id = await _seed_history_conversation(
+            database,
+            owner=list_other,
+            first_user_message="别人的会话",
+            updated_at=base - timedelta(minutes=20),
+        )
+        # An expired conversation is not "仍可访问" and is excluded.
+        await _seed_history_conversation(
+            database,
+            owner=list_owner,
+            first_user_message="已过期会话",
+            updated_at=base - timedelta(minutes=10),
+            expires_in=timedelta(seconds=-1),
+        )
+
+        svc = service(database)
+        page = await svc.list_conversations(identity(list_owner), page=1, pageSize=2)
+        assert page.total == 3
+        assert page.page == 1
+        assert page.pageSize == 2
+        # updatedAt DESC: latest, then middle; expired and other-owner are absent.
+        assert [item.id for item in page.items] == [latest, middle]
+        # Title from the first USER message: trimmed, truncated ~40 chars.
+        assert page.items[0].title == "列出本周全部高风险项目"
+        assert page.items[0].activeProjectName == "南岸项目"
+        assert page.items[0].lastMessageSequence == 1
+        long_title = (
+            "这是用于测试标题截断的一段非常长非常长的用户消息，"  # noqa: RUF001
+            "用来验证超过四十个字符时会显示省略号"
+        )
+        assert page.items[1].title == f"{long_title[:40]}…"
+
+        rest = await svc.list_conversations(identity(list_owner), page=2, pageSize=2)
+        assert [item.id for item in rest.items] == [oldest]
+        assert rest.items[0].title == "新会话"
+        assert rest.items[0].lastMessageSequence == 0
+
+        other_page = await svc.list_conversations(identity(list_other), page=1, pageSize=20)
+        assert [item.id for item in other_page.items] == [other_id]
+        assert other_page.total == 1
+
+    asyncio.run(scenario())
+
+
+def test_conversations_list_route_returns_owner_page_and_forbids_without_permission(
+    database: async_sessionmaker[AsyncSession],
+) -> None:
+    """GET /api/agent/conversations is permission-gated and owner-scoped end-to-end."""
+
+    list_owner = UUID("00000000-0000-0000-0000-000000000073")
+    list_other = UUID("00000000-0000-0000-0000-000000000074")
+
+    async def scenario() -> None:
+        async with transaction(database) as session:
+            session.add_all(
+                (
+                    User(
+                        id=list_owner,
+                        username="t052-route-owner",
+                        passwordHash="not-a-real-password-hash",
+                        displayName="T052 Route Owner",
+                    ),
+                    User(
+                        id=list_other,
+                        username="t052-route-other",
+                        passwordHash="not-a-real-password-hash",
+                        displayName="T052 Route Other",
+                    ),
+                )
+            )
+        base = datetime.now(UTC)
+        owned_id = await _seed_history_conversation(
+            database,
+            owner=list_owner,
+            first_user_message="路由测试会话",
+            updated_at=base,
+        )
+        other_id = await _seed_history_conversation(
+            database,
+            owner=list_other,
+            first_user_message="不应泄漏的会话",
+            updated_at=base - timedelta(minutes=1),
+        )
+
+        service_instance = AgentConversationService(
+            database, trace_id=lambda: "t052-trace"
+        )
+
+        async def override_identity(user_id: UUID, *, agent_use: bool) -> SessionIdentity:
+            permissions = ["agent.use"] if agent_use else []
+            return SessionIdentity(
+                session_id=uuid.uuid4(),
+                expires_at=datetime.now(UTC) + timedelta(hours=1),
+                user=AuthenticatedUser(
+                    id=str(user_id),
+                    username="t052",
+                    displayName="T052",
+                    departmentName=None,
+                    roleCodes=["PROJECT_MANAGER"],
+                    permissions=permissions,
+                    dataScope="ALL",
+                    mustChangePassword=False,
+                ),
+            )
+
+        async def identity_owner() -> SessionIdentity:
+            return await override_identity(list_owner, agent_use=True)
+
+        async def identity_owner_no_permission() -> SessionIdentity:
+            return await override_identity(list_owner, agent_use=False)
+
+        def build_app(identity_override: object) -> httpx2.AsyncClient:
+            app = create_app(
+                Settings(environment="test", cors_origins=("https://web.internal",)),
+                AppComposition(
+                    routers=(agent_router,),
+                    dependency_overrides={
+                        current_identity: identity_override,
+                        get_agent_service: lambda: service_instance,
+                    },
+                ),
+            )
+            return httpx2.AsyncClient(
+                transport=httpx2.ASGITransport(app=app), base_url="https://testserver"
+            )
+
+        async with build_app(identity_owner) as client:
+            response = await client.get("/api/agent/conversations?page=1&pageSize=10")
+            assert response.status_code == 200
+            body = response.json()["data"]
+            assert body["total"] == 1
+            assert [item["id"] for item in body["items"]] == [str(owned_id)]
+            assert body["items"][0]["title"] == "路由测试会话"
+
+        # Without agent.use the guard rejects before any service work.
+        async with build_app(identity_owner_no_permission) as client:
+            response = await client.get("/api/agent/conversations")
+            assert response.status_code == 403
+            assert response.json()["code"] == "FORBIDDEN"
+
+        # The other owner's row never surfaces for list_owner.
+        assert other_id != owned_id
+
+    asyncio.run(scenario())

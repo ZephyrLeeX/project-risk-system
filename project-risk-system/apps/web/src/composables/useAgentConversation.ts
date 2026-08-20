@@ -1,4 +1,4 @@
-import { onScopeDispose, reactive, ref } from "vue";
+import { computed, onScopeDispose, reactive, ref } from "vue";
 
 import {
   agentApi,
@@ -249,55 +249,7 @@ export function useAgentConversation() {
     state.error = null;
     try {
       const history = await agentApi.history(conversationId);
-      state.conversationId = history.conversation.id;
-      state.messages = history.messages
-        .filter((message) => message.role === "USER" || message.role === "ASSISTANT")
-        .map(toStreamMessage);
-      state.streamingText = "";
-      state.progress = null;
-      const runtime = history.runtime;
-      if (runtime && runtime.status === "RUNNING" && runtime.streamUrl) {
-        if (runtime.cancellationRequested) {
-          // A refresh during an explicit cancel: the worker is still RUNNING
-          // but the cancel flag is set, so do NOT reopen the normal stream (it
-          // would race the draining turn) and do NOT re-enable the input. Stay
-          // "cancelling" and poll the runtime on the slow cadence until the
-          // worker reaches a terminal status, then reconcile.  (ADR 0036: the
-          // closed AgentExecution.status enum has no CANCELLING value, so
-          // cancellationRequested is the restore signal.)
-          activeStreamUrl = null;
-          state.status = "cancelling";
-          void drainCancellation(history.conversation.id);
-        } else {
-          // A refresh mid-turn reattaches to the SAME durable execution instead
-          // of forcing a re-send.  The stream resumes from the snapshot
-          // sequence cursor (resumeAfterEventSequence → ?afterSequence=<n>),
-          // NOT null and NOT the event-id cursor: when the worker writes the
-          // terminal MESSAGE_DELTA/COMPLETED events in the gap between this
-          // history response and the SSE GET, after=null re-reads the
-          // conversation tail at request time and the stream opens *after*
-          // those events, observes a terminal task, and closes with no event —
-          // the UI goes disconnected and the assistant answer is lost. The
-          // sequence cursor is always defined (a brand-new turn is 0, where the
-          // event-id cursor is null), so it is the only cursor that also closes
-          // the zero-event race.
-          activeStreamUrl = runtime.streamUrl;
-          state.status = "streaming";
-          await connectStream(runtime.streamUrl, {
-            kind: "sequence",
-            value: runtime.resumeAfterEventSequence ?? 0,
-          });
-        }
-      } else if (runtime && runtime.status === "WAITING_FOR_USER" && runtime.interaction) {
-        // Redisplay the OPEN interaction (project selection / write
-        // confirmation draft) so the user can resolve it without re-typing.
-        state.interaction = runtime.interaction;
-        state.status = "completed";
-      } else {
-        // COMPLETED / FAILED / CANCELLED / none — the turn is final and the
-        // restored messages are the source of truth.
-        state.status = state.messages.length ? "completed" : "idle";
-      }
+      await applyHistory(history);
     } catch (error) {
       // 404 / expired / revoked: drop the stale reference so the next send
       // starts a fresh conversation instead of looping on a dead id.
@@ -306,6 +258,107 @@ export function useAgentConversation() {
       }
     } finally {
       sending.value = false;
+    }
+  }
+
+  /**
+   * True while the conversation must not be switched away from.
+   *
+   * A live RUNNING stream, an explicit cancel still draining, a request in
+   * flight, or an OPEN interaction (project selection / write confirmation)
+   * all own the current turn.  Silently swapping the visible conversation under
+   * them would tear down the durable execution's stream handle or discard the
+   * interaction the user is answering.  The history list is disabled (and
+   * {@link switchToConversation} refuses) in these states.
+   */
+  const historySwitchDisabled = computed(
+    () =>
+      sending.value ||
+      state.status === "streaming" ||
+      state.status === "cancelling" ||
+      (state.interaction !== null && state.interaction.status === "OPEN"),
+  );
+
+  /**
+   * Switch the visible conversation to another owned conversation.
+   *
+   * Fetches the target via the same `history` surface used on refresh
+   * ({@link restore}) and applies it through the shared {@link applyHistory},
+   * then persists the new id as the restore reference.  The current
+   * conversation's transient stream handle is safely dropped (abort + clear the
+   * resume URL + bump the drain generation so any slow cancel-poll loop stops),
+   * but the durable execution is NEVER cancelled here — only an explicit
+   * `POST /cancel` (via {@link cancel}) stops a live turn, and the guard above
+   * prevents this path from running while one is active.
+   */
+  async function switchToConversation(conversationId: string): Promise<void> {
+    if (historySwitchDisabled.value || conversationId === state.conversationId) {
+      return;
+    }
+    abortStream();
+    activeStreamUrl = null;
+    lastInteractionBody = null;
+    drainGeneration += 1;
+    sending.value = true;
+    state.error = null;
+    try {
+      const history = await agentApi.history(conversationId);
+      await applyHistory(history);
+      persistConversationId(history.conversation.id);
+    } catch (error) {
+      applyRequestError(error);
+    } finally {
+      sending.value = false;
+    }
+  }
+
+  /** Shared history-application logic used by restore and history switching. */
+  async function applyHistory(history: AgentConversationHistory): Promise<void> {
+    state.conversationId = history.conversation.id;
+    state.messages = history.messages
+      .filter((message) => message.role === "USER" || message.role === "ASSISTANT")
+      .map(toStreamMessage);
+    state.streamingText = "";
+    state.progress = null;
+    const runtime = history.runtime;
+    if (runtime && runtime.status === "RUNNING" && runtime.streamUrl) {
+      if (runtime.cancellationRequested) {
+        // A switch into a conversation mid-explicit-cancel: the worker is still
+        // RUNNING but the cancel flag is set, so do NOT reopen the normal
+        // stream (it would race the draining turn) and do NOT re-enable the
+        // input. Stay "cancelling" and poll the runtime on the slow cadence
+        // until the worker reaches a terminal status, then reconcile.
+        activeStreamUrl = null;
+        state.status = "cancelling";
+        void drainCancellation(history.conversation.id);
+      } else {
+        // Reattaches to the SAME durable execution instead of forcing a
+        // re-send. The stream resumes from the snapshot sequence cursor
+        // (resumeAfterEventSequence → ?afterSequence=<n>), NOT null and NOT the
+        // event-id cursor: when the worker writes the terminal
+        // MESSAGE_DELTA/COMPLETED events in the gap between this history
+        // response and the SSE GET, after=null re-reads the conversation tail
+        // at request time and the stream opens *after* those events, observes
+        // a terminal task, and closes with no event — the UI goes disconnected
+        // and the assistant answer is lost. The sequence cursor is always
+        // defined (a brand-new turn is 0, where the event-id cursor is null),
+        // so it is the only cursor that also closes the zero-event race.
+        activeStreamUrl = runtime.streamUrl;
+        state.status = "streaming";
+        await connectStream(runtime.streamUrl, {
+          kind: "sequence",
+          value: runtime.resumeAfterEventSequence ?? 0,
+        });
+      }
+    } else if (runtime && runtime.status === "WAITING_FOR_USER" && runtime.interaction) {
+      // Redisplay the OPEN interaction (project selection / write
+      // confirmation draft) so the user can resolve it without re-typing.
+      state.interaction = runtime.interaction;
+      state.status = "completed";
+    } else {
+      // COMPLETED / FAILED / CANCELLED / none — the turn is final and the
+      // restored messages are the source of truth.
+      state.status = state.messages.length ? "completed" : "idle";
     }
   }
 
@@ -543,6 +596,8 @@ export function useAgentConversation() {
     dispose,
     reset,
     restore,
+    switchToConversation,
+    historySwitchDisabled,
   };
 }
 

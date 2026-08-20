@@ -369,6 +369,88 @@
         "title": "AgentConversationHistory",
         "type": "object"
       },
+      "AgentConversationListItem": {
+        "additionalProperties": false,
+        "description": "Lightweight row for the \"my history\" list.\n\n``title`` is derived from the conversation's first USER message (trimmed to\n~40 characters, falling back to \"新会话\" when the conversation has no user\ntext). It is NOT a stored column — no migration is needed. ``updatedAt``\ndrives the DESC ordering the list is served in.",
+        "properties": {
+          "activeProjectName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activeprojectname"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "lastMessageSequence": {
+            "title": "Lastmessagesequence",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "title": "Updatedat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "createdAt",
+          "updatedAt",
+          "activeProjectName",
+          "lastMessageSequence"
+        ],
+        "title": "AgentConversationListItem",
+        "type": "object"
+      },
+      "AgentConversationListPage": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AgentConversationListItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "pageSize": {
+            "title": "Pagesize",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "page",
+          "pageSize",
+          "total"
+        ],
+        "title": "AgentConversationListPage",
+        "type": "object"
+      },
       "AgentConversationResponse": {
         "additionalProperties": false,
         "properties": {
@@ -938,6 +1020,34 @@
           "traceId"
         ],
         "title": "ApiResponse[AgentConversationHistory]",
+        "type": "object"
+      },
+      "ApiResponse_AgentConversationListPage_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/AgentConversationListPage"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "traceId": {
+            "title": "Traceid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ],
+        "title": "ApiResponse[AgentConversationListPage]",
         "type": "object"
       },
       "ApiResponse_AgentConversationRuntime_": {
@@ -9882,6 +9992,217 @@
         "title": "ReleaseRetentionHoldRequest",
         "type": "object"
       },
+      "ResolvedRiskItem": {
+        "description": "A resolved risk list item carrying the resolution record inline.\n\nThe resolved list must return these fields directly from the same\nDataScope/RBAC query as ``RiskItem`` (the row already joins the resolver\nuser) so the frontend never fans out to per-risk ``RiskDetail`` calls.",
+        "properties": {
+          "actualCollectedAmountYuan": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actualcollectedamountyuan"
+          },
+          "category": {
+            "$ref": "#/components/schemas/RiskCategoryOption"
+          },
+          "departmentName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Departmentname"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "detectedAt": {
+            "title": "Detectedat",
+            "type": "string"
+          },
+          "evidence": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "level": {
+            "$ref": "#/components/schemas/ProjectRiskLevel"
+          },
+          "projectExternalCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Projectexternalcode"
+          },
+          "projectId": {
+            "format": "uuid",
+            "title": "Projectid",
+            "type": "string"
+          },
+          "projectName": {
+            "title": "Projectname",
+            "type": "string"
+          },
+          "projectOwnerName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Projectownername"
+          },
+          "remainingAmountYuan": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remainingamountyuan"
+          },
+          "reporterName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reportername"
+          },
+          "resolutionReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolutionreason"
+          },
+          "resolvedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolvedat"
+          },
+          "resolvedByName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolvedbyname"
+          },
+          "sourceLabel": {
+            "title": "Sourcelabel",
+            "type": "string"
+          },
+          "sourceType": {
+            "$ref": "#/components/schemas/RiskSourceType"
+          },
+          "status": {
+            "$ref": "#/components/schemas/RiskStatus"
+          },
+          "suggestion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggestion"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updatedAt": {
+            "title": "Updatedat",
+            "type": "string"
+          },
+          "weekCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Weekcode"
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "projectName",
+          "projectExternalCode",
+          "departmentName",
+          "projectOwnerName",
+          "title",
+          "description",
+          "evidence",
+          "suggestion",
+          "level",
+          "status",
+          "category",
+          "sourceType",
+          "sourceLabel",
+          "reporterName",
+          "weekCode",
+          "actualCollectedAmountYuan",
+          "remainingAmountYuan",
+          "detectedAt",
+          "updatedAt",
+          "resolvedAt",
+          "resolvedByName",
+          "resolutionReason"
+        ],
+        "title": "ResolvedRiskItem",
+        "type": "object"
+      },
       "ResolvedRiskPage": {
         "properties": {
           "dataScope": {
@@ -9889,7 +10210,7 @@
           },
           "items": {
             "items": {
-              "$ref": "#/components/schemas/RiskItem"
+              "$ref": "#/components/schemas/ResolvedRiskItem"
             },
             "title": "Items",
             "type": "array"
@@ -16217,6 +16538,60 @@
       }
     },
     "/api/agent/conversations": {
+      "get": {
+        "operationId": "list_conversations_api_agent_conversations_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageSize",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Pagesize",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_AgentConversationListPage_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Conversations",
+        "tags": [
+          "agent"
+        ]
+      },
       "post": {
         "operationId": "create_api_agent_conversations_post",
         "requestBody": {
