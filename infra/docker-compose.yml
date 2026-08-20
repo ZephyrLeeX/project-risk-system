@@ -1,0 +1,202 @@
+# Production single-server Docker Compose (T035 / design §§4,7,9, ADR 0003/0006/0030).
+#
+# Services: PostgreSQL 16, Redis 7 (broker only), FastAPI API, Celery worker,
+# the ADR 0030 scheduler process, the Vue frontend and a TLS reverse proxy.
+# `postgres` has no profile so `docker compose up -d postgres` still works for
+# local development / integration tests; app services are started with a bare
+# `docker compose up -d` (or `--profile prod`, which is a no-op alias).
+#
+# Secrets are injected via env (gitignored env file) and a compose secret
+# (read-only session-key file). No credential is committed. See docs/deployment.md.
+
+# Shared environment for the API, worker and any process that needs the DB +
+# encryption key + import storage. DATABASE_URL is derived in-container from the
+# Postgres credentials so operators only manage POSTGRES_* and DATA_ENCRYPTION_KEY.
+x-backend-env: &backend-env
+  DATABASE_URL: postgresql://${POSTGRES_USER:-project_risk}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-project_risk}
+  CELERY_BROKER_URL: redis://redis:6379/0
+  DATA_ENCRYPTION_KEY: ${DATA_ENCRYPTION_KEY:?DATA_ENCRYPTION_KEY is required}
+  IMPORT_STORAGE_DIR: /app/storage/excel
+  AI_OUTBOUND_ALLOWED_HOSTNAMES: ${AI_OUTBOUND_ALLOWED_HOSTNAMES:-}
+  AI_OUTBOUND_ALLOWED_CIDRS: ${AI_OUTBOUND_ALLOWED_CIDRS:-}
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: project-risk-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-project_risk}
+      POSTGRES_USER: ${POSTGRES_USER:-project_risk}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required; run pnpm env:init and use pnpm db:up}
+    volumes:
+      - project-risk-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U ${POSTGRES_USER:-project_risk} -d ${POSTGRES_DB:-project_risk}
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - project-risk-network
+      - project-risk-backend
+
+  redis:
+    image: redis:7-alpine
+    container_name: project-risk-redis-app
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    networks:
+      - project-risk-backend
+
+  api:
+    build:
+      context: ../apps/api
+      dockerfile: Dockerfile
+    image: risk-platform-api:0.1.0
+    container_name: project-risk-api
+    restart: unless-stopped
+    environment:
+      <<: *backend-env
+      NODE_ENV: production
+      CORS_ORIGIN: ${CORS_ORIGIN:?CORS_ORIGIN is required (e.g. https://host:8443)}
+      REQUEST_ORIGIN_VALIDATION_ENABLED: ${REQUEST_ORIGIN_VALIDATION_ENABLED:-true}
+      TRUSTED_PROXY_CIDRS: 10.30.0.0/24
+      SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-project_risk_session}
+      SESSION_SECRET_FILE: /run/secrets/project_risk_session_key
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      WECHAT_USER_INFO_URL: "${WECHAT_USER_INFO_URL:-}"
+      WECHAT_USER_INFO_TIMEOUT_SECONDS: "${WECHAT_USER_INFO_TIMEOUT_SECONDS:-5}"
+      WECHAT_USER_INFO_MAX_RETRIES: "${WECHAT_USER_INFO_MAX_RETRIES:-2}"
+    secrets:
+      - project_risk_session_key
+    volumes:
+      - project-risk-storage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'python -c "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen(''http://127.0.0.1:3000/api/health'',timeout=3).status==200 else 1)"'
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 25s
+    networks:
+      - project-risk-backend
+
+  worker:
+    image: risk-platform-api:0.1.0
+    container_name: project-risk-worker
+    restart: unless-stopped
+    command: ["celery", "-A", "risk_platform.worker", "worker", "--loglevel=INFO", "--concurrency=${CELERY_WORKER_CONCURRENCY:-2}", "--hostname=worker1"]
+    environment:
+      <<: *backend-env
+      CELERY_TASK_TIME_LIMIT: ${CELERY_TASK_TIME_LIMIT:-900}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - project-risk-storage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A risk_platform.reliability.celery_app:celery_app inspect ping -d celery@worker1 --timeout=5 >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 35s
+    networks:
+      - project-risk-backend
+
+  scheduler:
+    image: risk-platform-api:0.1.0
+    container_name: project-risk-scheduler
+    restart: unless-stopped
+    command: ["python", "-c", "from risk_platform.scheduler import main; main()"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-project_risk}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/${POSTGRES_DB:-project_risk}
+      CELERY_BROKER_URL: redis://redis:6379/0
+      SCHEDULER_OUTBOX_DRAIN_INTERVAL_SECONDS: ${SCHEDULER_OUTBOX_DRAIN_INTERVAL_SECONDS:-5}
+      SCHEDULER_RECONCILE_INTERVAL_SECONDS: ${SCHEDULER_RECONCILE_INTERVAL_SECONDS:-30}
+      SCHEDULER_MAILBOX_SYNC_INTERVAL_SECONDS: ${SCHEDULER_MAILBOX_SYNC_INTERVAL_SECONDS:-300}
+      SCHEDULER_POLL_INTERVAL_SECONDS: ${SCHEDULER_POLL_INTERVAL_SECONDS:-1}
+      SCHEDULER_LIVENESS_HOST: "0.0.0.0"
+      SCHEDULER_LIVENESS_PORT: "9191"
+      SCHEDULER_LOG_LEVEL: ${SCHEDULER_LOG_LEVEL:-INFO}
+      AI_OUTBOUND_ALLOWED_HOSTNAMES: ${AI_OUTBOUND_ALLOWED_HOSTNAMES:-}
+      AI_OUTBOUND_ALLOWED_CIDRS: ${AI_OUTBOUND_ALLOWED_CIDRS:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'python -c "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen(''http://127.0.0.1:9191/'',timeout=3).status==200 else 1)"'
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+    stop_grace_period: 60s
+    networks:
+      - project-risk-backend
+
+  web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+    image: risk-platform-web:0.1.0
+    container_name: project-risk-web
+    restart: unless-stopped
+    networks:
+      - project-risk-backend
+
+  proxy:
+    image: nginx:1.27-alpine
+    container_name: project-risk-proxy
+    restart: unless-stopped
+    volumes:
+      - ./proxy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./proxy/certs:/etc/nginx/certs:ro
+    ports:
+      - "${PROXY_HTTPS_PORT:-8443}:443"
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_started
+    networks:
+      - project-risk-backend
+
+secrets:
+  project_risk_session_key:
+    file: ./secrets/project_risk_session_key
+
+networks:
+  project-risk-network:
+    name: project-risk-network
+  project-risk-backend:
+    name: project-risk-backend
+    ipam:
+      config:
+        - subnet: 10.30.0.0/24
+
+volumes:
+  project-risk-postgres-data:
+    name: project-risk-postgres-data
+  project-risk-storage:
+    name: project-risk-storage
