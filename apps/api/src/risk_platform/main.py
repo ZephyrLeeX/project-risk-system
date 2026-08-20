@@ -7,12 +7,14 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from risk_platform.admin.agent_scope.api import router as admin_agent_scope_router
 from risk_platform.admin.options.api import router as admin_options_router
 from risk_platform.admin.overview.api import router as overview_router
 from risk_platform.admin.overview.service import OverviewDependencyFailure
 from risk_platform.admin.roles.api import router as admin_roles_router
 from risk_platform.admin.users.api import router as admin_users_router
 from risk_platform.agent.api import router as agent_router
+from risk_platform.agent.scope_rules import ScopeRuleStore
 from risk_platform.ai_providers.api import router as ai_providers_router
 from risk_platform.ai_providers.v2_api import router as ai_provider_v2_router
 from risk_platform.app import AppComposition, create_app
@@ -57,9 +59,17 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
     for name, service in services.items():
         setattr(app.state, name, service)
+    scope_rule_store = services.get("agent_scope_rule_store")
     try:
+        if isinstance(scope_rule_store, ScopeRuleStore):
+            # Tolerant initial rule load + Redis pub/sub listener + TTL poll.
+            # A PG or Redis outage here never blocks startup: the builtin
+            # baseline keeps layer-1 decisions working.
+            await scope_rule_store.start()
         yield
     finally:
+        if isinstance(scope_rule_store, ScopeRuleStore):
+            await scope_rule_store.stop()
         await dispose_database_engine(engine)
 
 
@@ -74,6 +84,7 @@ app = create_app(
             overview_router,
             admin_users_router,
             admin_roles_router,
+            admin_agent_scope_router,
             admin_options_router,
             ai_providers_router,
             ai_provider_v2_router,

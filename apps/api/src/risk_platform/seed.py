@@ -86,6 +86,7 @@ def _password_policy_violations(password: str, *, username: str, minimum: int) -
 PERMISSIONS: Final = (
     ("dashboard.view", "查看风险看板", "DASHBOARD"),
     ("agent.use", "使用 Agent 智能对话", "AGENT"),
+    ("agent.scope.manage", "管理 Agent 范围规则", "AGENT"),
     ("risk.report", "上报项目风险", "RISK"),
     ("risk.resolve", "处理与解除项目风险", "RISK"),
     ("risk.manage_all", "管理全部项目风险", "RISK"),
@@ -117,6 +118,7 @@ ROLES: Final = (
             "admin.config.manage",
             "admin.audit.view",
             "admin.audit.export",
+            "agent.scope.manage",
         ),
     ),
     (
@@ -340,7 +342,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         print(str(exc), file=sys.stderr)
         raise SystemExit(2) from None
     print(
-        "Seed completed: 15 permissions, 4 roles, 8 risk categories, "
+        "Seed completed: 16 permissions, 4 roles, 8 risk categories, "
         "3 risk levels, 5 departments, 1 initial administrator."
     )
 

@@ -17,11 +17,17 @@ from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from risk_platform.admin.agent_scope.service import AdminAgentScopeRulesService
 from risk_platform.admin.options.service import AdminOptionsService
 from risk_platform.admin.overview.service import AdminOverviewService
 from risk_platform.admin.roles.service import AdminRolesService
 from risk_platform.admin.users.service import AdminUsersService
 from risk_platform.agent.core import ReadOnlyAgentCore
+from risk_platform.agent.scope_rules import (
+    DynamicScopePolicy,
+    RedisScopeRuleNotifier,
+    ScopeRuleStore,
+)
 from risk_platform.agent.service import AgentConversationService
 from risk_platform.agent.tools import AgentToolRegistry
 from risk_platform.agent.v2_execution import native_agent_execution_handlers
@@ -146,6 +152,12 @@ def build_services(
     provider_v2_registry = AiProviderAdapterRegistry(
         {ProviderType.DEEPSEEK_OFFICIAL: DeepSeekOfficialAdapter(cipher)}
     )
+    # The API process owns the admin CRUD and therefore the notifier-backed
+    # rule cache (pub/sub listener + TTL poll).  The Celery worker builds its
+    # own poll-only store in merge_worker_handlers, next to the agent core.
+    scope_rule_store = ScopeRuleStore(
+        sessions, RedisScopeRuleNotifier(), background=True
+    )
     return {
         "auth_service": AuthService.from_settings(sessions, settings),
         "wechat_user_info_client": (
@@ -166,6 +178,8 @@ def build_services(
         "retention_hold_service": RetentionHoldService(sessions),
         "admin_users_service": AdminUsersService(sessions),
         "admin_roles_service": AdminRolesService(sessions),
+        "agent_scope_rule_store": scope_rule_store,
+        "admin_agent_scope_rule_service": AdminAgentScopeRulesService(sessions, scope_rule_store),
         "admin_options_service": AdminOptionsService(sessions),
         "ai_providers_service": AiProvidersService(sessions, cipher, provider_client),
         "ai_provider_v2_service": AiProviderV2Service(
@@ -223,12 +237,17 @@ def merge_worker_handlers(
             )
         )
     )
+    # The worker's scope store is poll-only: DynamicScopePolicy.prepare()
+    # TTL-probes the rule revision at the top of every execution, so admin
+    # rule changes apply within one poll interval without a worker restart.
+    worker_scope_store = ScopeRuleStore(sessions, background=False)
     merged.update(
         native_agent_execution_handlers(
             sessions,
             ReadOnlyAgentCore(
                 worker_runtime,
                 tool_registry,
+                scope=DynamicScopePolicy(worker_scope_store),
             ),
         )
     )

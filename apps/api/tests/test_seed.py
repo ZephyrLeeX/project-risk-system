@@ -114,7 +114,7 @@ def test_seed_twice_is_repeatable_and_preserves_administrator_password(
             assert administrator is not None
             assert administrator.passwordHash == original_hash
             assert administrator.mustChangePassword is False
-            assert await session.scalar(select(func.count()).select_from(Permission)) == 15
+            assert await session.scalar(select(func.count()).select_from(Permission)) == 16
             assert await session.scalar(select(func.count()).select_from(Role)) == 4
             assert await session.scalar(select(func.count()).select_from(RiskCategory)) == 8
             assert await session.scalar(select(func.count()).select_from(RiskLevelRule)) == 3
@@ -204,7 +204,9 @@ def test_seed_uses_one_caller_owned_transaction_for_rollback(
                 await seed_reference_data(session, _settings())
                 raise RuntimeError("injected failure")
         async with factory() as session:
-            assert await session.scalar(select(func.count()).select_from(Permission)) == 0
+            # Only the migration-granted agent.scope.manage permission remains;
+            # every seed-owned insert must have rolled back.
+            assert await session.scalar(select(func.count()).select_from(Permission)) == 1
             assert await session.scalar(select(func.count()).select_from(User)) == 0
         await engine.dispose()
 

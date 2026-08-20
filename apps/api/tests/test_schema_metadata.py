@@ -374,16 +374,20 @@ def test_prisma_python_side_defaults_are_complete_without_ddl_drift() -> None:
     uuid_default_columns = [
         table.c.id
         for table in metadata.tables.values()
-        if "id" in table.c and len(table.primary_key.columns) == 1
+        if "id" in table.c
+        and len(table.primary_key.columns) == 1
+        # The cache-revision singleton row is migration-owned and never
+        # inserted through the ORM, so it has no python-side default.
+        and table.name != "agent_scope_rule_revision"
     ]
-    assert len(uuid_default_columns) == 42
+    assert len(uuid_default_columns) == 43
     assert all(column.default is not None for column in uuid_default_columns)
     assert all(column.server_default is None for column in uuid_default_columns)
 
     updated_at_columns = [
         table.c.updatedAt for table in metadata.tables.values() if "updatedAt" in table.c
     ]
-    assert len(updated_at_columns) == 24
+    assert len(updated_at_columns) == 25
     assert all(column.default is not None for column in updated_at_columns)
     assert all(column.onupdate is not None for column in updated_at_columns)
     assert all(column.server_default is None for column in updated_at_columns)
