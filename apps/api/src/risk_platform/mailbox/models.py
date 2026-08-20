@@ -376,6 +376,7 @@ class MailMessage(Base):
         Index("mail_messages_mailboxConfigId_sentAt_idx", "mailboxConfigId", "sentAt"),
         Index("mail_messages_mailboxConfigId_receivedAt_idx", "mailboxConfigId", "receivedAt"),
         Index("mail_messages_status_updatedAt_idx", "status", "updatedAt"),
+        Index("mail_messages_projectResolutionStatus_idx", "projectResolutionStatus"),
     )
     id: Mapped[UUID] = mapped_column(
         UUIDType(as_uuid=True), primary_key=True, nullable=False, default=new_uuid

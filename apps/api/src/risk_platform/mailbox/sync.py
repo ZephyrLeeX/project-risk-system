@@ -292,7 +292,10 @@ class MailboxSyncService:
             await session.scalars(
                 select(MailMessage).where(
                     MailMessage.mailboxConfigId == config.id,
-                    MailMessage.skipReason.is_not(MailMessageSkipReason.FILTERED),
+                    # Plain inequality, not is_not(): SQLAlchemy renders
+                    # ``is_not(<non-null bind>)`` as ``IS NOT $1``, which
+                    # PostgreSQL rejects as a syntax error.
+                    MailMessage.skipReason != MailMessageSkipReason.FILTERED,
                     MailMessage.status != MailMessageStatus.FAILED,
                 )
             )

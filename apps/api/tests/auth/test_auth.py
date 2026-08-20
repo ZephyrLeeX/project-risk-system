@@ -257,6 +257,7 @@ def test_login_forced_change_revocation_and_cookie_contract(
                 "permissions": ["dashboard.view"],
                 "dataScope": "ASSIGNED",
                 "mustChangePassword": True,
+                "authMethod": "PASSWORD",
             }
             cookie = login.headers["set-cookie"]
             assert "project_risk_session=" in cookie
