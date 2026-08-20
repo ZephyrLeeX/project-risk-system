@@ -12,6 +12,7 @@ from time import monotonic
 from uuid import UUID, uuid4
 
 from risk_platform.ai_providers.v2_adapter import (
+    ModelCapabilities,
     ProviderCandidate,
     ProviderChatRequest,
     ProviderError,
@@ -20,7 +21,9 @@ from risk_platform.ai_providers.v2_adapter import (
     ProviderRole,
     ProviderToolCall,
     ProviderToolDefinition,
-    measure_provider_request,
+    TokenEstimator,
+    effective_candidate_capabilities,
+    effective_candidate_estimator,
 )
 from risk_platform.ai_providers.v2_service import ProviderV2Runtime
 from risk_platform.auth.service import SessionIdentity
@@ -54,36 +57,67 @@ class ProjectSelectionRequired(Exception):
 
 @dataclass(frozen=True, slots=True)
 class ContextBudget:
+    """Token-based Agent context budget derived from model capability.
+
+    All fields are *tokens*, never bytes.  ``hard_context_budget`` is the
+    effective *input* ceiling for one provider request — the model context
+    window minus its reserved output headroom (the window cannot hold both
+    full input and full output at once).  ``tool_result_reserve`` bounds the
+    accumulated tool results; ``output_safety_reserve`` is an input-side
+    margin so a request that fits the estimate cannot bump against the real
+    window.  The dynamic history budget is the remainder after fixed
+    overhead (measured by ``fixed_overhead_tokens``) and these reserves.
+
+    This is the *Agent product context policy* — distinct from the
+    provider-neutral ``ModelCapabilities`` (model capacity) and from
+    ``MAX_REQUEST_BYTES`` (HTTP transport byte safety).  The default
+    ``ContextBudget()`` is a conservative fallback used only when no
+    candidate snapshot exists (tests, no-provider); a real execution freezes
+    a capability-derived budget per execution via ``from_capabilities``.
+    """
+
     hard_context_budget: int = 64 * 1024
-    compression_trigger: int = 14 * 1024
-    compression_target: int = 8 * 1024
-    system_reserve: int = 12 * 1024
-    current_user_reserve: int = 8 * 1024
-    tool_result_reserve: int = 24 * 1024
+    tool_result_reserve: int = 16 * 1024
     output_safety_reserve: int = 4 * 1024
 
     def __post_init__(self) -> None:
         values = (
             self.hard_context_budget,
-            self.compression_trigger,
-            self.compression_target,
-            self.system_reserve,
-            self.current_user_reserve,
             self.tool_result_reserve,
             self.output_safety_reserve,
         )
         if any(value <= 0 for value in values) or self.history_budget <= 0:
             raise ValueError("invalid Agent context budget")
-        if self.compression_target >= self.compression_trigger:
-            raise ValueError("compression target must be below trigger")
+        if (
+            self.tool_result_reserve + self.output_safety_reserve
+            >= self.hard_context_budget
+        ):
+            raise ValueError("reserves must leave room for history")
 
     @property
     def history_budget(self) -> int:
         return self.hard_context_budget - (
-            self.system_reserve
-            + self.current_user_reserve
-            + self.tool_result_reserve
-            + self.output_safety_reserve
+            self.tool_result_reserve + self.output_safety_reserve
+        )
+
+    @classmethod
+    def from_capabilities(cls, capabilities: ModelCapabilities) -> ContextBudget:
+        """Derive the per-execution budget from the effective model capability.
+
+        The input ceiling is the context window minus the output headroom:
+        the model cannot hold full input and full output simultaneously, so
+        reserving the max output cap is the conservative bound that fits the
+        worst case (a request shaped for ``hard`` input still leaves room for
+        ``max_output_tokens`` of completion).  The reserves are ratios of that
+        input ceiling so the budget scales with the model rather than being a
+        fixed 16 KiB / 4 KiB assumption.
+        """
+
+        hard = max(1, capabilities.context_window_tokens - capabilities.max_output_tokens)
+        return cls(
+            hard_context_budget=hard,
+            tool_result_reserve=max(1024, int(hard * 0.25)),
+            output_safety_reserve=max(1024, int(hard * 0.05)),
         )
 
 
@@ -125,6 +159,38 @@ class ReadOnlyAgentCore:
     @property
     def context_budget(self) -> ContextBudget:
         return self._limits.context
+
+    def execution_budget(
+        self, snapshot: tuple[ProviderCandidate, ...]
+    ) -> ContextBudget:
+        """The token budget frozen for one execution from its candidate snapshot.
+
+        The effective model capability is computed once from the immutable
+        candidate tuple and never re-read while the loop runs, so a
+        provider-admin change made mid-execution only affects the next
+        execution's snapshot — never a later model round in this one.  An
+        empty snapshot (no candidates / tests) falls back to the static
+        ``AgentLoopLimits`` budget; such an execution cannot chat anyway
+        (``chat_snapshot`` fails with no candidate).
+        """
+
+        if not snapshot:
+            return self._limits.context
+        return ContextBudget.from_capabilities(
+            effective_candidate_capabilities(snapshot)
+        )
+
+    def estimator_for(
+        self, snapshot: tuple[ProviderCandidate, ...]
+    ) -> TokenEstimator:
+        """The token estimator for the first candidate's provider type.
+
+        The adapter registry is closed (only the approved provider type is
+        accepted), so every candidate in the chain shares one estimator.  An
+        empty snapshot falls back to the conservative ``ByteTokenEstimator``.
+        """
+
+        return effective_candidate_estimator(snapshot)
 
     async def run(
         self,
@@ -214,10 +280,18 @@ class ReadOnlyAgentCore:
             if candidate_snapshot is not None
             else await self._runtime.candidate_snapshot()
         )
+        # Freeze the per-execution token budget and estimator from the same
+        # immutable snapshot, so a provider-admin change made mid-loop cannot
+        # alter the budget a later round sees — only the next execution's
+        # snapshot re-derives it.  The budget is *model context capacity*
+        # (tokens); the adapter's ``MAX_REQUEST_BYTES`` byte guard remains an
+        # independent transport safety net.
+        budget = self.execution_budget(snapshot)
+        estimator = self.estimator_for(snapshot)
         for _ in range(self._limits.max_model_rounds):
             self._within_time(started)
             request = ProviderChatRequest(tuple(messages), definitions)
-            self._within_request_budget(request)
+            self._within_request_budget(request, budget, estimator)
             response = await self._runtime.chat_snapshot(snapshot, request)
             messages.append(
                 ProviderMessage(
@@ -270,14 +344,15 @@ class ReadOnlyAgentCore:
                             except (KeyError, TypeError, ValueError):
                                 raise AgentLoopError("AGENT_TOOL_RESULT_INVALID") from None
             for call, result in zip(response.tool_calls, results, strict=True):
-                encoded = self._canonical(result.model_dump(mode="json")).encode()
-                if len(encoded) > self._limits.context.tool_result_reserve:
+                encoded = self._canonical(result.model_dump(mode="json"))
+                size = estimator.estimate(encoded)
+                if size > budget.tool_result_reserve:
                     raise AgentLoopError("AGENT_TOOL_RESULT_TOO_LARGE")
-                total += len(encoded)
-                if total > self._limits.context.tool_result_reserve:
+                total += size
+                if total > budget.tool_result_reserve:
                     raise AgentLoopError("AGENT_TOTAL_TOOL_RESULT_TOO_LARGE")
                 messages.append(
-                    ProviderMessage(ProviderRole.TOOL, encoded.decode(), tool_call_id=call.id)
+                    ProviderMessage(ProviderRole.TOOL, encoded, tool_call_id=call.id)
                 )
         raise AgentLoopError("AGENT_MAX_MODEL_ROUNDS")
 
@@ -309,11 +384,35 @@ class ReadOnlyAgentCore:
         if monotonic() - started > self._limits.max_total_execution_time:
             raise AgentLoopError("AGENT_MAX_EXECUTION_TIME")
 
-    def _within_request_budget(self, request: ProviderChatRequest) -> None:
+    def _within_request_budget(
+        self,
+        request: ProviderChatRequest,
+        budget: ContextBudget,
+        estimator: TokenEstimator,
+    ) -> None:
         # Fail closed on the *full* provider request — system, history, current
         # message, assistant tool_calls + arguments, tool results and tool
         # definitions — before any HTTP call, never waiting for a Provider 400.
-        if measure_provider_request(request) > self._limits.context.hard_context_budget:
+        # The budget is the effective *input token* ceiling for the model;
+        # ``estimator`` conservatively sizes the request in tokens.  The
+        # adapter's ``MAX_REQUEST_BYTES`` byte guard remains an independent
+        # transport safety net, checked when the request is encoded for the wire.
+        used = sum(estimator.estimate(item.content or "") for item in request.messages)
+        used += sum(
+            estimator.estimate(
+                json.dumps(
+                    {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "parameters": dict(tool.input_schema),
+                    },
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+            )
+            for tool in request.tools
+        )
+        if used > budget.hard_context_budget:
             raise AgentLoopError("AGENT_CONTEXT_TOO_LARGE")
 
     def _system_instruction(
@@ -378,6 +477,10 @@ class ReadOnlyAgentCore:
             "不得编造风险；若有风险，按 HIGH、MEDIUM 优先，对周报中的风险项目调用 bounded 的 "
             "weekly_report_detail，必要时再调用 risk_list 和 todo_list。"
             "最终回答必须分成‘系统事实’与‘AI处理建议’，不得把建议写成已经发生的业务事实。"
+            "高风险查询 guidance：当用户询问当前有哪些高风险、重点风险或高风险项时，"
+            "应优先调用 risk_list(level=HIGH) 获取授权范围内的当前高风险列表，不要同时无意义地"
+            "叠加 dashboard_summary、dashboard_focus 和 risk_list。risk_list 默认返回紧凑字段，"
+            "不含 description、evidence、suggestion；用户要求展开某个风险时再调用 risk_detail。"
         )
         return instruction
 
@@ -419,7 +522,7 @@ class ReadOnlyAgentCore:
             for item in self._tools.catalogue(identity, selected_project_id=selected_project_id)
         )
 
-    def fixed_overhead_bytes(
+    def fixed_overhead_tokens(
         self,
         identity: SessionIdentity,
         message: str,
@@ -427,37 +530,46 @@ class ReadOnlyAgentCore:
         conversation_context: AgentConversationContext | None = None,
         resume_context: str | None = None,
         selected_project_id: UUID | None = None,
+        snapshot: tuple[ProviderCandidate, ...] = (),
     ) -> int:
-        """Bytes the current execution consumes before any history is added.
+        """Tokens the current execution consumes before any history is added.
 
         The dynamic history budget is ``hard_context_budget - fixed_overhead``.
         This measures the actual static system instruction, the actual tool
         definitions, the actual current user message (which may be up to the
-        4000-character request limit, not a fixed 8 KiB assumption) and the
-        reserved space for tool results and model output.  It is provider-neutral
-        and conservative so the conversation-memory service can size recent
-        turns to the real remaining budget instead of a static reserve.
+        4000-character request limit, not a fixed assumption) and the reserved
+        space for tool results and model output.  It is sized in tokens by the
+        execution's frozen estimator so the conversation-memory service sizes
+        recent turns to the real remaining token budget instead of a static
+        reserve.
         """
 
-        budget = self._limits.context
+        budget = self.execution_budget(snapshot)
+        estimator = self.estimator_for(snapshot)
         system = self._system_instruction(conversation_context, resume_context)
         definitions = self._tool_definitions(identity, selected_project_id)
-        probe_messages: list[ProviderMessage] = [
-            ProviderMessage(ProviderRole.SYSTEM, system),
-            ProviderMessage(ProviderRole.USER, message),
-        ]
+        used = estimator.estimate(system) + estimator.estimate(message)
         grounding = self._server_grounding_content(conversation_context, resume_context)
         if grounding is not None:
             # The grounding message is fixed overhead: it is always present
             # regardless of how much history fits, so it must shrink the
             # history budget rather than be rediscovered as an oversize later.
-            probe_messages.insert(1, ProviderMessage(ProviderRole.USER, grounding))
-        probe = ProviderChatRequest(tuple(probe_messages), definitions)
-        return (
-            measure_provider_request(probe)
-            + budget.tool_result_reserve
-            + budget.output_safety_reserve
+            used += estimator.estimate(grounding)
+        used += sum(
+            estimator.estimate(
+                json.dumps(
+                    {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "parameters": dict(tool.input_schema),
+                    },
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+            )
+            for tool in definitions
         )
+        return used + budget.tool_result_reserve + budget.output_safety_reserve
 
     def history_budget_for(
         self,
@@ -467,19 +579,21 @@ class ReadOnlyAgentCore:
         conversation_context: AgentConversationContext | None = None,
         resume_context: str | None = None,
         selected_project_id: UUID | None = None,
+        snapshot: tuple[ProviderCandidate, ...] = (),
     ) -> int:
         """Dynamic per-execution history budget from the real fixed overhead."""
 
-        budget = self._limits.context
+        budget = self.execution_budget(snapshot)
         return max(
             0,
             budget.hard_context_budget
-            - self.fixed_overhead_bytes(
+            - self.fixed_overhead_tokens(
                 identity,
                 message,
                 conversation_context=conversation_context,
                 resume_context=resume_context,
                 selected_project_id=selected_project_id,
+                snapshot=snapshot,
             ),
         )
 

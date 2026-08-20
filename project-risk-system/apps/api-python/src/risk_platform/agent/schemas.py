@@ -10,7 +10,6 @@ from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_valid
 
 from risk_platform.model_types import JSONValue
 from risk_platform.risks.models import ProjectRiskLevel, RiskStatus
-from risk_platform.risks.schemas import RiskItem
 from risk_platform.shared.http import StrictRequestModel
 
 
@@ -352,10 +351,44 @@ class RiskCategoryListToolResponse(_Contract):
     items: list[dict[str, str]]
 
 
+class AgentRiskListItem(_Contract):
+    """Agent-specific compact risk projection for ``risk_list``.
+
+    The formal ``RiskItem`` (``risks.schemas``) carries ``description``,
+    ``evidence`` and ``suggestion`` — long fields that are rarely needed to
+    answer a list-shaped question and blow the tool-result budget under the
+    effective model context.  This projection keeps only the fields needed to
+    *answer* 当前有哪些高风险 (id, project, title, level, status, category,
+    owner, timestamps) plus the optional amount columns; ``risk_detail``
+    expands the full record.
+    """
+
+    id: UUID
+    projectId: UUID
+    projectName: str
+    title: str
+    level: ProjectRiskLevel
+    status: RiskStatus
+    categoryName: str
+    departmentName: str | None = None
+    projectOwnerName: str | None = None
+    actualCollectedAmountYuan: str | None = None
+    remainingAmountYuan: str | None = None
+    detectedAt: str
+    updatedAt: str
+
+
+class AgentRiskListPage(_Contract):
+    items: list[AgentRiskListItem]
+    page: int
+    pageSize: int
+    total: int
+
+
 class DashboardFocusToolResponse(_Contract):
     """Agent-specific envelope for the dashboard service's list return value."""
 
-    items: list[RiskItem]
+    items: list[AgentRiskListItem]
 
 
 class RiskToolArguments(StrictRequestModel):
@@ -364,7 +397,7 @@ class RiskToolArguments(StrictRequestModel):
     status: RiskStatus | None = None
     projectId: UUID | None = None
     page: int = Field(default=1, ge=1)
-    pageSize: int = Field(default=20, ge=1, le=100)
+    pageSize: int = Field(default=10, ge=1, le=20)
 
 
 class RiskDetailToolArguments(StrictRequestModel):

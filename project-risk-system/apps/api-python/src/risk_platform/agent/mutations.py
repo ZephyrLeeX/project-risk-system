@@ -198,118 +198,159 @@ class MutationDraftService:
         final_fields: dict[str, JSONValue] | None,
         *,
         trace_id: UUID,
+        session: AsyncSession | None = None,
     ) -> dict[str, object]:
-        async with transaction(self._sessions) as session:
-            interaction = await session.scalar(
-                select(AgentInteraction)
-                .where(AgentInteraction.id == interaction_id)
-                .with_for_update()
-            )
-            if interaction is None or interaction.ownerUserId != UUID(identity.user.id):
-                raise ApiError(404, "AGENT_INTERACTION_NOT_FOUND", "交互不存在或不属于当前用户")
-            draft = await session.scalar(
-                select(MutationDraft)
-                .where(MutationDraft.interactionId == interaction_id)
-                .with_for_update()
-            )
-            if draft is None or interaction.type is not AgentInteractionType.WRITE_CONFIRMATION:
-                raise ApiError(409, "AGENT_INTERACTION_CONTEXT_INVALID", "写确认上下文不可用")
-            if (
-                interaction.status is not AgentInteractionStatus.OPEN
-                or draft.status is not MutationDraftStatus.OPEN
-            ):
-                raise ApiError(409, "AGENT_INTERACTION_ALREADY_RESOLVED", "交互已处理")
-            if interaction.expiresAt <= datetime.now(UTC):
-                interaction.status, draft.status = (
-                    AgentInteractionStatus.EXPIRED,
-                    MutationDraftStatus.EXPIRED,
+        """Resolve a WRITE_CONFIRMATION interaction.
+
+        When ``session`` is ``None`` (the historical call path) the draft commit
+        runs in its own transaction.  When the caller passes its own open
+        session — used by ``AgentInteractionService.respond`` so the draft
+        commit and the execution terminalization share ONE transaction — the
+        caller owns the commit boundary and this method must not open another.
+        The RBAC / already-resolved / expiry / idempotency guards and the
+        ``with_for_update`` locks on the interaction and draft run unchanged in
+        either case.
+        """
+
+        if session is None:
+            async with transaction(self._sessions) as own_session:
+                return await self._respond_in_session(
+                    own_session,
+                    identity,
+                    interaction_id,
+                    action,
+                    final_fields,
+                    trace_id=trace_id,
                 )
-                raise ApiError(410, "AGENT_INTERACTION_EXPIRED", "交互已过期")
-            if action == "CANCEL":
-                interaction.status, interaction.responseAction = (
-                    AgentInteractionStatus.CANCELLED,
-                    AgentInteractionAction.CANCEL,
-                )
-                draft.status, draft.resolvedAt = MutationDraftStatus.CANCELLED, datetime.now(UTC)
-                return {"status": "CANCELLED", "items": []}
-            if action != "CONFIRM" or final_fields is None:
-                raise ApiError(422, "VALIDATION_ERROR", "确认参数无效")
-            proposal: dict[str, JSONValue] = dict(draft.proposal)
-            if set(final_fields) - _EDITABLE[draft.operation]:
-                raise ApiError(422, "VALIDATION_ERROR", "提交字段超出当前 mutation allowlist")
-            proposal.update(final_fields)
-            batch_items = proposal.get("items")
-            if isinstance(batch_items, list):
-                results: list[dict[str, object]] = []
-                for index, raw_item in enumerate(batch_items):
-                    if not isinstance(raw_item, dict):
-                        results.append(
-                            {
-                                "draftId": draft.id,
-                                "success": False,
-                                "code": "VALIDATION_ERROR",
-                            }
-                        )
-                        continue
-                    item = raw_item
-                    try:
-                        await self._prevalidate(identity, draft.operation, item, session=session)
-                        async with session.begin_nested():
-                            item_result = await self._commit(
-                                session,
-                                identity,
-                                draft,
-                                item,
-                                trace_id,
-                                item_key=str(index),
-                            )
-                        results.append(
-                            {
-                                "draftId": draft.id,
-                                "success": True,
-                                "code": "OK",
-                                **item_result,
-                            }
-                        )
-                    except ApiError as error:
-                        results.append({"draftId": draft.id, "success": False, "code": error.code})
-                result = {
-                    "resourceType": "RISK_BATCH",
-                    "resourceId": draft.id,
-                    "items": results,
-                }
-            else:
-                await self._prevalidate(identity, draft.operation, proposal, session=session)
-                result = await self._commit(session, identity, draft, proposal, trace_id)
+        return await self._respond_in_session(
+            session,
+            identity,
+            interaction_id,
+            action,
+            final_fields,
+            trace_id=trace_id,
+        )
+
+    async def _respond_in_session(
+        self,
+        session: AsyncSession,
+        identity: SessionIdentity,
+        interaction_id: UUID,
+        action: str,
+        final_fields: dict[str, JSONValue] | None,
+        *,
+        trace_id: UUID,
+    ) -> dict[str, object]:
+        interaction = await session.scalar(
+            select(AgentInteraction)
+            .where(AgentInteraction.id == interaction_id)
+            .with_for_update()
+        )
+        if interaction is None or interaction.ownerUserId != UUID(identity.user.id):
+            raise ApiError(404, "AGENT_INTERACTION_NOT_FOUND", "交互不存在或不属于当前用户")
+        draft = await session.scalar(
+            select(MutationDraft)
+            .where(MutationDraft.interactionId == interaction_id)
+            .with_for_update()
+        )
+        if draft is None or interaction.type is not AgentInteractionType.WRITE_CONFIRMATION:
+            raise ApiError(409, "AGENT_INTERACTION_CONTEXT_INVALID", "写确认上下文不可用")
+        if (
+            interaction.status is not AgentInteractionStatus.OPEN
+            or draft.status is not MutationDraftStatus.OPEN
+        ):
+            raise ApiError(409, "AGENT_INTERACTION_ALREADY_RESOLVED", "交互已处理")
+        if interaction.expiresAt <= datetime.now(UTC):
+            interaction.status, draft.status = (
+                AgentInteractionStatus.EXPIRED,
+                MutationDraftStatus.EXPIRED,
+            )
+            raise ApiError(410, "AGENT_INTERACTION_EXPIRED", "交互已过期")
+        if action == "CANCEL":
             interaction.status, interaction.responseAction = (
-                AgentInteractionStatus.RESOLVED,
-                AgentInteractionAction.CONFIRM,
+                AgentInteractionStatus.CANCELLED,
+                AgentInteractionAction.CANCEL,
             )
-            interaction.responsePayload = {
-                "result": {
-                    "resourceType": str(result["resourceType"]),
-                    "resourceId": str(result["resourceId"]),
-                }
+            draft.status, draft.resolvedAt = MutationDraftStatus.CANCELLED, datetime.now(UTC)
+            return {"status": "CANCELLED", "items": []}
+        if action != "CONFIRM" or final_fields is None:
+            raise ApiError(422, "VALIDATION_ERROR", "确认参数无效")
+        proposal: dict[str, JSONValue] = dict(draft.proposal)
+        if set(final_fields) - _EDITABLE[draft.operation]:
+            raise ApiError(422, "VALIDATION_ERROR", "提交字段超出当前 mutation allowlist")
+        proposal.update(final_fields)
+        batch_items = proposal.get("items")
+        if isinstance(batch_items, list):
+            results: list[dict[str, object]] = []
+            for index, raw_item in enumerate(batch_items):
+                if not isinstance(raw_item, dict):
+                    results.append(
+                        {
+                            "draftId": draft.id,
+                            "success": False,
+                            "code": "VALIDATION_ERROR",
+                        }
+                    )
+                    continue
+                item = raw_item
+                try:
+                    await self._prevalidate(identity, draft.operation, item, session=session)
+                    async with session.begin_nested():
+                        item_result = await self._commit(
+                            session,
+                            identity,
+                            draft,
+                            item,
+                            trace_id,
+                            item_key=str(index),
+                        )
+                    results.append(
+                        {
+                            "draftId": draft.id,
+                            "success": True,
+                            "code": "OK",
+                            **item_result,
+                        }
+                    )
+                except ApiError as error:
+                    results.append({"draftId": draft.id, "success": False, "code": error.code})
+            result = {
+                "resourceType": "RISK_BATCH",
+                "resourceId": draft.id,
+                "items": results,
             }
-            interaction.resolvedAt = draft.resolvedAt = datetime.now(UTC)
-            draft.status = MutationDraftStatus.CONFIRMED
-            draft.resultResourceType = cast(str, result["resourceType"])
-            draft.resultResourceId = cast(UUID, result["resourceId"])
-            await AuditService(session).record_success(
-                actor_id=UUID(identity.user.id),
-                actor_type=AuditActorType.USER,
-                module="AGENT",
-                action="AGENT_WRITE_CONFIRMED",
-                resource_type=cast(str, result["resourceType"]),
-                resource_id=str(result["resourceId"]),
-                trace_id=trace_id,
-                project_id=UUID(str(proposal["projectId"])),
-            )
-            return {
-                "status": "CONFIRMED",
-                "items": cast(list[dict[str, object]], result.get("items", []))
-                or [{"draftId": draft.id, "success": True, "code": "OK", **result}],
+        else:
+            await self._prevalidate(identity, draft.operation, proposal, session=session)
+            result = await self._commit(session, identity, draft, proposal, trace_id)
+        interaction.status, interaction.responseAction = (
+            AgentInteractionStatus.RESOLVED,
+            AgentInteractionAction.CONFIRM,
+        )
+        interaction.responsePayload = {
+            "result": {
+                "resourceType": str(result["resourceType"]),
+                "resourceId": str(result["resourceId"]),
             }
+        }
+        interaction.resolvedAt = draft.resolvedAt = datetime.now(UTC)
+        draft.status = MutationDraftStatus.CONFIRMED
+        draft.resultResourceType = cast(str, result["resourceType"])
+        draft.resultResourceId = cast(UUID, result["resourceId"])
+        await AuditService(session).record_success(
+            actor_id=UUID(identity.user.id),
+            actor_type=AuditActorType.USER,
+            module="AGENT",
+            action="AGENT_WRITE_CONFIRMED",
+            resource_type=cast(str, result["resourceType"]),
+            resource_id=str(result["resourceId"]),
+            trace_id=trace_id,
+            project_id=UUID(str(proposal["projectId"])),
+        )
+        return {
+            "status": "CONFIRMED",
+            "items": cast(list[dict[str, object]], result.get("items", []))
+            or [{"draftId": draft.id, "success": True, "code": "OK", **result}],
+        }
 
     async def _prevalidate(
         self,

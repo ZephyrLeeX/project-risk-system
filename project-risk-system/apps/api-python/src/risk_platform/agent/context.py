@@ -8,17 +8,31 @@ import logging
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from risk_platform.ai_providers.v2_adapter import ProviderCandidate, ProviderError, ProviderRole
+from risk_platform.ai_providers.v2_adapter import (
+    ByteTokenEstimator,
+    ProviderCandidate,
+    ProviderError,
+    ProviderRole,
+    TokenEstimator,
+)
 from risk_platform.auth.service import SessionIdentity
 from risk_platform.projects.query_service import ProjectsQueryService
 from risk_platform.shared.errors import ApiError
 
 from .models import AgentConversation, AgentMessage, AgentMessageRole
+
+if TYPE_CHECKING:
+    # ``ContextBudget`` lives in ``agent.core``; importing it eagerly would
+    # form a cycle (``core`` imports ``context`` for the memory types), so it
+    # is only referenced as an annotation here.  ``from_budget`` reads the
+    # budget's attributes at runtime and never the class itself.
+    from .core import ContextBudget
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +43,15 @@ Summarizer = Callable[
 
 @dataclass(frozen=True, slots=True)
 class ConversationContextPolicy:
+    """Token-based conversation memory thresholds.
+
+    All thresholds are *tokens*, derived from the execution's effective model
+    capability via ``from_budget`` rather than fixed byte constants.  The
+    service drives compression by reaching ``compression_trigger`` (a ratio
+    of the history budget) and compresses toward ``compression_target`` (a
+    smaller ratio); ``summary_input_budget`` bounds one summarizer transcript.
+    """
+
     history_budget: int
     compression_trigger: int
     compression_target: int
@@ -51,6 +74,25 @@ class ConversationContextPolicy:
             or self.max_compression_passes <= 0
         ):
             raise ValueError("invalid conversation context policy")
+
+    @classmethod
+    def from_budget(cls, budget: "ContextBudget") -> ConversationContextPolicy:
+        """Derive token thresholds from the execution's frozen context budget.
+
+        Compression triggers near the ceiling (the history is about to stop
+        fitting) and compresses toward half the history budget, so the loop
+        is driven by the real remaining space rather than a fixed trigger
+        unrelated to the model.  ``summary_input_budget`` bounds one summarizer
+        transcript to half the history budget as well.
+        """
+
+        history = budget.history_budget
+        return cls(
+            history_budget=history,
+            compression_trigger=max(1, int(history * 0.85)),
+            compression_target=max(1, int(history * 0.5)),
+            summary_input_budget=max(1, int(history * 0.5)),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,12 +133,23 @@ class _Turn:
     def last_sequence(self) -> int:
         return self.assistant.sequence
 
-    @property
-    def size(self) -> int:
-        return len(self.user.content.encode()) + len(self.assistant.content.encode()) + 64
-
     def transcript(self) -> str:
         return f"USER: {self.user.content}\nASSISTANT: {self.assistant.content}"
+
+
+def _turn_size(turn: _Turn, estimator: TokenEstimator) -> int:
+    """Estimated tokens for one user/assistant turn, including framing overhead.
+
+    Sized in tokens by the execution's frozen estimator (conservative:
+    never under-counts), so memory compression reflects the real model context
+    budget rather than serialized bytes.
+    """
+
+    return (
+        estimator.estimate(turn.user.content)
+        + estimator.estimate(turn.assistant.content)
+        + 64
+    )
 
 
 class ConversationContextService:
@@ -107,10 +160,17 @@ class ConversationContextService:
         sessions: async_sessionmaker[AsyncSession],
         summarizer: Summarizer,
         policy: ConversationContextPolicy,
+        *,
+        estimator: TokenEstimator | None = None,
     ) -> None:
         self._sessions = sessions
         self._summarizer = summarizer
         self._policy = policy
+        # Conservative default (one estimated token per UTF-8 byte) keeps the
+        # service usable without a candidate snapshot; a real execution passes
+        # the provider-specific estimator so memory is sized in real model
+        # tokens rather than bytes.
+        self._estimator = estimator or ByteTokenEstimator()
         self._projects = ProjectsQueryService(sessions)
 
     async def build(
@@ -121,13 +181,22 @@ class ConversationContextService:
         snapshot: tuple[ProviderCandidate, ...],
         *,
         history_budget: int | None = None,
+        policy: ConversationContextPolicy | None = None,
+        estimator: TokenEstimator | None = None,
     ) -> AgentConversationContext:
         # The history budget may be supplied per-execution from the real fixed
         # overhead (actual system instruction + tool definitions + current
         # message + reserves).  When absent, fall back to the static policy.
+        # The per-call ``policy`` / ``estimator`` overrides let one execution
+        # freeze the capability-derived thresholds and the provider-specific
+        # estimator once and thread them through memory building, so the same
+        # immutable snapshot sizes both the loop budget and the conversation
+        # context.
+        active_policy = policy or self._policy
+        active_estimator = estimator or self._estimator
         effective_budget = (
             history_budget if history_budget is not None and history_budget > 0
-            else self._policy.history_budget
+            else active_policy.history_budget
         )
         passes = 0
         # The compression threshold must be bounded by the *effective* history
@@ -137,28 +206,28 @@ class ConversationContextService:
         # history exceed the budget and be silently truncated by ``_result``.
         # Using ``min(trigger, effective_budget)`` forces compression before any
         # turn would have to be dropped.
-        trigger = min(self._policy.compression_trigger, effective_budget)
+        trigger = min(active_policy.compression_trigger, effective_budget)
         while True:
             conversation, _, turns = await self._load(
                 conversation_id, current_user_message_id, UUID(identity.user.id)
             )
             active = await self._active_project(conversation, identity)
-            if self._context_size(conversation.contextSummary, turns) <= trigger:
-                return self._result(conversation, turns, active, effective_budget)
-            compressible = turns[: -self._policy.minimum_recent_turns]
-            batch = self._bounded_prefix(compressible)
+            if self._context_size(conversation.contextSummary, turns, active_estimator) <= trigger:
+                return self._result(conversation, turns, active, effective_budget, active_estimator)
+            compressible = turns[: -active_policy.minimum_recent_turns]
+            batch = self._bounded_prefix(compressible, active_estimator)
             # No compressible batch means only the protected recent window
             # remains unsummarized; everything older is already in the summary,
             # so the no-dropped-history invariant holds by construction.
             if not batch:
-                return self._result(conversation, turns, active, effective_budget)
-            if passes >= self._policy.max_compression_passes:
+                return self._result(conversation, turns, active, effective_budget, active_estimator)
+            if passes >= active_policy.max_compression_passes:
                 # Execution-budget exhaustion is explicit degradation, never a
                 # silent stop.  We do not claim the unsummarized middle turns
                 # have entered memory; the persisted summary + latest turns are
                 # returned and the next turn resumes monotonic compression.
                 logger.warning("AGENT_CONTEXT_COMPRESSION_DEGRADED")
-                return self._result(conversation, turns, active, effective_budget)
+                return self._result(conversation, turns, active, effective_budget, active_estimator)
             passes += 1
             through = batch[-1].last_sequence
             transcript = "\n\n".join(turn.transcript() for turn in batch)
@@ -168,11 +237,11 @@ class ConversationContextService:
                 )
             except ProviderError:
                 logger.warning("AGENT_CONTEXT_COMPRESSION_DEGRADED")
-                return self._result(conversation, turns, active, effective_budget)
-            summary = self._bounded_text(summary, self._policy.compression_target)
+                return self._result(conversation, turns, active, effective_budget, active_estimator)
+            summary = self._bounded_text(summary, active_policy.compression_target)
             if not summary:
                 logger.warning("AGENT_CONTEXT_COMPRESSION_DEGRADED")
-                return self._result(conversation, turns, active, effective_budget)
+                return self._result(conversation, turns, active, effective_budget, active_estimator)
             updated = await self._compare_and_set_summary(
                 conversation.id,
                 expected_version=conversation.contextSummaryVersion,
@@ -190,6 +259,7 @@ class ConversationContextService:
             turns,
             await self._active_project(conversation, identity),
             effective_budget,
+            active_estimator,
         )
 
     async def _load(
@@ -284,15 +354,16 @@ class ConversationContextService:
         turns: Sequence[_Turn],
         active: ActiveProject | None,
         history_budget: int,
+        estimator: TokenEstimator,
     ) -> AgentConversationContext:
         selected: list[_Turn] = []
-        used = len((conversation.contextSummary or "").encode())
+        used = estimator.estimate(conversation.contextSummary or "")
         for turn in reversed(turns):
             required = len(selected) < self._policy.minimum_recent_turns
-            if not required and used + turn.size > history_budget:
+            if not required and used + _turn_size(turn, estimator) > history_budget:
                 break
             selected.append(turn)
-            used += turn.size
+            used += _turn_size(turn, estimator)
         selected.reverse()
         # No-dropped-history invariant: every eligible turn (sequence >
         # summarized_through_sequence) must either be carried in
@@ -324,14 +395,16 @@ class ConversationContextService:
             context_degraded=degraded,
         )
 
-    def _bounded_prefix(self, turns: Sequence[_Turn]) -> list[_Turn]:
+    def _bounded_prefix(
+        self, turns: Sequence[_Turn], estimator: TokenEstimator
+    ) -> list[_Turn]:
         result: list[_Turn] = []
         used = 0
         for turn in turns:
-            if used + turn.size > self._policy.summary_input_budget:
+            if used + _turn_size(turn, estimator) > self._policy.summary_input_budget:
                 break
             result.append(turn)
-            used += turn.size
+            used += _turn_size(turn, estimator)
         return result
 
     @staticmethod
@@ -347,8 +420,12 @@ class ConversationContextService:
         return result
 
     @staticmethod
-    def _context_size(summary: str | None, turns: Sequence[_Turn]) -> int:
-        return len((summary or "").encode()) + sum(turn.size for turn in turns)
+    def _context_size(
+        summary: str | None, turns: Sequence[_Turn], estimator: TokenEstimator
+    ) -> int:
+        return estimator.estimate(summary or "") + sum(
+            _turn_size(turn, estimator) for turn in turns
+        )
 
     @staticmethod
     def _bounded_text(value: str, budget: int) -> str:

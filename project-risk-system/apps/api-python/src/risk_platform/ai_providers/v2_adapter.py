@@ -253,6 +253,38 @@ class ProviderModelInfo:
 
 
 @dataclass(frozen=True, slots=True)
+class ModelCapabilities:
+    """Provider-neutral model context capacity (tokens), owned by the adapter.
+
+    This is *model* capacity — how much context the model itself can hold and
+    emit — not the Agent product's context policy, and not the HTTP transport
+    byte safety limit (``MAX_REQUEST_BYTES``).  Agent Core consumes an
+    *effective* capability snapshot derived from the failover candidates and
+    must never hardcode a DeepSeek value here.
+    """
+
+    context_window_tokens: int
+    max_output_tokens: int
+
+
+def _deepseek_official_capabilities(model_name: str) -> ModelCapabilities:
+    """DeepSeek Official model context per the official current model ability.
+
+    DeepSeek's chat models expose a 1,000,000-token context window with up to
+    384,000 output tokens (max_tokens).  All current DeepSeek Official chat
+    models share this envelope, so the capability is keyed off the provider
+    type rather than a per-model catalog entry.  If a future model diverges,
+    branch on ``model_name`` here — the Agent Core side stays provider-neutral.
+    """
+
+    del model_name
+    return ModelCapabilities(
+        context_window_tokens=1_000_000,
+        max_output_tokens=384_000,
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class ProviderCandidate:
     account_id: UUID
     account_name: str
@@ -261,6 +293,117 @@ class ProviderCandidate:
     model_name: str
     timeout_seconds: int
     encrypted_api_key: str
+    capabilities: ModelCapabilities | None = None
+
+    def effective_capabilities(self) -> ModelCapabilities:
+        if self.capabilities is None:
+            raise ProviderError(
+                ProviderErrorClassification.INVALID_REQUEST,
+                retryable=False,
+                failover_allowed=False,
+            )
+        return self.capabilities
+
+
+def effective_candidate_capabilities(
+    candidates: tuple[ProviderCandidate, ...],
+) -> ModelCapabilities:
+    """The effective model capacity across a failover chain.
+
+    Failover may route a request to any candidate in the chain, so the
+    effective context window is the *minimum* window across candidates (a
+    larger-window candidate cannot rescue a request shaped for a smaller one)
+    and the effective output limit is the minimum output cap.  This guarantees
+    a request that fits the effective budget cannot overflow any failover
+    candidate.  Raises when any candidate lacks capabilities (fail closed).
+    """
+
+    if not candidates:
+        raise ProviderError(
+            ProviderErrorClassification.CREDENTIAL_UNAVAILABLE,
+            retryable=False,
+            failover_allowed=False,
+        )
+    windows = [candidate.effective_capabilities().context_window_tokens for candidate in candidates]
+    outputs = [
+        candidate.effective_capabilities().max_output_tokens for candidate in candidates
+    ]
+    return ModelCapabilities(
+        context_window_tokens=min(windows),
+        max_output_tokens=min(outputs),
+    )
+
+
+class TokenEstimator(Protocol):
+    """Provider-neutral, conservative token-count estimate for a text string.
+
+    This is the *only* token notion the Agent core consumes for its context
+    budget.  It is deliberately an over-estimate (never under), so a request
+    that fits the estimated budget also fits the real model budget.  It is
+    distinct from the HTTP transport byte safety limit
+    (``MAX_REQUEST_BYTES`` / ``measure_provider_request``): the estimator
+    sizes *model context capacity* in tokens, the byte guard sizes *the wire
+    payload* in bytes, and both must hold independently.
+    """
+
+    def estimate(self, text: str) -> int: ...
+
+
+@dataclass(frozen=True, slots=True)
+class ByteTokenEstimator:
+    """Baseline estimator: one estimated token per UTF-8 byte.
+
+    Tokens never exceed bytes for any text a tokenizer could emit (a BPE byte
+    is one token, a multi-byte char is one or more tokens), so this is a safe
+    conservative upper bound for any provider.  It is the default and the test
+    double; provider-specific estimators are free to tighten it.
+    """
+
+    def estimate(self, text: str) -> int:
+        return len(text.encode("utf-8")) if text else 0
+
+
+@dataclass(frozen=True, slots=True)
+class DeepSeekOfficialTokenEstimator:
+    """Conservative estimator tuned for DeepSeek-Official real-world content.
+
+    DeepSeek uses a BPE tokenizer whose ratio over the mixed content an Agent
+    actually sends (CJK-heavy prompts, JSON tool arguments/definitions, ASCII
+    words) sits around one token per ~3 UTF-8 bytes: CJK is ~1 token/char and
+    3 bytes/char (ratio 1/3), English BPE averages ~4 bytes/token (>1/3, so
+    ``bytes/3`` over-estimates).  ``bytes / 3`` rounded up is therefore an
+    upper bound for real content while ~3x tighter than raw bytes, letting
+    the budget reflect model context rather than the byte transport guard.
+    Adversarial text engineered to maximise tokens-per-byte (rare single-byte
+    tokens) is bounded by the independent transport guard
+    (``MAX_REQUEST_BYTES``) and never by the model context window, so the
+    estimator staying conservative there is correct, not a hole.
+    """
+
+    def estimate(self, text: str) -> int:
+        if not text:
+            return 0
+        return (len(text.encode("utf-8")) + 2) // 3
+
+
+def effective_candidate_estimator(
+    candidates: tuple[ProviderCandidate, ...],
+) -> TokenEstimator:
+    """The estimator for the first candidate's provider type, fail-closed.
+
+    Failover candidates all share the approved provider type (the registry is
+    closed at ``AiProviderAdapterRegistry``), so the first candidate's
+    provider type selects the estimator for the whole chain.  An empty chain
+    has no provider, so the conservative ``ByteTokenEstimator`` is returned —
+    the budget it produces is irrelevant because no chat can be made without a
+    candidate, and the worker's context build only runs when a snapshot exists.
+    """
+
+    if not candidates:
+        return ByteTokenEstimator()
+    if candidates[0].provider_type is ProviderType.DEEPSEEK_OFFICIAL:
+        return DeepSeekOfficialTokenEstimator()
+    return ByteTokenEstimator()
 
 
 class AiProviderAdapter(Protocol):
@@ -689,8 +832,11 @@ __all__ = [
     "DEEPSEEK_OFFICIAL_ORIGIN",
     "AiProviderAdapter",
     "AiProviderAdapterRegistry",
+    "ByteTokenEstimator",
     "DeepSeekOfficialAdapter",
     "DeepSeekOfficialHttpTransport",
+    "DeepSeekOfficialTokenEstimator",
+    "ModelCapabilities",
     "ProviderCandidate",
     "ProviderCandidatesExhausted",
     "ProviderChatRequest",
@@ -708,5 +854,8 @@ __all__ = [
     "ProviderToolCall",
     "ProviderToolDefinition",
     "ProviderType",
+    "TokenEstimator",
+    "effective_candidate_capabilities",
+    "effective_candidate_estimator",
     "measure_provider_request",
 ]

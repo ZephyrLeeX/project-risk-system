@@ -17,6 +17,7 @@ from risk_platform.agent.scope import OUT_OF_SCOPE_MESSAGE, ScopeDecision, Scope
 from risk_platform.agent.tools import AgentToolRegistry
 from risk_platform.agent.v2_execution import _project_selection_resume_context
 from risk_platform.ai_providers.v2_adapter import (
+    ModelCapabilities,
     ProviderCandidate,
     ProviderChatRequest,
     ProviderChatResponse,
@@ -25,6 +26,7 @@ from risk_platform.ai_providers.v2_adapter import (
     ProviderTokenUsage,
     ProviderToolCall,
     ProviderType,
+    _deepseek_official_capabilities,
 )
 from risk_platform.ai_providers.v2_service import ProviderV2Runtime
 from risk_platform.auth.schemas import AuthenticatedUser
@@ -140,6 +142,7 @@ def _snapshot(model_name: str) -> tuple[ProviderCandidate, ...]:
             model_name=model_name,
             timeout_seconds=30,
             encrypted_api_key="encrypted",
+            capabilities=_deepseek_official_capabilities(model_name),
         ),
     )
 

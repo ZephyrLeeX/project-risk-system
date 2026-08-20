@@ -563,7 +563,7 @@ def test_max_pass_exhaustion_flags_degraded_not_silent_drop() -> None:
 
 def test_context_budget_is_unified_and_active_project_reference_is_explicit() -> None:
     budget = ContextBudget()
-    assert budget.history_budget == 16 * 1024
+    assert budget.history_budget == 44 * 1024
     assert budget.tool_result_reserve < budget.hard_context_budget
     assert refers_to_active_project("这个项目有什么风险？") is True
     assert refers_to_active_project("B 项目有什么风险？") is False

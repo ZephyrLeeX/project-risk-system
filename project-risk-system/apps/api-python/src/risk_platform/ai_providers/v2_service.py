@@ -23,6 +23,7 @@ from risk_platform.ai_providers.models import (
 )
 from risk_platform.ai_providers.v2_adapter import (
     AiProviderAdapter,
+    ModelCapabilities,
     ProviderCandidate,
     ProviderCandidatesExhausted,
     ProviderChatRequest,
@@ -59,6 +60,22 @@ BACKOFF_JITTER_SECONDS = 0.1
 
 Sleep = Callable[[float], Awaitable[None]]
 Jitter = Callable[[float, float], float]
+
+
+def _capabilities_for(provider_type: ProviderType, model_name: str) -> ModelCapabilities:
+    """Resolve provider/model context capability for a candidate snapshot.
+
+    Only the DeepSeek Official adapter is approved, so the capability is
+    resolved through its provider-specific function.  The mapping lives in the
+    adapter module (``v2_adapter``), not in Agent Core, so Agent Core never
+    hardcodes a DeepSeek value.
+    """
+
+    if provider_type is ProviderType.DEEPSEEK_OFFICIAL:
+        from risk_platform.ai_providers.v2_adapter import _deepseek_official_capabilities
+
+        return _deepseek_official_capabilities(model_name)
+    raise ValueError(f"unsupported provider type: {provider_type}")
 
 
 class ProviderV2Runtime:
@@ -106,6 +123,9 @@ class ProviderV2Runtime:
                     model_name=model.modelName,
                     timeout_seconds=model.timeoutSeconds,
                     encrypted_api_key=account.encryptedApiKey,
+                    capabilities=_capabilities_for(
+                        ProviderType(account.providerType.value), model.modelName
+                    ),
                 )
                 for account, model in rows
             )
@@ -511,6 +531,9 @@ class AiProviderV2Service:
                 model.modelName,
                 model.timeoutSeconds,
                 account.encryptedApiKey,
+                capabilities=_capabilities_for(
+                    ProviderType.DEEPSEEK_OFFICIAL, model.modelName
+                ),
             )
         started = monotonic()
         try:

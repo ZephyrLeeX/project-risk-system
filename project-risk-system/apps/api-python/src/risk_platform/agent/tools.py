@@ -18,7 +18,7 @@ from risk_platform.dashboard.service import DashboardService
 from risk_platform.model_types import JSONValue
 from risk_platform.projects.query_service import ProjectSearchQuery, ProjectsQueryService
 from risk_platform.risks.models import ProjectRiskLevel, RiskStatus
-from risk_platform.risks.schemas import RiskDetail, RiskItem, RiskPage, RiskQuery
+from risk_platform.risks.schemas import RiskDetail, RiskItem, RiskQuery
 from risk_platform.risks.service import RisksService
 from risk_platform.shared.errors import ApiError
 from risk_platform.todos.schemas import ListTodosQuery, ManagerTodoDetail, ManagerTodoListResponse
@@ -33,6 +33,8 @@ from .mutations import (
     proposal_tool_names,
 )
 from .schemas import (
+    AgentRiskListItem,
+    AgentRiskListPage,
     AgentToolHelp,
     AgentToolResult,
     DashboardFocusToolResponse,
@@ -137,7 +139,7 @@ class AgentToolRegistry:
                 ("dashboard.view",),
                 False,
                 RiskToolArguments,
-                _model_adapter(RiskPage),
+                _model_adapter(AgentRiskListPage),
                 self._risk_list(risks),
             ),
             AgentTool(
@@ -188,8 +190,8 @@ class AgentToolRegistry:
             *tuple(
                 AgentTool(
                     name,
-                    "生成待用户确认的 MutationDraft；risk_create 在项目、标题、描述和有效分类已明确时"
-                    "应立即调用；不会直接写入业务表",
+                    "生成待用户确认的 MutationDraft;risk_create 在项目、标题、"
+                    "描述和有效分类已明确时应立即调用;不会直接写入业务表",
                     ("risk.report",),
                     True,
                     MutationProposalRequest,
@@ -365,12 +367,19 @@ class AgentToolRegistry:
                 level=cast(ProjectRiskLevel | None, arguments.get("level")),
                 status=cast(RiskStatus | None, arguments.get("status")),
                 page=_int_argument(arguments.get("page"), 1),
-                pageSize=_int_argument(arguments.get("pageSize"), 20),
+                pageSize=_int_argument(arguments.get("pageSize"), 10),
             )
             project_id = cast(UUID | None, arguments.get("projectId"))
             if project_id is not None:
-                return await service.list_for_project(identity, project_id, query)
-            return await service.list(identity, query)
+                page = await service.list_for_project(identity, project_id, query)
+            else:
+                page = await service.list(identity, query)
+            return AgentRiskListPage(
+                items=[_compact_risk_item(item) for item in page.items],
+                page=page.page,
+                pageSize=page.pageSize,
+                total=page.total,
+            )
 
         return call
 
@@ -453,7 +462,34 @@ def _model_adapter(model: type[BaseModel]) -> ToolResponseAdapter:
 def _dashboard_focus_adapter(value: object) -> DashboardFocusToolResponse:
     if not isinstance(value, list) or not all(isinstance(item, RiskItem) for item in value):
         raise AgentToolResultTypeError(f"expected list[RiskItem], received {type(value).__name__}")
-    return DashboardFocusToolResponse(items=value)
+    return DashboardFocusToolResponse(
+        items=[_compact_risk_item(item) for item in value]
+    )
+
+
+def _compact_risk_item(item: RiskItem) -> AgentRiskListItem:
+    """Project the formal ``RiskItem`` to the Agent compact list shape.
+
+    Drops the long ``description`` / ``evidence`` / ``suggestion`` fields so a
+    list-shaped answer (e.g. 当前有哪些高风险) stays inside the effective
+    model context budget; ``risk_detail`` expands the full record on demand.
+    """
+
+    return AgentRiskListItem(
+        id=item.id,
+        projectId=item.projectId,
+        projectName=item.projectName,
+        title=item.title,
+        level=item.level,
+        status=item.status,
+        categoryName=item.category.name,
+        departmentName=item.departmentName,
+        projectOwnerName=item.projectOwnerName,
+        actualCollectedAmountYuan=item.actualCollectedAmountYuan,
+        remainingAmountYuan=item.remainingAmountYuan,
+        detectedAt=item.detectedAt,
+        updatedAt=item.updatedAt,
+    )
 
 
 def _int_argument(value: object | None, default: int) -> int:

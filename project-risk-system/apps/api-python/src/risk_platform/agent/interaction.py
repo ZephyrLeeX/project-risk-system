@@ -100,13 +100,71 @@ class AgentInteractionService:
             "CONFIRM",
             "CANCEL",
         }:
-            await MutationDraftService(self._sessions).respond(
-                identity,
-                interaction_id,
-                payload.action,
-                payload.finalFields,
-                trace_id=UUID(trace_id),
-            )
+            # Commit the draft AND terminalize the execution in ONE transaction.
+            # ``MutationDraftService.respond`` runs its RBAC / already-resolved /
+            # expiry / idempotency guards under the passed session (it locks the
+            # interaction + draft with_for_update); once it returns, this same
+            # transaction locks the execution, moves it to COMPLETED (CONFIRM) or
+            # CANCELLED (CANCEL) with completedAt, and appends INTERACTION_RESOLVED
+            # so a refresh sees a terminal execution instead of a dangling
+            # WAITING_FOR_USER row. No new durable task is started — streamUrl
+            # stays None and resumeAfterEventSequence stays 0 (the frontend
+            # ignores both for a terminalized turn).
+            now = datetime.now(UTC)
+            async with self._sessions.begin() as session:
+                await MutationDraftService(self._sessions).respond(
+                    identity,
+                    interaction_id,
+                    payload.action,
+                    payload.finalFields,
+                    trace_id=UUID(trace_id),
+                    session=session,
+                )
+                resolved_interaction = await session.scalar(
+                    select(AgentInteraction).where(
+                        AgentInteraction.id == interaction_id,
+                        AgentInteraction.ownerUserId == UUID(identity.user.id),
+                    )
+                )
+                if resolved_interaction is None:
+                    raise ApiError(
+                        404, "AGENT_INTERACTION_NOT_FOUND", "交互不存在或不属于当前用户"
+                    )
+                execution = await session.scalar(
+                    select(AgentExecution)
+                    .where(AgentExecution.id == resolved_interaction.executionId)
+                    .with_for_update()
+                )
+                if (
+                    execution is None
+                    or execution.status is not AgentExecutionStatus.WAITING_FOR_USER
+                ):
+                    raise ApiError(
+                        409, "AGENT_INTERACTION_NOT_WAITING", "Agent 当前不在等待状态"
+                    )
+                execution.status = (
+                    AgentExecutionStatus.COMPLETED
+                    if payload.action == "CONFIRM"
+                    else AgentExecutionStatus.CANCELLED
+                )
+                execution.completedAt = now
+                message = await session.get(AgentMessage, execution.userMessageId)
+                if message is None:
+                    raise ApiError(
+                        409, "AGENT_INTERACTION_CONTEXT_INVALID", "交互恢复上下文不可用"
+                    )
+                await append_event(
+                    session,
+                    conversation_id=resolved_interaction.conversationId,
+                    message_id=message.id,
+                    task_id=execution.taskId,
+                    event_type=AgentEventType.INTERACTION_RESOLVED,
+                    payload={
+                        "interactionId": str(resolved_interaction.id),
+                        "action": payload.action,
+                        "traceId": trace_id,
+                    },
+                )
             return AgentInteractionRespondResponse(
                 interaction=await self._write_interaction_view(identity, interaction_id),
                 streamUrl=None,

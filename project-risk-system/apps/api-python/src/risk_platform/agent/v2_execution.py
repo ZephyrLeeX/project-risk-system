@@ -87,15 +87,17 @@ class NativeAgentExecutionWorker:
     ) -> None:
         self._sessions = sessions
         self._core = core
+        # The constructed service holds a static fallback policy + the
+        # conservative byte estimator; each execution overrides both with the
+        # capability-derived token thresholds and provider estimator frozen
+        # from that execution's snapshot (see ``_invoke_core``), so the same
+        # immutable snapshot sizes both the loop budget and the conversation
+        # context.
         budget = core.context_budget
         self._conversation_context = ConversationContextService(
             sessions,
             core.summarize_conversation,
-            ConversationContextPolicy(
-                history_budget=budget.history_budget,
-                compression_trigger=budget.compression_trigger,
-                compression_target=budget.compression_target,
-            ),
+            ConversationContextPolicy.from_budget(budget),
         )
         self._heartbeat_interval = heartbeat_interval
         self._attempt_timeout_seconds = attempt_timeout_seconds
@@ -294,14 +296,24 @@ class NativeAgentExecutionWorker:
         snapshot = None
         if "conversation_context" in parameters:
             snapshot = await self._core.candidate_snapshot()
-            # Size recent history to the real per-execution fixed overhead
-            # (actual system instruction + tool definitions + current message +
-            # reserves) rather than a static 8 KiB current-user assumption.
+            # Freeze the per-execution token budget and the provider-specific
+            # estimator from the same immutable snapshot captured here, so a
+            # provider-admin change made mid-execution only affects the next
+            # execution's snapshot — never this one's loop budget or memory
+            # sizing.  The conversation context is built with the
+            # capability-derived policy + estimator so memory compression
+            # reflects the real model context window (tokens), not serialized
+            # bytes, and the same snapshot is handed to ``core.run`` so the
+            # loop's fail-closed budget uses the identical frozen capability.
+            budget = self._core.execution_budget(snapshot)
+            estimator = self._core.estimator_for(snapshot)
+            policy = ConversationContextPolicy.from_budget(budget)
             history_budget = self._core.history_budget_for(
                 identity,
                 message,
                 resume_context=context,
                 selected_project_id=selected_project_id,
+                snapshot=snapshot,
             )
             conversation_context = await self._conversation_context.build(
                 config.conversationId,
@@ -309,6 +321,8 @@ class NativeAgentExecutionWorker:
                 identity,
                 snapshot,
                 history_budget=history_budget,
+                policy=policy,
+                estimator=estimator,
             )
             if (
                 selected_project_id is None

@@ -37,17 +37,20 @@ from risk_platform.agent.events import append_event, open_event_stream
 from risk_platform.agent.interaction import AgentInteractionService
 from risk_platform.agent.models import (
     AgentConversation,
+    AgentEvent,
     AgentEventType,
     AgentExecution,
     AgentExecutionConfig,
     AgentExecutionStatus,
     AgentInteraction,
+    AgentInteractionAction,
     AgentInteractionStatus,
     AgentInteractionType,
     AgentMessage,
     AgentMessageRole,
     MutationDraft,
     MutationDraftOperation,
+    MutationDraftStatus,
 )
 from risk_platform.agent.schemas import AgentInteractionRespondRequest
 from risk_platform.agent.service import AgentConversationService
@@ -57,6 +60,7 @@ from risk_platform.db import create_database_engine, create_session_factory, tra
 from risk_platform.projects.models import Project, ProjectStatus
 from risk_platform.reliability.core import enqueue_task
 from risk_platform.reliability.models import DurableTask, DurableTaskKind, DurableTaskStatus
+from risk_platform.risks.models import Risk, RiskCategory, RiskSourceType
 from risk_platform.shared.errors import ApiError
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -69,6 +73,11 @@ _PROJECT_CANDIDATE = {
     "departmentName": "工程部",
     "status": "DELIVERY",
 }
+
+# Module-level UUIDs for the WRITE_CONFIRMATION seed so ruff's B008
+# (no function call in argument defaults) stays satisfied.
+_WC_PROJECT_ID = UUID("00000000-0000-0000-0000-000000000060")
+_WC_CATEGORY_ID = UUID("00000000-0000-0000-0000-000000000061")
 
 
 @pytest.fixture(scope="module")
@@ -147,6 +156,7 @@ async def _seed_waiting_for_user(
     owner: UUID = OWNER,
     interaction_type: AgentInteractionType = AgentInteractionType.PROJECT_SELECTION,
     with_draft: bool = False,
+    proposal: dict[str, object] | None = None,
 ) -> tuple[UUID, UUID, UUID]:
     """Seed a conversation paused on an OPEN interaction (no worker required)."""
 
@@ -218,7 +228,8 @@ async def _seed_waiting_for_user(
                     conversationId=conversation.id,
                     executionId=execution.id,
                     operation=MutationDraftOperation.RISK_CREATE,
-                    proposal={"title": "新风险", "level": "HIGH"},
+                    proposal=proposal
+                    or {"title": "新风险", "level": "HIGH"},
                     digest="sha256-test-digest",
                     idempotencyKey=f"draft-{interaction.id}",
                     expiresAt=now + timedelta(minutes=30),
@@ -916,5 +927,242 @@ def test_project_selection_respond_envelope_sequence_baseline_replays_gap(
         assert "event: message.delta" in joined
         assert "event: completed" in joined
         assert "已选择项目" in joined
+
+    asyncio.run(run())
+
+
+def _seed_write_confirmation_environment(
+    factory: async_sessionmaker[AsyncSession],
+    *,
+    owner: UUID = OWNER,
+    project_id: UUID = _WC_PROJECT_ID,
+    category_id: UUID = _WC_CATEGORY_ID,
+    project_external_code: str = "P-WC",
+    category_code: str = "WC-CAT",
+) -> tuple[UUID, UUID, UUID, UUID]:
+    """Seed the WRITE_CONFIRMATION commit graph: project + category + draft.
+
+    The real ``_commit`` for RISK_CREATE calls ``RisksService.create_in_session``
+    → ``TodosService.ensure_for_risk``, which needs a real ``Project`` row (for
+    the data-scope revalidation and the delivery-owner label) and a real active
+    ``RiskCategory`` (prevalidation rejects a stale id).  The draft proposal
+    carries the full editable field set so CONFIRM exercises the commit path.
+    Each caller passes distinct natural keys so the module-scoped shared
+    database cannot leak a committed Risk from a sibling test into the
+    ``risk_count`` assertion.
+    """
+
+    async def seed() -> tuple[UUID, UUID, UUID, UUID]:
+        async with transaction(factory) as session:
+            now = datetime.now(UTC)
+            existing_project = await session.get(Project, project_id)
+            if existing_project is None:
+                session.add(
+                    Project(
+                        id=project_id,
+                        name="写确认项目",
+                        externalCode=project_external_code,
+                        status=ProjectStatus.DELIVERY,
+                        deliveryOwnerName="负责人",
+                        createdAt=now,
+                        updatedAt=now,
+                    )
+                )
+            existing_category = await session.get(RiskCategory, category_id)
+            if existing_category is None:
+                session.add(
+                    RiskCategory(
+                        id=category_id,
+                        code=category_code,
+                        name="写确认分类",
+                        sortOrder=0,
+                        isActive=True,
+                        createdAt=now,
+                        updatedAt=now,
+                    )
+                )
+            await session.flush()
+        (
+            conversation_id,
+            execution_id,
+            interaction_id,
+        ) = await _seed_waiting_for_user(
+            factory,
+            owner=owner,
+            interaction_type=AgentInteractionType.WRITE_CONFIRMATION,
+            with_draft=True,
+            proposal={
+                "projectId": str(project_id),
+                "category": str(category_id),
+                "title": "写确认高风险",
+                "description": "用于终端化的写确认风险描述",
+                "level": "HIGH",
+                "evidence": "证据",
+                "suggestion": "建议",
+            },
+        )
+        return conversation_id, execution_id, interaction_id, project_id
+
+    return seed()  # type: ignore[return-value]
+
+
+def test_write_confirmation_confirm_terminalizes_execution_and_continues(
+    database: async_sessionmaker[AsyncSession],
+) -> None:
+    """A WRITE_CONFIRMATION CONFIRM commits the draft and ends the turn atomically.
+
+    After CONFIRM the interaction is RESOLVED, the draft is CONFIRMED, the
+    execution is COMPLETED with ``completedAt`` set, an INTERACTION_RESOLVED
+    event was appended, and ``history.runtime is None`` (a refresh sees a
+    terminal turn, not a dangling WAITING_FOR_USER).  A subsequent
+    ``continue_conversation`` no longer raises ``AGENT_EXECUTION_ACTIVE`` —
+    the terminalized turn releases the conversation.
+    """
+
+    async def run() -> None:
+        app_service = service(database)
+        (
+            conversation_id,
+            execution_id,
+            interaction_id,
+            project_id,
+        ) = await _seed_write_confirmation_environment(
+            database,
+            project_id=UUID("00000000-0000-0000-0000-000000000062"),
+            category_id=UUID("00000000-0000-0000-0000-000000000072"),
+            project_external_code="P-WC-CONFIRM",
+            category_code="WC-CONFIRM",
+        )
+
+        interaction_service = AgentInteractionService(database)
+        response = await interaction_service.respond(
+            identity(permissions=["agent.use", "dashboard.view", "risk.report"]),
+            interaction_id,
+            AgentInteractionRespondRequest(
+                action="CONFIRM", finalFields={"title": "写确认高风险-确认"}
+            ),
+            trace_id="00000000-0000-4000-8000-000000000070",
+        )
+        # The CONFIRM path starts no new durable task: the turn is terminal.
+        assert response.streamUrl is None
+        assert response.resumeAfterEventSequence == 0
+        assert response.interaction.status == "RESOLVED"
+        assert response.interaction.type == "WRITE_CONFIRMATION"
+
+        async with transaction(database) as session:
+            interaction = await session.get(AgentInteraction, interaction_id)
+            assert interaction is not None
+            assert interaction.status is AgentInteractionStatus.RESOLVED
+            assert interaction.responseAction is AgentInteractionAction.CONFIRM
+            draft = await session.scalar(
+                select(MutationDraft).where(
+                    MutationDraft.interactionId == interaction_id
+                )
+            )
+            assert draft is not None
+            assert draft.status is MutationDraftStatus.CONFIRMED
+            execution = await session.get(AgentExecution, execution_id)
+            assert execution is not None
+            assert execution.status is AgentExecutionStatus.COMPLETED
+            assert execution.completedAt is not None
+            resolved_event = await session.scalar(
+                select(AgentEvent.type).where(
+                    AgentEvent.taskId == execution.taskId,
+                    AgentEvent.type == AgentEventType.INTERACTION_RESOLVED,
+                )
+            )
+            assert resolved_event is AgentEventType.INTERACTION_RESOLVED
+            risk = await session.scalar(
+                select(Risk).where(Risk.projectId == project_id)
+            )
+            assert risk is not None
+            assert risk.title == "写确认高风险-确认"
+
+        history = await app_service.history(identity(), conversation_id)
+        assert history.runtime is None
+        # The terminalized turn no longer blocks a new message.
+        continued = await app_service.continue_conversation(
+            identity(), conversation_id, "继续追问"
+        )
+        assert continued.userMessage.content == "继续追问"
+
+    asyncio.run(run())
+
+
+def test_write_confirmation_cancel_terminalizes_execution_and_continues(
+    database: async_sessionmaker[AsyncSession],
+) -> None:
+    """A WRITE_CONFIRMATION CANCEL aborts the draft and ends the turn atomically.
+
+    After CANCEL the interaction is CANCELLED, the draft is CANCELLED, the
+    execution is CANCELLED with ``completedAt`` set, no Risk was committed, an
+    INTERACTION_RESOLVED event was appended, ``history.runtime is None``, and
+    a subsequent ``continue_conversation`` no longer raises
+    ``AGENT_EXECUTION_ACTIVE``.
+    """
+
+    async def run() -> None:
+        app_service = service(database)
+        (
+            conversation_id,
+            execution_id,
+            interaction_id,
+            project_id,
+        ) = await _seed_write_confirmation_environment(
+            database,
+            project_id=UUID("00000000-0000-0000-0000-000000000063"),
+            category_id=UUID("00000000-0000-0000-0000-000000000073"),
+            project_external_code="P-WC-CANCEL",
+            category_code="WC-CANCEL",
+        )
+
+        interaction_service = AgentInteractionService(database)
+        response = await interaction_service.respond(
+            identity(),
+            interaction_id,
+            AgentInteractionRespondRequest(action="CANCEL"),
+            trace_id="00000000-0000-4000-8000-000000000070",
+        )
+        assert response.streamUrl is None
+        assert response.resumeAfterEventSequence == 0
+        assert response.interaction.status == "CANCELLED"
+
+        async with transaction(database) as session:
+            interaction = await session.get(AgentInteraction, interaction_id)
+            assert interaction is not None
+            assert interaction.status is AgentInteractionStatus.CANCELLED
+            assert interaction.responseAction is AgentInteractionAction.CANCEL
+            draft = await session.scalar(
+                select(MutationDraft).where(
+                    MutationDraft.interactionId == interaction_id
+                )
+            )
+            assert draft is not None
+            assert draft.status is MutationDraftStatus.CANCELLED
+            execution = await session.get(AgentExecution, execution_id)
+            assert execution is not None
+            assert execution.status is AgentExecutionStatus.CANCELLED
+            assert execution.completedAt is not None
+            resolved_event = await session.scalar(
+                select(AgentEvent.type).where(
+                    AgentEvent.taskId == execution.taskId,
+                    AgentEvent.type == AgentEventType.INTERACTION_RESOLVED,
+                )
+            )
+            assert resolved_event is AgentEventType.INTERACTION_RESOLVED
+            # No Risk was committed: CANCEL aborts before ``_commit`` runs.
+            risk_count = await session.scalar(
+                select(func.count(Risk.id))
+                .where(Risk.projectId == project_id)
+                .where(Risk.sourceType == RiskSourceType.AGENT)
+            )
+            assert risk_count == 0
+
+        history = await app_service.history(identity(), conversation_id)
+        assert history.runtime is None
+        continued = await app_service.continue_conversation(
+            identity(), conversation_id, "继续追问"
+        )
+        assert continued.userMessage.content == "继续追问"
 
     asyncio.run(run())

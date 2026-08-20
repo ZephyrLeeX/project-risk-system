@@ -23,6 +23,7 @@ from risk_platform.agent.models import (
     AgentMessageRole,
 )
 from risk_platform.agent.schemas import (
+    AgentRiskListPage,
     ProjectDetailToolResponse,
     ProjectListToolResponse,
     RiskCategoryListToolResponse,
@@ -177,28 +178,29 @@ def test_risk_list_maps_bounded_level_and_status_to_risk_query() -> None:
     class FakeRisks:
         async def list(self, _identity: SessionIdentity, query: object) -> RiskPage:
             captured.append(query)
-            return RiskPage(items=[], page=1, pageSize=20, total=0)
+            return RiskPage(items=[], page=1, pageSize=10, total=0)
 
         async def list_for_project(
             self, _identity: SessionIdentity, _project_id: UUID, query: object
         ) -> RiskPage:
             captured.append(query)
-            return RiskPage(items=[], page=1, pageSize=20, total=0)
+            return RiskPage(items=[], page=1, pageSize=10, total=0)
 
     call = AgentToolRegistry._risk_list(FakeRisks())  # type: ignore[arg-type]
 
     async def invoke() -> object:
         return await call(
             identity(),
-            {"level": ProjectRiskLevel.HIGH, "status": RiskStatus.ACTIVE, "pageSize": 20},
+            {"level": ProjectRiskLevel.HIGH, "status": RiskStatus.ACTIVE, "pageSize": 10},
         )
 
-    asyncio.run(invoke())
+    result = asyncio.run(invoke())
+    assert isinstance(result, AgentRiskListPage)
     query = captured[0]
     assert isinstance(query, RiskQuery)
     assert query.level is ProjectRiskLevel.HIGH
     assert query.status is RiskStatus.ACTIVE
-    assert query.pageSize == 20
+    assert query.pageSize == 10
 
 
 def test_all_agent_tools_adapt_their_declared_runtime_result_to_agent_tool_result() -> None:
@@ -217,7 +219,7 @@ def test_all_agent_tools_adapt_their_declared_runtime_result_to_agent_tool_resul
         "risk_category_list": RiskCategoryListToolResponse(items=[]),
         "dashboard_summary": DashboardSummary.model_construct(),
         "dashboard_focus": [],
-        "risk_list": RiskPage.model_construct(),
+        "risk_list": AgentRiskListPage.model_construct(),
         "risk_detail": RiskDetail.model_construct(),
         "todo_list": ManagerTodoListResponse.model_construct(),
         "todo_detail": ManagerTodoDetail.model_construct(),

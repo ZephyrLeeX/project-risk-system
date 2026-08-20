@@ -322,6 +322,7 @@ const AGENT_ERROR_LABELS: Record<string, string> = {
   AGENT_PROVIDER_REQUEST_REJECTED: "AI服务拒绝了请求",
   AGENT_PROVIDER_UNAVAILABLE: "AI服务暂时不可用，请稍后重试",
   AGENT_TOOL_RESULT_TOO_LARGE: "Agent工具结果超出限制",
+  AGENT_TOTAL_TOOL_RESULT_TOO_LARGE: "查询结果过多，请缩小查询范围后重试",
   AGENT_REPORT_CATEGORY_STALE: "风险分类已变更，请重新发起",
   AGENT_STREAM_IDLE_TIMEOUT: "Agent事件流空闲超时，请重新读取会话",
   AGENT_EXECUTION_CONFIG_INVALID: "Agent执行配置无效，请重新发起对话",

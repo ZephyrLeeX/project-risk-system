@@ -213,6 +213,9 @@ describe("agent display labels", () => {
     expect(
       agentErrorLabel("AGENT_REPORT_CATEGORY_STALE", "fallback"),
     ).toBe("风险分类已变更，请重新发起");
+    expect(
+      agentErrorLabel("AGENT_TOTAL_TOOL_RESULT_TOO_LARGE", "fallback"),
+    ).toBe("查询结果过多，请缩小查询范围后重试");
     expect(agentErrorLabel("UNKNOWN_CODE", "fallback")).toBe("fallback");
   });
 
