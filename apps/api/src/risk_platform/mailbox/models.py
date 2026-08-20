@@ -85,6 +85,12 @@ class MailboxConfig(Base):
     authCodeLast4: Mapped[str] = mapped_column(String(16), nullable=False)
     subjectKeywords: Mapped[JSONValue] = mapped_column(JSONB, nullable=False)
     senderRule: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    weeklyReportOnly: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("TRUE")
+    )
+    senderAllowlist: Mapped[JSONValue] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
+    )
     initialSyncWeeks: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("4"))
     readAttachments: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("TRUE")
@@ -246,6 +252,7 @@ class MailSyncBatch(Base):
 class MailMessageSkipReason(StrEnum):
     DUPLICATE = "DUPLICATE"
     RULE_MISMATCH = "RULE_MISMATCH"
+    FILTERED = "FILTERED"
 
 
 class MailMessageStatus(StrEnum):

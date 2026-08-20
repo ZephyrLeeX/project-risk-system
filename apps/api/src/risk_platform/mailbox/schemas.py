@@ -5,11 +5,15 @@ from uuid import UUID
 
 from pydantic import Field, field_validator
 
+from risk_platform.mailbox.filtering import DEFAULT_WEEKLY_REPORT_KEYWORDS
 from risk_platform.shared.http import StrictRequestModel
 
 MailboxProvider = Literal["QQ", "IMAP"]
 MailboxEncryption = Literal["SSL", "STARTTLS"]
 InitialSyncWeeks = Literal[1, 4, 8, 12]
+#: Server-provided first-version weekly-report subject keywords, surfaced both
+#: as the unconfigured-mailbox form defaults and the empty-config fallback.
+DEFAULT_SUBJECT_KEYWORDS: list[str] = list(DEFAULT_WEEKLY_REPORT_KEYWORDS)
 
 
 class MailboxConfigRequest(StrictRequestModel):
@@ -22,6 +26,8 @@ class MailboxConfigRequest(StrictRequestModel):
     folder: str = Field(min_length=1, max_length=255)
     subjectKeywords: list[str] = Field(min_length=1, max_length=8)
     senderRule: str | None = Field(default=None, max_length=255)
+    weeklyReportOnly: bool = Field(default=True)
+    senderAllowlist: list[str] = Field(default_factory=list)
     initialSyncWeeks: InitialSyncWeeks
     readAttachments: bool
     aiExtractionEnabled: bool
@@ -60,6 +66,14 @@ class MailboxConfigRequest(StrictRequestModel):
             raise ValueError("主题关键词格式不正确")
         return cleaned
 
+    @field_validator("senderAllowlist")
+    @classmethod
+    def clean_allowlist(cls, value: list[str]) -> list[str]:
+        cleaned = list(dict.fromkeys(item.strip() for item in value if item.strip()))
+        if any(len(item) > 255 for item in cleaned):
+            raise ValueError("发件人允许列表格式不正确")
+        return cleaned
+
 
 class MailboxStatusRequest(StrictRequestModel):
     enabled: bool
@@ -78,6 +92,8 @@ class MailboxOverview(StrictRequestModel):
     folder: str
     subjectKeywords: list[str]
     senderRule: str
+    weeklyReportOnly: bool
+    senderAllowlist: list[str]
     initialSyncWeeks: InitialSyncWeeks
     readAttachments: bool
     aiExtractionEnabled: bool

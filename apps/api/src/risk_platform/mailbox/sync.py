@@ -12,9 +12,18 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from risk_platform.db import transaction
 from risk_platform.mailbox.connection import MailboxConnection, MailEnvelope, MailSyncSnapshot
+from risk_platform.mailbox.filtering import (
+    DEFAULT_WEEKLY_REPORT_KEYWORDS,
+    MailCandidateFilter,
+    MailCandidateFilterConfig,
+)
 from risk_platform.mailbox.models import (
     MailboxConfig,
+    MailMessage,
+    MailMessageSkipReason,
+    MailMessageStatus,
     MailReceivedAtSource,
+    MailRiskCandidate,
     MailSourceHandoff,
     MailStageStatus,
     MailSyncBatch,
@@ -81,6 +90,15 @@ class MailboxSyncService:
 
         try:
             snapshot = await self._discover(config)
+            candidate_filter = self._candidate_filter(config)
+            envelopes = snapshot.envelopes[:MAX_BATCH_UIDS]
+            candidates: list[MailEnvelope] = []
+            skipped_uids: list[int] = []
+            for envelope in envelopes:
+                if candidate_filter.evaluate(subject=envelope.subject, sender=envelope.sender):
+                    candidates.append(envelope)
+                else:
+                    skipped_uids.append(envelope.uid)
             async with transaction(self._session_factory) as session:
                 current = await session.scalar(
                     select(MailboxConfig).where(MailboxConfig.id == config.id).with_for_update()
@@ -100,9 +118,27 @@ class MailboxSyncService:
                     return
                 current.uidValidity = snapshot.uid_validity
                 batch.uidValidity = snapshot.uid_validity
-                for envelope in snapshot.envelopes[:MAX_BATCH_UIDS]:
+                # One-time safe cleanup: re-judge this mailbox's historical
+                # MailMessages against the candidate filter. Messages now
+                # judged non-weekly that never produced a risk candidate are
+                # marked SKIPPED + FILTERED and hidden from the default list
+                # — never physically deleted, and never touched once a formal
+                # risk candidate exists for them.
+                await self._reclassify_historical(session, current, candidate_filter)
+                for envelope in candidates:
                     await self._handoff(session, batch, current, envelope)
                 batch.discoveredCount = min(len(snapshot.envelopes), MAX_BATCH_UIDS)
+                # The scanned cursor must advance over *every* scanned UID, not
+                # only accepted weekly-report candidates — otherwise non-weekly
+                # mail (AD expiry alerts, verification codes) would be re-scanned
+                # on every sync. ``endUid`` is the highest scanned UID this
+                # batch observed; the durable cursor advances to it once the
+                # batch's downstream stages reach a terminal state.
+                scanned_uids = [envelope.uid for envelope in envelopes]
+                if scanned_uids:
+                    batch.startUid = min(scanned_uids)
+                    batch.endUid = max(scanned_uids)
+                batch.skippedCount = len(skipped_uids)
                 await self._refresh_batch(session, batch, current)
         except MailSyncError as exc:
             await self._fail_batch(batch_id, exc)
@@ -209,6 +245,71 @@ class MailboxSyncService:
             initial_sync_weeks=config.initialSyncWeeks,
         )
 
+    @staticmethod
+    def _candidate_filter(config: MailboxConfig) -> MailCandidateFilter:
+        """Build the deterministic envelope candidate filter from a mailbox config."""
+
+        keywords = config.subjectKeywords
+        if not isinstance(keywords, list) or not keywords:
+            keywords = list(DEFAULT_WEEKLY_REPORT_KEYWORDS)
+        keywords = tuple(str(item) for item in keywords if isinstance(item, str) and item.strip())
+        allowlist = config.senderAllowlist
+        if not isinstance(allowlist, list):
+            allowlist = []
+        allowlist = tuple(str(item) for item in allowlist if isinstance(item, str) and item.strip())
+        return MailCandidateFilter(
+            MailCandidateFilterConfig(
+                weekly_report_only=bool(config.weeklyReportOnly),
+                subject_keywords=keywords,
+                sender_allowlist=allowlist,
+            )
+        )
+
+    @staticmethod
+    async def _reclassify_historical(
+        session: AsyncSession,
+        config: MailboxConfig,
+        candidate_filter: MailCandidateFilter,
+    ) -> None:
+        """Re-judge historical messages; hide non-weekly, risk-free ones.
+
+        Already-synced ``MailMessage`` rows are re-evaluated against the
+        candidate filter. Any row that would now be filtered out as a
+        non-weekly-report and that never produced a risk candidate is marked
+        ``SKIPPED`` + ``FILTERED`` so it disappears from the default list.
+        Rows with a formal risk candidate (pending or otherwise) are never
+        touched — the historical risk trail must survive rule changes. This is
+        a safe, non-destructive cleanup: no message body is re-fetched and no
+        row is physically deleted. Once a row is marked ``FILTERED`` it is not
+        re-evaluated on subsequent syncs.
+        """
+
+        rows = (
+            await session.scalars(
+                select(MailMessage).where(
+                    MailMessage.mailboxConfigId == config.id,
+                    MailMessage.skipReason.is_not(MailMessageSkipReason.FILTERED),
+                    MailMessage.status != MailMessageStatus.FAILED,
+                )
+            )
+        ).all()
+        if not rows:
+            return
+        candidate_ids = set(
+            await session.scalars(
+                select(MailRiskCandidate.messageId).where(
+                    MailRiskCandidate.messageId.in_([row.id for row in rows])
+                )
+            )
+        )
+        for row in rows:
+            if row.id in candidate_ids:
+                continue
+            if candidate_filter.evaluate(subject=row.subject, sender=row.senderAddress):
+                continue
+            row.status = MailMessageStatus.SKIPPED
+            row.skipReason = MailMessageSkipReason.FILTERED
+
     async def _handoff(
         self,
         session: AsyncSession,
@@ -310,15 +411,28 @@ class MailboxSyncService:
             )
         )
         batch.failedCount = batch.retryableFailedCount + batch.permanentlyFailedCount
-        if rows and batch.downstreamPendingCount == 0 and batch.retryableFailedCount == 0:
-            highest = max(row.imapUid for row in rows)
-            config.uidCursor = max(config.uidCursor or 0, highest)
+        # The scanned cursor advances to the highest *scanned* UID, not the
+        # highest accepted weekly-report UID. ``endUid`` records the scan
+        # high-water mark set during discover; once downstream stages have
+        # settled (or there were no candidates at all) the durable
+        # ``uidCursor`` advances past every scanned message so non-weekly mail
+        # is never re-scanned. See mailbox candidate-filter ADR.
+        highest_scanned = batch.endUid
+        if highest_scanned is not None and (
+            not rows
+            or (batch.downstreamPendingCount == 0 and batch.retryableFailedCount == 0)
+        ):
+            config.uidCursor = max(config.uidCursor or 0, highest_scanned)
             batch.cursorAdvanced = True
+        if not rows:
+            # No candidates handed off (all scanned mail was filtered out as
+            # non-weekly, or the folder was empty). The batch still succeeds
+            # so the schedule does not retry an already-fully-scanned window.
+            batch.status = MailSyncStatus.SUCCESS
+        elif batch.downstreamPendingCount == 0 and batch.retryableFailedCount == 0:
             batch.status = (
                 MailSyncStatus.PARTIAL if batch.permanentlyFailedCount else MailSyncStatus.SUCCESS
             )
-        elif not rows:
-            batch.status = MailSyncStatus.SUCCESS
         else:
             batch.status = MailSyncStatus.PARTIAL
             batch.errorSummary = "存在待下游处理或可重试邮件, UID cursor 未推进"

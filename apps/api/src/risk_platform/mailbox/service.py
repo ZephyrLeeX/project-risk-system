@@ -13,6 +13,7 @@ from risk_platform.audit.service import AuditEvent, AuditService
 from risk_platform.auth.service import SessionIdentity
 from risk_platform.db import transaction
 from risk_platform.mailbox.connection import MailboxConnection
+from risk_platform.mailbox.filtering import DEFAULT_WEEKLY_REPORT_KEYWORDS
 from risk_platform.mailbox.models import (
     MailboxConfig,
     MailboxConnectionStatus,
@@ -305,6 +306,8 @@ class MailboxService:
             "folder": payload.folder,
             "subjectKeywords": payload.subjectKeywords,
             "senderRule": (payload.senderRule or "").strip() or None,
+            "weeklyReportOnly": payload.weeklyReportOnly,
+            "senderAllowlist": payload.senderAllowlist,
             "initialSyncWeeks": payload.initialSyncWeeks,
             "readAttachments": payload.readAttachments,
             "aiExtractionEnabled": payload.aiExtractionEnabled,
@@ -335,8 +338,10 @@ class MailboxService:
             imapPort=993,
             encryption="SSL",
             folder="INBOX",
-            subjectKeywords=["项目周报", "工作周报", "风险周报"],
+            subjectKeywords=list(DEFAULT_WEEKLY_REPORT_KEYWORDS),
             senderRule="",
+            weeklyReportOnly=True,
+            senderAllowlist=[],
             initialSyncWeeks=4,
             readAttachments=True,
             aiExtractionEnabled=True,
@@ -380,6 +385,12 @@ class MailboxService:
             folder=config.folder,
             subjectKeywords=[str(v) for v in subject_keywords if isinstance(v, str)],
             senderRule=config.senderRule or "",
+            weeklyReportOnly=bool(config.weeklyReportOnly),
+            senderAllowlist=[
+                str(v) for v in config.senderAllowlist if isinstance(v, str)
+            ]
+            if isinstance(config.senderAllowlist, list)
+            else [],
             initialSyncWeeks=cast("Literal[1, 4, 8, 12]", config.initialSyncWeeks),
             readAttachments=config.readAttachments,
             aiExtractionEnabled=config.aiExtractionEnabled,

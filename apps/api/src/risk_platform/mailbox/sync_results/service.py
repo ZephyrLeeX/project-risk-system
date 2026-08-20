@@ -468,7 +468,17 @@ class MailSyncResultsService:
     @staticmethod
     def _message_filter(config_id: UUID, query: MailMessageListQuery) -> list[Any]:
         filters: list[Any] = [MailMessage.mailboxConfigId == config_id]
-        if query.status is not None:
+        # FILTERED messages (re-judged non-weekly historical mail that never
+        # produced a risk candidate) are hidden from the default list. They
+        # remain queryable by an explicit status filter so an operator can
+        # still surface them when auditing historical syncs. ``is_distinct_from``
+        # treats NULL skipReason as kept (a non-filtered message), unlike ``!=``
+        # which folds NULL rows out.
+        if query.status is None:
+            filters.append(
+                MailMessage.skipReason.is_distinct_from(MailMessageSkipReason.FILTERED)
+            )
+        else:
             filters.append(MailMessage.status == query.status)
         if query.batchId is not None:
             filters.append(MailMessage.batchId == query.batchId)
@@ -737,6 +747,8 @@ class MailSyncResultsService:
         if message.status is MailMessageStatus.SKIPPED:
             if message.skipReason is MailMessageSkipReason.DUPLICATE:
                 return "重复邮件"
+            if message.skipReason is MailMessageSkipReason.FILTERED:
+                return "已按周报规则过滤"
             return "不符合周报规则"
         return f"提取{candidate_count}项风险" if candidate_count else "未发现新增风险"
 
@@ -752,11 +764,11 @@ class MailSyncResultsService:
         if message.status is MailMessageStatus.ANALYZING:
             return "已进入分析队列"
         if message.status is MailMessageStatus.SKIPPED:
-            return (
-                "按Message-ID去重跳过"
-                if message.skipReason is MailMessageSkipReason.DUPLICATE
-                else "主题或发件人未命中识别规则"
-            )
+            if message.skipReason is MailMessageSkipReason.DUPLICATE:
+                return "按Message-ID去重跳过"
+            if message.skipReason is MailMessageSkipReason.FILTERED:
+                return "重新判定为非周报，已从默认列表隐藏"
+            return "主题或发件人未命中识别规则"
         return f"{pending}项待风险管理员确认" if pending else "邮件分析完成"
 
     @staticmethod
