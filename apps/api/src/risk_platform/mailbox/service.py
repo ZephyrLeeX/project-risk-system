@@ -231,7 +231,7 @@ class MailboxService:
             if config is None:
                 raise ApiError(404, "NOT_FOUND", "尚未保存个人邮箱配置")
             if not config.enabled:
-                raise ApiError(400, "BAD_REQUEST", "邮箱已停用，请先恢复邮箱")  # noqa: RUF001
+                raise ApiError(400, "BAD_REQUEST", "邮箱已停用，请先恢复邮箱")
             if config.connectionStatus != MailboxConnectionStatus.HEALTHY:
                 raise ApiError(400, "BAD_REQUEST", "请先完成邮箱连接测试")
             running = await session.scalar(

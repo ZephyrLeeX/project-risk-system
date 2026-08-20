@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-from email.message import EmailMessage
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, datetime
+from email.message import EmailMessage
 from typing import cast
 
-from risk_platform.mailbox.connection import MailboxConnection
-from risk_platform.mailbox.connection import MailSourceUnavailable
+from risk_platform.mailbox.connection import MailboxConnection, MailSourceUnavailable
 from risk_platform.mailbox.parsing import parse_mail
 from risk_platform.shared.outbound import OutboundEndpointGuard
 

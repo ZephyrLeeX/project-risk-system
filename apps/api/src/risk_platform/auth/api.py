@@ -71,7 +71,7 @@ async def current_identity(
         raise ApiError(
             401,
             "UNAUTHORIZED",
-            "登录状态已失效，请重新登录",  # noqa: RUF001
+            "登录状态已失效，请重新登录",
             headers={"WWW-Authenticate": "Session"},
         )
     return await service.authenticate(token, trace_id=trace_id)
@@ -110,7 +110,7 @@ async def login(
         **session_cookie_options(settings),
     )
     message = (
-        "登录成功，请先修改初始密码"  # noqa: RUF001
+        "登录成功，请先修改初始密码"
         if result.user.mustChangePassword
         else "登录成功"
     )
@@ -197,7 +197,7 @@ async def change_password(
     return ok(
         request,
         ChangePasswordResponse(),
-        "密码修改成功，请使用新密码重新登录",  # noqa: RUF001
+        "密码修改成功，请使用新密码重新登录",
     )
 
 

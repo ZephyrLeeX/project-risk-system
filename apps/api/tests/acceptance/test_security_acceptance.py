@@ -88,7 +88,7 @@ def test_disabled_origin_validation_preserves_authentication_and_rbac(
             )
             assert (unauthenticated.status_code, unauthenticated.json()["message"]) == (
                 401,
-                "登录状态已失效，请重新登录",  # noqa: RUF001
+                "登录状态已失效，请重新登录",
             )
 
             login = await acceptance.login(client, "PROJECT_MANAGER")

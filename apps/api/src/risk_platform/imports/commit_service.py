@@ -52,9 +52,9 @@ from risk_platform.shared.errors import ApiError
 from risk_platform.timeline.models import RiskTimelineEvent
 from risk_platform.todos.models import ActionItem
 
-_MATCH_WARNING = "匹配到多个主项目，需人工确认关联关系"  # noqa: RUF001
-_UNMATCHED_WARNING = "未找到可精确匹配的主项目，记录将保留为待匹配且不会新增项目"  # noqa: RUF001
-_UNMATCHED_BY_ADMIN = "已由管理员解除项目关联，记录保留为待匹配"  # noqa: RUF001
+_MATCH_WARNING = "匹配到多个主项目，需人工确认关联关系"
+_UNMATCHED_WARNING = "未找到可精确匹配的主项目，记录将保留为待匹配且不会新增项目"
+_UNMATCHED_BY_ADMIN = "已由管理员解除项目关联，记录保留为待匹配"
 
 
 def _amount(value: Decimal | None) -> str | None:
@@ -292,7 +292,7 @@ class ImportCommitService:
                 raise ApiError(
                     409,
                     "IMPORT_PREVIEW_PROCESSING",
-                    "Excel 仍在解析，请稍后重试",  # noqa: RUF001
+                    "Excel 仍在解析，请稍后重试",
                 )
             elif batch.status is not ImportBatchStatus.PREVIEWED:
                 raise ApiError(409, "CONFLICT", "只有预检完成的批次可以确认导入")
@@ -311,7 +311,7 @@ class ImportCommitService:
                     raise ApiError(
                         409,
                         "IMPORT_FILE_ALREADY_IMPORTED",
-                        "相同内容的文件已经导入，请从导入历史查看",  # noqa: RUF001
+                        "相同内容的文件已经导入，请从导入历史查看",
                         data={"existingBatchId": str(imported_duplicate.id)},
                     )
                 source_meta = self._source_meta(batch)
@@ -319,13 +319,13 @@ class ImportCommitService:
                     raise ApiError(
                         409,
                         "IMPORT_PREVIEW_INCOMPLETE",
-                        "Excel 预检尚未完整完成，请稍后重试",  # noqa: RUF001
+                        "Excel 预检尚未完整完成，请稍后重试",
                     )
                 if batch.errorRows or batch.supplementalErrorRows or batch.legalErrorRows:
                     raise ApiError(
                         400,
                         "IMPORT_HAS_ERRORS",
-                        "批次包含错误行，请修正 Excel 后重新上传",  # noqa: RUF001
+                        "批次包含错误行，请修正 Excel 后重新上传",
                     )
                 has_warning = bool(
                     batch.warningRows or batch.supplementalWarningRows or batch.legalWarningRows
@@ -392,7 +392,7 @@ class ImportCommitService:
                             raise ApiError(
                                 409,
                                 "SEED_REQUIRED",
-                                "风险分类基础数据缺失，请先执行数据库种子初始化",  # noqa: RUF001
+                                "风险分类基础数据缺失，请先执行数据库种子初始化",
                             )
                         fingerprint = hashlib.sha256(
                             f"PROJECT_COLLECTION:{project.id}".encode()
@@ -410,8 +410,8 @@ class ImportCommitService:
                                 category_id=category.id,
                                 title=f"{project.name}回款风险",
                                 description=row.collectionProgress
-                                or "项目清单标记存在回款风险，需持续跟踪回款进展。",  # noqa: RUF001
-                                evidence=f"项目清单第{row.rowNumber}行，回款风险等级：{row.collectionRiskLevel.value}。",  # noqa: RUF001
+                                or "项目清单标记存在回款风险，需持续跟踪回款进展。",
+                                evidence=f"项目清单第{row.rowNumber}行，回款风险等级：{row.collectionRiskLevel.value}。",
                                 level=RiskProjectRiskLevel(row.collectionRiskLevel.value),
                                 source_type=RiskSourceType.EXCEL,
                                 source_batch_id=batch.id,
@@ -419,7 +419,7 @@ class ImportCommitService:
                                 reporter_user_id=UUID(identity.user.id),
                                 reporter_name=identity.user.displayName,
                                 dedupe_fingerprint=fingerprint,
-                                suggestion="核实回款计划与实际回款差异，明确下一次跟进时间。",  # noqa: RUF001
+                                suggestion="核实回款计划与实际回款差异，明确下一次跟进时间。",
                                 actor_name=identity.user.displayName,
                             ),
                             actor_id=UUID(identity.user.id),
@@ -458,7 +458,7 @@ class ImportCommitService:
                             raise ApiError(
                                 409,
                                 "SEED_REQUIRED",
-                                "风险分类基础数据缺失，请先执行数据库种子初始化",  # noqa: RUF001
+                                "风险分类基础数据缺失，请先执行数据库种子初始化",
                             )
                         fingerprint = hashlib.sha256(
                             f"LEGAL_MATTER:{legal_row.projectId}:{legal_row.sourceKey}".encode()
@@ -480,7 +480,7 @@ class ImportCommitService:
                                     else "法务事项风险"
                                 ),
                                 description=legal_row.legalProgress
-                                or "发函诉讼清单标记存在法务事项，需持续跟踪处理进展。",  # noqa: RUF001
+                                or "发函诉讼清单标记存在法务事项，需持续跟踪处理进展。",
                                 level=RiskProjectRiskLevel(legal_row.collectionRiskLevel.value),
                                 source_type=RiskSourceType.LITIGATION,
                                 source_batch_id=batch.id,
@@ -548,7 +548,7 @@ class ImportCommitService:
                 later_statement = later_statement.where(ImportBatch.confirmedAt > batch.confirmedAt)
             later = await session.scalar(later_statement)
             if later is not None:
-                raise ApiError(409, "CONFLICT", "该批次涉及的项目已有后续导入，不能直接回滚")  # noqa: RUF001
+                raise ApiError(409, "CONFLICT", "该批次涉及的项目已有后续导入，不能直接回滚")
 
             rows = (
                 await session.scalars(
@@ -601,7 +601,7 @@ class ImportCommitService:
                 )
                 before = project_row.beforeSnapshot
                 if project is None and before is not None:
-                    raise ApiError(409, "CONFLICT", "导入项目已不存在，无法安全回滚")  # noqa: RUF001
+                    raise ApiError(409, "CONFLICT", "导入项目已不存在，无法安全回滚")
                 if project is not None:
                     if isinstance(before, dict):
                         self._restore_project(project, before)
@@ -766,7 +766,7 @@ class ImportCommitService:
                 raise ApiError(
                     409,
                     "IMPORT_STALE_PREVIEW",
-                    f"第{row.rowNumber}行匹配的项目已不存在，请重新预检",  # noqa: RUF001
+                    f"第{row.rowNumber}行匹配的项目已不存在，请重新预检",
                 )
             return project
         if row.externalCode:

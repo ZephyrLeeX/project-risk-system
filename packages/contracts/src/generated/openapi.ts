@@ -4133,10 +4133,17 @@ export interface components {
             provider: "QQ" | "IMAP";
             /** Readattachments */
             readAttachments: boolean;
+            /** Senderallowlist */
+            senderAllowlist?: string[];
             /** Senderrule */
             senderRule?: string | null;
             /** Subjectkeywords */
             subjectKeywords: string[];
+            /**
+             * Weeklyreportonly
+             * @default true
+             */
+            weeklyReportOnly: boolean;
         };
         /** MailboxConnectionTestResult */
         MailboxConnectionTestResult: {
@@ -4228,6 +4235,8 @@ export interface components {
             provider: "QQ" | "IMAP";
             /** Readattachments */
             readAttachments: boolean;
+            /** Senderallowlist */
+            senderAllowlist: string[];
             /** Senderrule */
             senderRule: string;
             /** Subjectkeywords */
@@ -4240,6 +4249,8 @@ export interface components {
             uidCursor: string | null;
             /** Updatedat */
             updatedAt: string | null;
+            /** Weeklyreportonly */
+            weeklyReportOnly: boolean;
         };
         /** MailboxStatusRequest */
         MailboxStatusRequest: {

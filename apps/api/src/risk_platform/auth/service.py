@@ -22,10 +22,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from risk_platform.admin.models import User, UserStatus
 from risk_platform.audit.models import AuditActorType
 from risk_platform.audit.service import AuditService
-from risk_platform.auth.policy import password_policy_violations
 from risk_platform.auth.models import AuthMethod
+from risk_platform.auth.policy import password_policy_violations
 from risk_platform.auth.repository import AuthRepository, UserAccess
-from risk_platform.auth.schemas import AuthenticatedUser, AuthMethod as AuthMethodLiteral, DataScope, RoleCode
+from risk_platform.auth.schemas import AuthenticatedUser, DataScope, RoleCode
+from risk_platform.auth.schemas import AuthMethod as AuthMethodLiteral
 from risk_platform.config import Settings
 from risk_platform.db import transaction
 from risk_platform.shared.errors import ApiError
@@ -246,7 +247,7 @@ class AuthService:
             return ApiError(
                 423,
                 "ACCOUNT_LOCKED",
-                f"账号已锁定，请于 {retry_at} 后重试",  # noqa: RUF001
+                f"账号已锁定，请于 {retry_at} 后重试",
             )
 
         if user.status is UserStatus.LOCKED:
@@ -388,7 +389,7 @@ class AuthService:
                     resource_type="SESSION",
                 )
                 outcome: SessionIdentity | ApiError = self._unauthorized(
-                    "登录状态已失效，请重新登录"  # noqa: RUF001
+                    "登录状态已失效，请重新登录"
                 )
             else:
                 access = await repository.user_access(user.id)
@@ -466,7 +467,7 @@ class AuthService:
                 failure_code="SESSION_INVALID",
                 resource_type="SESSION",
             )
-            return self._unauthorized("登录状态已失效，请重新登录")  # noqa: RUF001
+            return self._unauthorized("登录状态已失效，请重新登录")
 
         if new_password != confirm_password:
             return await self._password_failure(
@@ -493,7 +494,7 @@ class AuthService:
                 user.id,
                 trace_id,
                 "PASSWORD_POLICY_VIOLATION",
-                "；".join(violations),  # noqa: RUF001
+                "；".join(violations),
             )
 
         user.passwordHash = await asyncio.to_thread(self._password_hasher.hash, new_password)
@@ -528,7 +529,7 @@ class AuthService:
                     resource_type="SESSION",
                 )
                 outcome: ApiError | None = self._unauthorized(
-                    "登录状态已失效，请重新登录"  # noqa: RUF001
+                    "登录状态已失效，请重新登录"
                 )
             else:
                 session_row.revokedAt = session_row.revokedAt or self._utc_now_millis()

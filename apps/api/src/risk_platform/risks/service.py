@@ -252,7 +252,7 @@ class RisksService:
             raise ApiError(404, "NOT_FOUND", "风险不存在或不在当前数据范围内")
         risk, project, _department, _category, _reporter, _resolved_by = row
         if risk.status is RiskStatus.RESOLVED:
-            raise ApiError(400, "RISK_ALREADY_RESOLVED", "该风险已经解除，无需重复操作")  # noqa: RUF001
+            raise ApiError(400, "RISK_ALREADY_RESOLVED", "该风险已经解除，无需重复操作")
         now = datetime.now(UTC)
         risk.status, risk.resolvedAt = RiskStatus.RESOLVED, now
         risk.resolvedById, risk.resolutionReason = UUID(identity.user.id), payload.reason
@@ -279,7 +279,7 @@ class RisksService:
                         todo.id,
                         RiskTimelineEventType.ACTION_COMPLETED,
                         "待办事项随风险解除完成",
-                        f"风险已解除，关联待办同步完成：{payload.reason}",  # noqa: RUF001
+                        f"风险已解除，关联待办同步完成：{payload.reason}",
                         old.value,
                         todo.status.value,
                         identity,
@@ -322,7 +322,7 @@ class RisksService:
                 raise ApiError(404, "NOT_FOUND", "风险不存在或不在当前数据范围内")
             risk, project, department, category, reporter, resolved_by = row
             if risk.status is RiskStatus.ACTIVE:
-                raise ApiError(400, "RISK_ALREADY_ACTIVE", "该风险当前处于有效状态，无需重新打开")  # noqa: RUF001
+                raise ApiError(400, "RISK_ALREADY_ACTIVE", "该风险当前处于有效状态，无需重新打开")
             now = datetime.now(UTC)
             risk.status, risk.resolvedAt, risk.resolvedById, risk.resolutionReason = (
                 RiskStatus.ACTIVE,
@@ -373,7 +373,7 @@ class RisksService:
                                 todo_item.id,
                                 RiskTimelineEventType.ACTION_STATUS_CHANGED,
                                 "风险重启后待办恢复处理",
-                                f"风险重新打开：{payload.reason}",  # noqa: RUF001
+                                f"风险重新打开：{payload.reason}",
                                 old.value,
                                 todo_item.status.value,
                                 identity,
@@ -787,7 +787,7 @@ def _event(
 def _resolution_note(existing: str | None, reason: str) -> str:
     return "\n".join(
         value
-        for value in [existing.strip() if existing else None, f"风险解除：{reason}"]  # noqa: RUF001
+        for value in [existing.strip() if existing else None, f"风险解除：{reason}"]
         if value
     )[:2000]
 

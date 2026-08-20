@@ -245,7 +245,7 @@ def test_login_forced_change_revocation_and_cookie_contract(
         async for client in _client(service):
             login = await _login(client, f"  {username.upper()}  ", CURRENT_PASSWORD)
             assert login.status_code == 200
-            assert login.json()["message"] == "登录成功，请先修改初始密码"  # noqa: RUF001
+            assert login.json()["message"] == "登录成功，请先修改初始密码"
             login_expiration = login.json()["data"]["expiresAt"]
             assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z", login_expiration)
             assert login.json()["data"]["user"] == {

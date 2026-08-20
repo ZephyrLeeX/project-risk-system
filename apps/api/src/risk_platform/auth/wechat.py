@@ -11,8 +11,10 @@ from urllib.parse import urlsplit
 from urllib.request import (
     HTTPRedirectHandler,
     HTTPSHandler,
-    Request as UrlRequest,
     build_opener,
+)
+from urllib.request import (
+    Request as UrlRequest,
 )
 
 

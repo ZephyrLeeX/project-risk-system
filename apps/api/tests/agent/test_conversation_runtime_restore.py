@@ -1267,7 +1267,7 @@ def test_conversation_list_is_owner_scoped_ordered_and_paginated(
             database,
             owner=list_owner,
             first_user_message=(
-                "这是用于测试标题截断的一段非常长非常长的用户消息，"  # noqa: RUF001
+                "这是用于测试标题截断的一段非常长非常长的用户消息，"
                 "用来验证超过四十个字符时会显示省略号"
             ),
             updated_at=base - timedelta(minutes=30),
@@ -1306,7 +1306,7 @@ def test_conversation_list_is_owner_scoped_ordered_and_paginated(
         assert page.items[0].activeProjectName == "南岸项目"
         assert page.items[0].lastMessageSequence == 1
         long_title = (
-            "这是用于测试标题截断的一段非常长非常长的用户消息，"  # noqa: RUF001
+            "这是用于测试标题截断的一段非常长非常长的用户消息，"
             "用来验证超过四十个字符时会显示省略号"
         )
         assert page.items[1].title == f"{long_title[:40]}…"

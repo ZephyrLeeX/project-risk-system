@@ -69,14 +69,14 @@ class RecordingConnection:
         self._uid_validity = uid_validity
         self.discover_calls = 0
 
-    async def test(self, **kwargs: object) -> ConnectionOutcome:  # noqa: ARG002
+    async def test(self, **kwargs: object) -> ConnectionOutcome:
         return ConnectionOutcome(success=True, latency_ms=1)
 
-    async def discover(self, **kwargs: object) -> MailSyncSnapshot:  # noqa: ARG002
+    async def discover(self, **kwargs: object) -> MailSyncSnapshot:
         self.discover_calls += 1
         return MailSyncSnapshot(uid_validity=self._uid_validity, envelopes=self._envelopes)
 
-    async def fetch_source(self, **kwargs: object) -> bytes:  # noqa: ARG002
+    async def fetch_source(self, **kwargs: object) -> bytes:
         raise AssertionError("non-candidate mail must never fetch its body")
 
 

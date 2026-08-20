@@ -41,7 +41,7 @@ def build_action_timeline_change(
             title="待办事项已完成" if completed else "待办处理状态更新",
             description=(
                 f"待办由“{before.status.value}”变更为“{after.status.value}”"
-                + (f"：{after.completion_note}" if completed and after.completion_note else "。")  # noqa: RUF001
+                + (f"：{after.completion_note}" if completed and after.completion_note else "。")
             ),
             from_value=before.status.value,
             to_value=after.status.value,
@@ -60,7 +60,7 @@ def build_action_timeline_change(
     return TimelineChange(
         event_type=RiskTimelineEventType.ACTION_UPDATED,
         title="待办事项信息更新",
-        description=f"{'；'.join(changes)}。" if changes else "待办事项已更新。",  # noqa: RUF001
+        description=f"{'；'.join(changes)}。" if changes else "待办事项已更新。",
     )
 
 

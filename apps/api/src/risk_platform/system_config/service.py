@@ -185,7 +185,7 @@ class SystemConfigService:
             return await self.overview()
         except IntegrityError as error:
             await self._failure_audit(identity, trace_id, "CONFLICT")
-            raise ApiError(409, "CONFLICT", "风险类别编码或项目别名重复，请检查后重试") from error  # noqa: RUF001
+            raise ApiError(409, "CONFLICT", "风险类别编码或项目别名重复，请检查后重试") from error
         except ApiError as error:
             await self._failure_audit(identity, trace_id, error.code)
             raise

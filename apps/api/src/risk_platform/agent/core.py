@@ -1,6 +1,5 @@
 """Provider-neutral, bounded read-only native tool-call loop for Agent V2."""
 
-# ruff: noqa: RUF001
 
 from __future__ import annotations
 

@@ -711,7 +711,7 @@ class NativeAgentExecutionWorker:
             AgentEventType.ERROR,
             {
                 "code": "AGENT_PROVIDER_UNAVAILABLE",
-                "message": "AI 服务暂时无法连接，请稍后重试",  # noqa: RUF001
+                "message": "AI 服务暂时无法连接，请稍后重试",
             },
             message.id,
         )
