@@ -261,10 +261,12 @@ class MutationDraftService:
         ):
             raise ApiError(409, "AGENT_INTERACTION_ALREADY_RESOLVED", "交互已处理")
         if interaction.expiresAt <= datetime.now(UTC):
-            interaction.status, draft.status = (
-                AgentInteractionStatus.EXPIRED,
-                MutationDraftStatus.EXPIRED,
-            )
+            # The caller's transaction rolls back on this raise, so persisting
+            # the EXPIRED statuses here would be futile; the persistent expiry
+            # (including execution terminalization) is committed by
+            # AgentInteractionService._expire_open_interaction before this
+            # method runs. This guard only covers the residual race between
+            # that pre-check and this row lock.
             raise ApiError(410, "AGENT_INTERACTION_EXPIRED", "交互已过期")
         if action == "CANCEL":
             interaction.status, interaction.responseAction = (

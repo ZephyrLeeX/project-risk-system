@@ -40,6 +40,7 @@ from risk_platform.agent.api import router as agent_router
 from risk_platform.agent.events import append_event, open_event_stream
 from risk_platform.agent.interaction import (
     _PROJECT_SELECTION_CANCELLED_MESSAGE,
+    _PROJECT_SELECTION_EXPIRED_MESSAGE,
     AgentInteractionService,
 )
 from risk_platform.agent.models import (
@@ -468,6 +469,116 @@ def test_explicit_cancel_sets_flag_and_interaction_cancel_still_cancels(
             "查询本周风险",
             _PROJECT_SELECTION_CANCELLED_MESSAGE,
         ]
+
+    asyncio.run(run())
+
+
+async def _expire_interaction(
+    factory: async_sessionmaker[AsyncSession], interaction_id: UUID
+) -> None:
+    """Push an OPEN interaction's expiresAt into the past (TTL elapsed)."""
+
+    async with transaction(factory) as session:
+        row = await session.scalar(
+            select(AgentInteraction)
+            .where(AgentInteraction.id == interaction_id)
+            .with_for_update()
+        )
+        assert row is not None
+        row.expiresAt = datetime.now(UTC) - timedelta(seconds=1)
+
+
+def test_expired_project_selection_persists_and_frees_conversation(
+    database: async_sessionmaker[AsyncSession],
+) -> None:
+    async def run() -> None:
+        app_service = service(database)
+        conversation_id, execution_id, interaction_id = await _seed_waiting_for_user(database)
+        await _expire_interaction(database, interaction_id)
+        interaction_service = AgentInteractionService(database)
+        with pytest.raises(ApiError) as raised:
+            await interaction_service.respond(
+                identity(),
+                interaction_id,
+                AgentInteractionRespondRequest(action="CANCEL"),
+                trace_id="t052-trace",
+            )
+        assert raised.value.status_code == 410
+        # The EXPIRED status persists and the execution no longer dangles in
+        # WAITING_FOR_USER (the historical in-transaction raise rolled the
+        # update back, deadlocking the conversation).
+        async with transaction(database) as session:
+            interaction = await session.get(AgentInteraction, interaction_id)
+            execution = await session.get(AgentExecution, execution_id)
+        assert interaction is not None
+        assert interaction.status is AgentInteractionStatus.EXPIRED
+        assert execution is not None
+        assert execution.status is AgentExecutionStatus.CANCELLED
+        history = await app_service.history(identity(), conversation_id)
+        assert history.runtime is None
+        # The interrupted question stays paired so “继续上一个问题” has an anchor.
+        assert [message.content for message in history.messages] == [
+            "查询本周风险",
+            _PROJECT_SELECTION_EXPIRED_MESSAGE,
+        ]
+        # A retry keeps reporting the terminal 410 (idempotent, no state churn).
+        with pytest.raises(ApiError) as retry:
+            await interaction_service.respond(
+                identity(),
+                interaction_id,
+                AgentInteractionRespondRequest(action="CANCEL"),
+                trace_id="t052-trace",
+            )
+        assert retry.value.status_code == 410
+        # The deadlock is gone: a new send is accepted again.
+        envelope = await app_service.continue_conversation(
+            identity(), conversation_id, "继续上一个问题"
+        )
+        assert envelope.userMessage.content == "继续上一个问题"
+
+    asyncio.run(run())
+
+
+def test_expired_write_confirmation_persists_and_frees_conversation(
+    database: async_sessionmaker[AsyncSession],
+) -> None:
+    async def run() -> None:
+        app_service = service(database)
+        conversation_id, execution_id, interaction_id = await _seed_waiting_for_user(
+            database,
+            interaction_type=AgentInteractionType.WRITE_CONFIRMATION,
+            with_draft=True,
+        )
+        await _expire_interaction(database, interaction_id)
+        interaction_service = AgentInteractionService(database)
+        with pytest.raises(ApiError) as raised:
+            await interaction_service.respond(
+                identity(),
+                interaction_id,
+                AgentInteractionRespondRequest(action="CANCEL"),
+                trace_id="t052-trace",
+            )
+        assert raised.value.status_code == 410
+        async with transaction(database) as session:
+            interaction = await session.get(AgentInteraction, interaction_id)
+            execution = await session.get(AgentExecution, execution_id)
+            draft = await session.scalar(
+                select(MutationDraft).where(MutationDraft.interactionId == interaction_id)
+            )
+        assert interaction is not None
+        assert interaction.status is AgentInteractionStatus.EXPIRED
+        assert execution is not None
+        assert execution.status is AgentExecutionStatus.CANCELLED
+        assert draft is not None
+        assert draft.status is MutationDraftStatus.EXPIRED
+        history = await app_service.history(identity(), conversation_id)
+        assert history.runtime is None
+        # Write confirmations pair no continuation marker (by design); the
+        # conversation must simply become reusable again.
+        envelope = await app_service.continue_conversation(
+            identity(), conversation_id, "继续上一个问题"
+        )
+        assert envelope.userMessage.content == "继续上一个问题"
 
     asyncio.run(run())
 

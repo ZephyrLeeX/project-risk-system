@@ -4,11 +4,9 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from typing import cast
-from typing import cast as type_cast
 from uuid import UUID, uuid4
 
-from sqlalchemy import select, update
-from sqlalchemy.engine import CursorResult
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from risk_platform.auth.service import SessionIdentity
@@ -39,6 +37,7 @@ from .models import (
     AgentMessage,
     AgentMessageRole,
     MutationDraft,
+    MutationDraftStatus,
 )
 from .mutations import MutationDraftService, _display_proposal
 from .schemas import (
@@ -54,6 +53,119 @@ _WRITE_CONFIRMATION_ACTIONS = frozenset({"CONFIRM", "CANCEL"})
 _PROJECT_SELECTION_CANCELLED_MESSAGE = (
     "项目选择已取消，上一问题尚未完成。你可以稍后说“继续上一个问题”重新处理。"
 )
+_PROJECT_SELECTION_EXPIRED_MESSAGE = (
+    "项目选择已超时未处理，上一问题尚未完成。你可以稍后说“继续上一个问题”重新处理。"
+)
+# Machine-readable marker on the canned pairing messages so future tooling
+# (summaries, retention, analytics) can identify them without text-matching.
+_PROJECT_SELECTION_CANCELLED_NOTICE = "project_selection_cancelled"
+_PROJECT_SELECTION_EXPIRED_NOTICE = "project_selection_expired"
+
+
+async def _pair_interrupted_question(
+    session: AsyncSession,
+    conversation_id: UUID,
+    user_message: AgentMessage,
+    content: str,
+    notice: str,
+    now: datetime,
+) -> None:
+    """Append the deterministic assistant marker that pairs an interrupted turn.
+
+    ``ConversationContextService._completed_turns`` drops a trailing USER
+    message with no ASSISTANT reply, so without this marker an interrupted
+    question vanishes from memory and a later “继续上一个问题” has no domain
+    anchor to inherit. The message records no business fact and requires no
+    model/provider call; the DB sequence trigger advances lastMessageSequence.
+    """
+
+    conversation = await session.scalar(
+        select(AgentConversation)
+        .where(AgentConversation.id == conversation_id)
+        .with_for_update()
+    )
+    if conversation is None:
+        raise ApiError(409, "AGENT_INTERACTION_CONTEXT_INVALID", "交互恢复上下文不可用")
+    session.add(
+        AgentMessage(
+            conversationId=conversation.id,
+            sequence=conversation.lastMessageSequence + 1,
+            role=AgentMessageRole.ASSISTANT,
+            content=content,
+            structured={"systemNotice": cast(JSONValue, notice)},
+            traceId=user_message.traceId,
+            dataAsOf=now,
+        )
+    )
+    await session.flush()
+
+
+async def _expire_open_interaction(
+    session: AsyncSession, interaction_id: UUID, owner_id: UUID, now: datetime
+) -> bool:
+    """Persistently expire a stale OPEN interaction and terminalize its execution.
+
+    Returns True when this call performed the expiry. The caller must raise the
+    410 OUTSIDE the transaction: raising inside would roll the status update
+    back (the historical behaviour), leaving the interaction OPEN forever and
+    the execution dangling in WAITING_FOR_USER — which blocks new sends
+    (``AGENT_EXECUTION_ACTIVE``) with no remaining exit path, because the
+    parked task is already terminal and ``request_cancellation`` cannot match
+    it.
+    """
+
+    row = await session.scalar(
+        select(AgentInteraction)
+        .where(
+            AgentInteraction.id == interaction_id,
+            AgentInteraction.ownerUserId == owner_id,
+        )
+        .with_for_update()
+    )
+    if row is None or row.status is not AgentInteractionStatus.OPEN or row.expiresAt > now:
+        return False
+    row.status = AgentInteractionStatus.EXPIRED
+    row.resolvedAt = now
+    draft = await session.scalar(
+        select(MutationDraft).where(MutationDraft.interactionId == row.id).with_for_update()
+    )
+    if draft is not None and draft.status is MutationDraftStatus.OPEN:
+        draft.status = MutationDraftStatus.EXPIRED
+        draft.resolvedAt = now
+    execution = await session.scalar(
+        select(AgentExecution)
+        .where(AgentExecution.id == row.executionId)
+        .with_for_update()
+    )
+    user_message: AgentMessage | None = None
+    if execution is not None:
+        if execution.status is AgentExecutionStatus.WAITING_FOR_USER:
+            execution.status = AgentExecutionStatus.CANCELLED
+            execution.completedAt = now
+        user_message = await session.get(AgentMessage, execution.userMessageId)
+    if user_message is not None and row.type is AgentInteractionType.PROJECT_SELECTION:
+        await _pair_interrupted_question(
+            session,
+            row.conversationId,
+            user_message,
+            _PROJECT_SELECTION_EXPIRED_MESSAGE,
+            _PROJECT_SELECTION_EXPIRED_NOTICE,
+            now,
+        )
+    if user_message is not None and execution is not None:
+        await append_event(
+            session,
+            conversation_id=row.conversationId,
+            message_id=user_message.id,
+            task_id=execution.taskId,
+            event_type=AgentEventType.INTERACTION_RESOLVED,
+            payload={
+                "interactionId": str(row.id),
+                "action": "EXPIRED",
+                "traceId": user_message.traceId,
+            },
+        )
+    return True
 
 
 def _validate_action(interaction_type: AgentInteractionType, action: str) -> None:
@@ -104,6 +216,18 @@ class AgentInteractionService:
             "CONFIRM",
             "CANCEL",
         }:
+            # Persistently expire a stale OPEN confirmation BEFORE the main
+            # transaction: MutationDraftService's in-session expiry guard
+            # raises inside the caller's transaction, which would roll its
+            # status update back and leave the execution dangling in
+            # WAITING_FOR_USER (see _expire_open_interaction).
+            expired_now = False
+            async with self._sessions.begin() as expiry_session:
+                expired_now = await _expire_open_interaction(
+                    expiry_session, interaction_id, UUID(identity.user.id), datetime.now(UTC)
+                )
+            if expired_now:
+                raise ApiError(410, "AGENT_INTERACTION_EXPIRED", "交互已过期")
             # Commit the draft AND terminalize the execution in ONE transaction.
             # ``MutationDraftService.respond`` runs its RBAC / already-resolved /
             # expiry / idempotency guards under the passed session (it locks the
@@ -206,18 +330,15 @@ class AgentInteractionService:
                 ]
 
         now = datetime.now(UTC)
+        expired_now = False
         async with self._sessions.begin() as expiry_session:
-            expired = await expiry_session.execute(
-                update(AgentInteraction)
-                .where(
-                    AgentInteraction.id == interaction_id,
-                    AgentInteraction.status == AgentInteractionStatus.OPEN,
-                    AgentInteraction.expiresAt <= now,
-                )
-                .values(status=AgentInteractionStatus.EXPIRED, resolvedAt=now)
+            expired_now = await _expire_open_interaction(
+                expiry_session, interaction_id, owner_id, now
             )
-            if int(type_cast(CursorResult[object], expired).rowcount or 0) == 1:
-                raise ApiError(410, "AGENT_INTERACTION_EXPIRED", "交互已过期")
+        if expired_now:
+            # Raise outside the transaction above so the persisted EXPIRED
+            # status, the terminalized execution and the pairing marker commit.
+            raise ApiError(410, "AGENT_INTERACTION_EXPIRED", "交互已过期")
 
         async with self._sessions.begin() as session:
             row = await session.scalar(
@@ -281,34 +402,17 @@ class AgentInteractionService:
             if payload.action == "CANCEL":
                 execution.status = AgentExecutionStatus.CANCELLED
                 execution.completedAt = now
-                # Preserve a complete USER/ASSISTANT turn in durable history.
-                # ConversationContextService intentionally builds memory from
-                # completed turns; without this deterministic assistant marker,
-                # cancelling PROJECT_SELECTION leaves the original USER question
-                # unpaired and a later “继续上一个问题” has no domain anchor to
-                # inherit. This message records no business fact and requires no
-                # model/provider call.
-                conversation = await session.scalar(
-                    select(AgentConversation)
-                    .where(AgentConversation.id == row.conversationId)
-                    .with_for_update()
+                # Pair the interrupted USER question with a deterministic
+                # assistant marker so a later “继续上一个问题” inherits a domain
+                # anchor (see _pair_interrupted_question).
+                await _pair_interrupted_question(
+                    session,
+                    row.conversationId,
+                    message,
+                    _PROJECT_SELECTION_CANCELLED_MESSAGE,
+                    _PROJECT_SELECTION_CANCELLED_NOTICE,
+                    now,
                 )
-                if conversation is None:
-                    raise ApiError(
-                        409,
-                        "AGENT_INTERACTION_CONTEXT_INVALID",
-                        "交互恢复上下文不可用",
-                    )
-                assistant = AgentMessage(
-                    conversationId=conversation.id,
-                    sequence=conversation.lastMessageSequence + 1,
-                    role=AgentMessageRole.ASSISTANT,
-                    content=_PROJECT_SELECTION_CANCELLED_MESSAGE,
-                    traceId=message.traceId,
-                    dataAsOf=now,
-                )
-                session.add(assistant)
-                await session.flush()
                 return AgentInteractionRespondResponse(
                     interaction=interaction_view(row), streamUrl=None
                 )
