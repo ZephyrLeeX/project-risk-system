@@ -24,6 +24,7 @@ from risk_platform.ai_providers.v2_adapter import (
     TokenEstimator,
     effective_candidate_capabilities,
     effective_candidate_estimator,
+    measure_provider_request_tokens,
 )
 from risk_platform.ai_providers.v2_service import ProviderV2Runtime
 from risk_platform.auth.service import SessionIdentity
@@ -295,7 +296,14 @@ class ReadOnlyAgentCore:
             response = await self._runtime.chat_snapshot(snapshot, request)
             messages.append(
                 ProviderMessage(
-                    ProviderRole.ASSISTANT, response.content, tool_calls=response.tool_calls
+                    ProviderRole.ASSISTANT,
+                    response.content,
+                    tool_calls=response.tool_calls,
+                    # Echo thinking-mode reasoning onto the assistant message so
+                    # the next round's request carries it back (DeepSeek requires
+                    # ``reasoning_content`` on a producing assistant message to be
+                    # replayed).  It never reaches the outcome text or memory.
+                    reasoning_content=response.reasoning_content,
                 )
             )
             if not response.tool_calls:
@@ -393,25 +401,15 @@ class ReadOnlyAgentCore:
         # Fail closed on the *full* provider request — system, history, current
         # message, assistant tool_calls + arguments, tool results and tool
         # definitions — before any HTTP call, never waiting for a Provider 400.
-        # The budget is the effective *input token* ceiling for the model;
-        # ``estimator`` conservatively sizes the request in tokens.  The
-        # adapter's ``MAX_REQUEST_BYTES`` byte guard remains an independent
-        # transport safety net, checked when the request is encoded for the wire.
-        used = sum(estimator.estimate(item.content or "") for item in request.messages)
-        used += sum(
-            estimator.estimate(
-                json.dumps(
-                    {
-                        "name": tool.name,
-                        "description": tool.description,
-                        "parameters": dict(tool.input_schema),
-                    },
-                    ensure_ascii=False,
-                    separators=(",", ":"),
-                )
-            )
-            for tool in request.tools
-        )
+        # The budget is the effective *input token* ceiling for the model.
+        # ``measure_provider_request_tokens`` sizes the exact canonical wire
+        # payload (every message content/tool_call_id, assistant tool_calls +
+        # JSON-stringified arguments, reasoning_content, response_format and
+        # every tool definition, plus all JSON framing) in tokens via the same
+        # serializer the adapter puts on the wire, so the gate can never drift
+        # from what is actually sent.  ``ProviderTransportPolicy``'s byte guard
+        # remains an independent transport safety net, checked at encode time.
+        used = measure_provider_request_tokens(request, estimator)
         if used > budget.hard_context_budget:
             raise AgentLoopError("AGENT_CONTEXT_TOO_LARGE")
 
@@ -538,7 +536,11 @@ class ReadOnlyAgentCore:
         This measures the actual static system instruction, the actual tool
         definitions, the actual current user message (which may be up to the
         4000-character request limit, not a fixed assumption) and the reserved
-        space for tool results and model output.  It is sized in tokens by the
+        space for tool results and model output.  The fixed messages (system,
+        server grounding, current user message) and tool definitions are measured
+        through the same canonical serializer the loop budget gate uses
+        (``measure_provider_request_tokens``), so the dynamic history budget
+        never drifts from the full-request gate.  It is sized in tokens by the
         execution's frozen estimator so the conversation-memory service sizes
         recent turns to the real remaining token budget instead of a static
         reserve.
@@ -548,26 +550,16 @@ class ReadOnlyAgentCore:
         estimator = self.estimator_for(snapshot)
         system = self._system_instruction(conversation_context, resume_context)
         definitions = self._tool_definitions(identity, selected_project_id)
-        used = estimator.estimate(system) + estimator.estimate(message)
+        fixed_messages: list[ProviderMessage] = [ProviderMessage(ProviderRole.SYSTEM, system)]
         grounding = self._server_grounding_content(conversation_context, resume_context)
         if grounding is not None:
             # The grounding message is fixed overhead: it is always present
             # regardless of how much history fits, so it must shrink the
             # history budget rather than be rediscovered as an oversize later.
-            used += estimator.estimate(grounding)
-        used += sum(
-            estimator.estimate(
-                json.dumps(
-                    {
-                        "name": tool.name,
-                        "description": tool.description,
-                        "parameters": dict(tool.input_schema),
-                    },
-                    ensure_ascii=False,
-                    separators=(",", ":"),
-                )
-            )
-            for tool in definitions
+            fixed_messages.append(ProviderMessage(ProviderRole.USER, grounding))
+        fixed_messages.append(ProviderMessage(ProviderRole.USER, message))
+        used = measure_provider_request_tokens(
+            ProviderChatRequest(tuple(fixed_messages), definitions), estimator
         )
         return used + budget.tool_result_reserve + budget.output_safety_reserve
 

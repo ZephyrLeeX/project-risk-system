@@ -28,9 +28,27 @@ from risk_platform.shared.outbound import (
 )
 
 DEEPSEEK_OFFICIAL_ORIGIN = "https://api.deepseek.com"
-MAX_RESPONSE_BYTES = 128 * 1024
-MAX_REQUEST_BYTES = 64 * 1024
 MAX_RETRY_AFTER_SECONDS = 10.0
+
+# HTTP transport byte-safety caps, independent of model token capacity.  These
+# are *wire* safety limits — how many bytes the adapter will read from or send
+# to the provider socket — not model context capacity (tokens) and not the
+# Agent product's context policy.  A request that already fits the token budget
+# (``ContextBudget``, ~616k input tokens for DeepSeek V4) is well below these
+# caps in bytes, so the caps never bind on legitimate large-context requests;
+# they exist only as an independent fail-closed net against a runaway or
+# malformed peer and an accidental memory blow-up.  8 MiB comfortably carries a
+# full DeepSeek V4 1M-context request (worst-case ~2 MiB of CJK at ~3 B/token
+# plus JSON framing) and a full output (max_tokens 384k -> ~1.5 MiB) including
+# thinking ``reasoning_content``, while still bounding per-request memory.
+DEFAULT_MAX_REQUEST_BYTES = 8 * 1024 * 1024
+DEFAULT_MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+# Backward-compatible module aliases for the default transport policy values,
+# kept so tests and any external reference can express "the default safety cap"
+# by name.  The real, configurable limits live on ``ProviderTransportPolicy`` and
+# are threaded through the adapter/transport, independent of token budgets.
+MAX_REQUEST_BYTES = DEFAULT_MAX_REQUEST_BYTES
+MAX_RESPONSE_BYTES = DEFAULT_MAX_RESPONSE_BYTES
 # The model name configured for a provider candidate is bounded at 128
 # *characters* (``v2_schemas.CreateModelConfigRequest.modelName``:
 # ``max_length=128``) — a character limit, not a UTF-8/wire-byte limit, so 128
@@ -127,6 +145,13 @@ class ProviderMessage:
     content: str | None = None
     tool_call_id: str | None = None
     tool_calls: tuple[ProviderToolCall, ...] = ()
+    # DeepSeek thinking-mode reasoning, round-tripped only within one
+    # execution's multi-round tool-call sequence (see ``_canonical_chat_payload``).
+    # It is never surfaced to the user UI and never persisted as conversation
+    # memory — it is an internal assistant-channel field the provider requires to
+    # be echoed back on the next round when the assistant message that produced it
+    # is replayed, and historical turns loaded from storage carry no reasoning.
+    reasoning_content: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,12 +175,15 @@ def _canonical_chat_payload(
     provider-neutral request budget.
 
     Both the DeepSeek adapter (``_chat_payload``) and the provider-neutral
-    ``measure_provider_request`` serialize through this function so the two can
-    never silently drift apart.  The structure mirrors exactly what the adapter
-    puts on the wire: the ``model`` field, every message role/content/
-    ``tool_call_id``, assistant ``tool_calls`` wrapped in ``type``/``function``
-    with ``arguments`` JSON-stringified (so quote/backslash escaping expansion
-    is counted), ``response_format`` and every tool definition wrapped in
+    ``measure_provider_request`` / ``measure_provider_request_tokens`` serialize
+    through this function so the two can never silently drift apart.  The
+    structure mirrors exactly what the adapter puts on the wire: the ``model``
+    field, every message role/content/``tool_call_id``, assistant ``tool_calls``
+    wrapped in ``type``/``function`` with ``arguments`` JSON-stringified (so
+    quote/backslash escaping expansion is counted), assistant
+    ``reasoning_content`` (DeepSeek thinking-mode reasoning, echoed back on the
+    next round when the producing assistant message is replayed),
+    ``response_format`` and every tool definition wrapped in
     ``type``/``function`` with ``parameters``.  ``measure_provider_request``
     calls this with a worst-case ``model_name`` so its byte count is always >=
     the real adapter-encoded payload size.
@@ -188,6 +216,8 @@ def _canonical_chat_payload(
                 }
                 for call in message.tool_calls
             ]
+        if message.reasoning_content is not None:
+            item["reasoning_content"] = message.reasoning_content
         messages.append(item)
     payload: dict[str, object] = {"model": model_name, "messages": messages}
     if request.response_format is ProviderResponseFormat.JSON_OBJECT:
@@ -231,6 +261,35 @@ def measure_provider_request(request: ProviderChatRequest) -> int:
     return len(_encode_chat_payload(payload))
 
 
+def measure_provider_request_tokens(
+    request: ProviderChatRequest, estimator: TokenEstimator
+) -> int:
+    """Provider-neutral token estimate of the *full* chat request sent to model.
+
+    Shares the canonical wire serializer (``_canonical_chat_payload`` +
+    ``_encode_chat_payload``) with the DeepSeek adapter so the measurement can
+    never drift from what is actually put on the wire.  The serialized payload
+    covers everything the model sees: the ``model`` field, every message
+    role/content/``tool_call_id``, assistant ``tool_calls`` (id, ``type``/
+    ``function`` wrapper, function name and JSON-stringified ``arguments``),
+    assistant ``reasoning_content`` (thinking-mode round-trip),
+    ``response_format`` and every tool definition (``type``/``function`` wrapper,
+    name, description, ``parameters``) — including all JSON framing bytes.
+
+    ``estimator`` sizes that serialized payload in tokens (conservative: never
+    under-counts), so the Agent core can fail closed on the *effective* model
+    input budget before any HTTP call.  This is model-context capacity (tokens),
+    distinct from ``measure_provider_request`` (wire bytes, transport safety)
+    and from ``ProviderTransportPolicy`` (HTTP transport byte caps).  The
+    ``model`` field is sized with the worst-case ``_WORST_CASE_MODEL_NAME`` so
+    the estimate is always >= the real adapter-encoded request for any legal
+    128-character model name.
+    """
+
+    payload = _canonical_chat_payload(request, _WORST_CASE_MODEL_NAME)
+    return estimator.estimate(_encode_chat_payload(payload).decode("utf-8"))
+
+
 @dataclass(frozen=True, slots=True)
 class ProviderTokenUsage:
     input_tokens: int
@@ -245,6 +304,10 @@ class ProviderChatResponse:
     finish_reason: ProviderFinishReason
     usage: ProviderTokenUsage
     latency_ms: int
+    # DeepSeek thinking-mode reasoning produced with this response.  Round-tripped
+    # onto the assistant message Core appends for the next round; never reaches
+    # ``AgentCoreOutcome`` (the user-visible text) or persisted memory.
+    reasoning_content: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -365,25 +428,33 @@ class ByteTokenEstimator:
 
 @dataclass(frozen=True, slots=True)
 class DeepSeekOfficialTokenEstimator:
-    """Conservative estimator tuned for DeepSeek-Official real-world content.
+    """Conservative token-count estimate for DeepSeek-Official content.
 
-    DeepSeek uses a BPE tokenizer whose ratio over the mixed content an Agent
-    actually sends (CJK-heavy prompts, JSON tool arguments/definitions, ASCII
-    words) sits around one token per ~3 UTF-8 bytes: CJK is ~1 token/char and
-    3 bytes/char (ratio 1/3), English BPE averages ~4 bytes/token (>1/3, so
-    ``bytes/3`` over-estimates).  ``bytes / 3`` rounded up is therefore an
-    upper bound for real content while ~3x tighter than raw bytes, letting
-    the budget reflect model context rather than the byte transport guard.
-    Adversarial text engineered to maximise tokens-per-byte (rare single-byte
-    tokens) is bounded by the independent transport guard
-    (``MAX_REQUEST_BYTES``) and never by the model context window, so the
-    estimator staying conservative there is correct, not a hole.
+    The priority is a provably-safe upper bound (never under-counts): the Agent
+    core fail-closes on the *estimated* request exceeding the model input
+    budget, so an under-estimate would let an over-budget request reach the
+    provider.  DeepSeek's official offline tokenizer is not a fit for this
+    service's dependency footprint — ``tiktoken`` / ``transformers`` /
+    ``sentencepiece`` are not declared dependencies and the official BPE model
+    file is a multi-megabyte binary that would have to be vendored or downloaded
+    at runtime — so the estimator falls back to the byte bound.
+
+    A token in any BPE tokenizer (byte- or character-level) covers at least one
+    UTF-8 byte, so the real token count never exceeds the UTF-8 byte count: the
+    maximum-token case is every byte (or every character) forming its own token
+    with no merges.  ``len(text.encode("utf-8"))`` is therefore a safe upper
+    bound for ASCII, JSON, CJK, emoji and control-heavy content alike.  It
+    over-estimates CJK ~3x (one char -> one token, three bytes) and merged
+    English prose; that conservatism is the cost of never under-counting without
+    the offline tokenizer, and it is correct here, not a hole.
+
+    ``bytes / 3`` was previously used to tighten the CJK case, but it is *not* a
+    safe upper bound: ASCII, digit, punctuation and control-character runs can
+    tokenize one-token-per-byte, which ``bytes / 3`` under-counts by up to 3x.
     """
 
     def estimate(self, text: str) -> int:
-        if not text:
-            return 0
-        return (len(text.encode("utf-8")) + 2) // 3
+        return len(text.encode("utf-8")) if text else 0
 
 
 def effective_candidate_estimator(
@@ -434,6 +505,30 @@ class AiProviderAdapterRegistry:
 
 
 @dataclass(frozen=True, slots=True)
+class ProviderTransportPolicy:
+    """HTTP transport byte-safety limits, independent of model token capacity.
+
+    These are *wire* caps — how many bytes the adapter will read from or send to
+    the provider socket — not model context capacity (``ModelCapabilities`` /
+    ``ContextBudget``, in tokens) and not the Agent product's context policy.  A
+    request that already fits the token budget is well below these caps in bytes,
+    so they never bind on legitimate large-context requests; they exist only as
+    an independent fail-closed net against a runaway/malformed peer and an
+    accidental per-request memory blow-up.  Exceeding either cap fails closed
+    (``MALFORMED_RESPONSE`` / ``INVALID_REQUEST``); SSRF pinning, TLS and the
+    outbound guard are unaffected.  Defaults carry a full DeepSeek V4 1M-context
+    request and output (including thinking ``reasoning_content``) with margin.
+    """
+
+    max_request_bytes: int = DEFAULT_MAX_REQUEST_BYTES
+    max_response_bytes: int = DEFAULT_MAX_RESPONSE_BYTES
+
+    def __post_init__(self) -> None:
+        if self.max_request_bytes <= 0 or self.max_response_bytes <= 0:
+            raise ValueError("invalid provider transport policy")
+
+
+@dataclass(frozen=True, slots=True)
 class ProviderHttpResponse:
     status_code: int
     body: bytes
@@ -454,8 +549,14 @@ class ProviderHttpTransport(Protocol):
 class DeepSeekOfficialHttpTransport:
     """Fixed-origin HTTPS transport with the approved outbound guard."""
 
-    def __init__(self, guard: OutboundEndpointGuard | None = None) -> None:
+    def __init__(
+        self,
+        guard: OutboundEndpointGuard | None = None,
+        *,
+        max_response_bytes: int = DEFAULT_MAX_RESPONSE_BYTES,
+    ) -> None:
         self._guard = guard or OutboundEndpointGuard()
+        self._max_response_bytes = max_response_bytes
 
     async def request(
         self,
@@ -477,6 +578,7 @@ class DeepSeekOfficialHttpTransport:
                 dict(headers),
                 body,
                 timeout_seconds,
+                self._max_response_bytes,
             )
         except OutboundSecurityError as error:
             del error
@@ -506,6 +608,7 @@ class DeepSeekOfficialHttpTransport:
         headers: dict[str, str],
         body: bytes | None,
         timeout_seconds: int,
+        max_response_bytes: int,
     ) -> ProviderHttpResponse:
         parsed = urlsplit(url)
         if parsed.hostname != endpoint.hostname or parsed.port not in {None, endpoint.port}:
@@ -525,7 +628,7 @@ class DeepSeekOfficialHttpTransport:
             response = connection.getresponse()
             return ProviderHttpResponse(
                 response.status,
-                response.read(MAX_RESPONSE_BYTES + 1),
+                response.read(max_response_bytes + 1),
                 dict(response.headers.items()),
             )
         finally:
@@ -563,9 +666,14 @@ class DeepSeekOfficialAdapter:
         self,
         cipher: SecretCipher,
         transport: ProviderHttpTransport | None = None,
+        *,
+        transport_policy: ProviderTransportPolicy | None = None,
     ) -> None:
         self._cipher = cipher
-        self._transport = transport or DeepSeekOfficialHttpTransport()
+        self._transport_policy = transport_policy or ProviderTransportPolicy()
+        self._transport = transport or DeepSeekOfficialHttpTransport(
+            max_response_bytes=self._transport_policy.max_response_bytes
+        )
 
     async def list_models(
         self, encrypted_api_key: str, timeout_seconds: int
@@ -593,7 +701,7 @@ class DeepSeekOfficialAdapter:
         started = asyncio.get_running_loop().time()
         payload = self._chat_payload(candidate.model_name, request)
         encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
-        if len(encoded) > MAX_REQUEST_BYTES:
+        if len(encoded) > self._transport_policy.max_request_bytes:
             raise ProviderError(
                 ProviderErrorClassification.INVALID_REQUEST,
                 retryable=False,
@@ -617,6 +725,9 @@ class DeepSeekOfficialAdapter:
         content = message.get("content")
         if content is not None and not isinstance(content, str):
             raise self._malformed()
+        reasoning_content = message.get("reasoning_content")
+        if reasoning_content is not None and not isinstance(reasoning_content, str):
+            raise self._malformed()
         tool_calls = self._tool_calls(message.get("tool_calls", []))
         if not content and not tool_calls:
             raise self._malformed()
@@ -630,6 +741,7 @@ class DeepSeekOfficialAdapter:
             finish_reason=self._finish_reason(finish),
             usage=usage,
             latency_ms=max(0, round((asyncio.get_running_loop().time() - started) * 1000)),
+            reasoning_content=reasoning_content,
         )
 
     async def _request(
@@ -659,7 +771,7 @@ class DeepSeekOfficialAdapter:
             body,
             timeout_seconds,
         )
-        if len(response.body) > MAX_RESPONSE_BYTES:
+        if len(response.body) > self._transport_policy.max_response_bytes:
             raise self._malformed()
         if not 200 <= response.status_code < 300:
             raise self._http_error(response)
@@ -853,9 +965,11 @@ __all__ = [
     "ProviderTokenUsage",
     "ProviderToolCall",
     "ProviderToolDefinition",
+    "ProviderTransportPolicy",
     "ProviderType",
     "TokenEstimator",
     "effective_candidate_capabilities",
     "effective_candidate_estimator",
     "measure_provider_request",
+    "measure_provider_request_tokens",
 ]
