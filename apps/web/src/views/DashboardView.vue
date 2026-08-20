@@ -107,7 +107,6 @@ const interactionFields = reactive<Record<string, string>>({});
 const interactionValidationError = ref("");
 const selectedInteractionCandidates = ref<string[]>([]);
 const manualProjectName = ref("");
-const manualProjectSearchOpen = ref(false);
 const interactionSubmitting = computed(() => agent.sending.value && agent.state.interaction?.type === "PROJECT_SELECTION");
 /**
  * True while a durable execution is actively streaming (or the transport is
@@ -538,11 +537,6 @@ function candidateRisks(message: { structured?: unknown }): Record<string, unkno
 function selectProject(id: string): void {
   if (!id || interactionSubmitting.value) return;
   void agent.respondInteraction({ action: "SELECT", projectId: id });
-}
-
-function openManualProjectSearch(): void {
-  manualProjectSearchOpen.value = true;
-  requestAnimationFrame(() => document.getElementById("agent-manual-project-name")?.focus());
 }
 
 function submitManualProject(): void {
@@ -2348,7 +2342,7 @@ onUnmounted(() => {
         </p>
       </div>
 
-      <section v-if="agent.state.interaction?.type === 'PROJECT_SELECTION'" class="agent-interaction project-selection-card" aria-live="polite">
+      <section v-if="agent.state.interaction?.type === 'PROJECT_SELECTION'" class="agent-interaction project-selection-card" :class="{ 'is-completed': agent.state.interaction.status !== 'OPEN' }" aria-live="polite">
         <header><strong>找到多个匹配项目</strong><small>请选择要查询的项目，选择后 Agent 将继续原问题。</small></header>
         <template v-if="agent.state.interaction.type === 'PROJECT_SELECTION' && agent.state.interaction.status === 'OPEN'">
           <div class="project-selection-list">
@@ -2358,8 +2352,7 @@ onUnmounted(() => {
             </button>
           </div>
           <p v-if="agent.state.error" class="agent-form-error" role="alert">{{ agentErrorLabel(agent.state.error.code, agent.state.error.message) }} <button v-if="agent.state.error.retryable" type="button" class="agent-inline-retry" @click="agent.retryInteraction()">重试</button></p>
-          <button v-if="!manualProjectSearchOpen" class="project-selection-secondary" type="button" :disabled="interactionSubmitting" @click="openManualProjectSearch">以上都不是，重新搜索</button>
-          <form v-else class="project-manual-search" @submit.prevent="submitManualProject"><label for="agent-manual-project-name">项目名称</label><div><input id="agent-manual-project-name" v-model="manualProjectName" placeholder="输入项目名称" maxlength="100"><button class="admin-primary-button" type="submit" :disabled="interactionSubmitting || !manualProjectName.trim()">搜索项目</button></div></form>
+          <form class="project-manual-search" @submit.prevent="submitManualProject"><label for="agent-manual-project-name">项目名称</label><div><input id="agent-manual-project-name" v-model="manualProjectName" placeholder="输入项目名称" maxlength="100"><button class="admin-primary-button" type="submit" :disabled="interactionSubmitting || !manualProjectName.trim()">搜索项目</button></div></form>
           <button class="project-selection-cancel" type="button" :disabled="interactionSubmitting" @click="agent.cancelInteraction()">取消</button>
         </template>
         <p v-else>交互已处理；刷新或重连不会重复提交。</p>
@@ -3137,6 +3130,6 @@ onUnmounted(() => {
 </template>
 
 <style>
-.project-selection-card{display:grid;gap:16px;padding:20px;border:1px solid #d6e7ef;border-radius:18px;background:linear-gradient(145deg,#fff,#f5fbfd);box-shadow:0 14px 32px rgba(32,92,117,.12)}.project-selection-card>header{display:grid;gap:5px}.project-selection-card>header strong{color:#1d526f;font-size:17px}.project-selection-card>header small{color:#6b8797;line-height:1.5}.project-selection-list{display:grid;gap:10px}.project-selection-option{display:flex;align-items:center;justify-content:space-between;gap:14px;width:100%;padding:14px 15px;border:1px solid #d4e6ee;border-radius:13px;background:#fff;color:#24536d;text-align:left;box-shadow:0 4px 12px rgba(36,83,109,.06);cursor:pointer;transition:.18s ease}.project-selection-option:hover:not(:disabled),.project-selection-option:focus-visible{border-color:#4c9db6;box-shadow:0 7px 18px rgba(40,126,154,.16);transform:translateY(-1px)}.project-selection-option:disabled{cursor:wait;opacity:.62}.project-selection-copy{display:grid;gap:4px;min-width:0}.project-selection-copy strong{font-size:14px}.project-selection-copy small{color:#718a9b;font-size:12px}.project-selection-meta{display:flex;align-items:center;gap:10px;flex:none}.project-status-chip{padding:4px 8px;border-radius:999px;background:#e5f5f5;color:#277b82;font-size:11px;font-weight:700}.project-selection-meta i{font-size:22px;color:#4b9db6;font-style:normal}.project-selection-secondary,.project-selection-cancel{justify-self:start;border:0;background:transparent;color:#27859a;font:inherit;cursor:pointer}.project-selection-cancel{color:#718a9b}.project-selection-secondary:disabled,.project-selection-cancel:disabled{cursor:wait;opacity:.6}.project-manual-search{display:grid;gap:7px;padding:14px;border:1px dashed #a9cfd9;border-radius:13px;background:#f7fcfd}.project-manual-search label{color:#47758a;font-size:12px;font-weight:700}.project-manual-search>div{display:flex;gap:8px}.project-manual-search input{flex:1;min-width:0;padding:10px 12px;border:1px solid #c5dde5;border-radius:9px;font:inherit}.agent-inline-retry{border:0;background:transparent;color:#277b82;text-decoration:underline;cursor:pointer;font:inherit}
+.project-selection-card{display:grid;gap:16px;padding:20px;border:1px solid #d6e7ef;border-radius:18px;background:linear-gradient(145deg,#fff,#f5fbfd);box-shadow:0 14px 32px rgba(32,92,117,.12)}.project-selection-card>header{display:grid;gap:5px}.project-selection-card>header strong{color:#1d526f;font-size:17px}.project-selection-card>header small{color:#6b8797;line-height:1.5}.project-selection-card.is-completed{animation:project-selection-dismiss .2s ease 3s forwards;overflow:hidden}@keyframes project-selection-dismiss{to{max-height:0;margin:0;padding-top:0;padding-bottom:0;border-width:0;opacity:0;visibility:hidden;pointer-events:none}}.project-selection-list{display:grid;gap:10px;max-height:280px;overflow-y:auto;overscroll-behavior:contain;padding-right:4px}.project-selection-option{display:flex;align-items:center;justify-content:space-between;gap:14px;width:100%;padding:14px 15px;border:1px solid #d4e6ee;border-radius:13px;background:#fff;color:#24536d;text-align:left;box-shadow:0 4px 12px rgba(36,83,109,.06);cursor:pointer;transition:.18s ease}.project-selection-option:hover:not(:disabled),.project-selection-option:focus-visible{border-color:#4c9db6;box-shadow:0 7px 18px rgba(40,126,154,.16);transform:translateY(-1px)}.project-selection-option:disabled{cursor:wait;opacity:.62}.project-selection-copy{display:grid;gap:4px;min-width:0}.project-selection-copy strong{font-size:14px}.project-selection-copy small{color:#718a9b;font-size:12px}.project-selection-meta{display:flex;align-items:center;gap:10px;flex:none}.project-status-chip{padding:4px 8px;border-radius:999px;background:#e5f5f5;color:#277b82;font-size:11px;font-weight:700}.project-selection-meta i{font-size:22px;color:#4b9db6;font-style:normal}.project-selection-secondary,.project-selection-cancel{justify-self:start;border:0;background:transparent;color:#27859a;font:inherit;cursor:pointer}.project-selection-cancel{color:#718a9b}.project-selection-secondary:disabled,.project-selection-cancel:disabled{cursor:wait;opacity:.6}.project-manual-search{display:grid;gap:7px;padding:14px;border:1px dashed #a9cfd9;border-radius:13px;background:#f7fcfd}.project-manual-search label{color:#47758a;font-size:12px;font-weight:700}.project-manual-search>div{display:flex;gap:8px}.project-manual-search input{flex:1;min-width:0;padding:10px 12px;border:1px solid #c5dde5;border-radius:9px;font:inherit}.agent-inline-retry{border:0;background:transparent;color:#277b82;text-decoration:underline;cursor:pointer;font:inherit}
 .agent-risk-confirmation-form{display:grid;gap:14px}.agent-risk-confirmation-form label{display:grid;gap:6px;color:#355c73;font-weight:700}.agent-risk-confirmation-form label span{font-size:13px}.agent-risk-confirmation-form input,.agent-risk-confirmation-form textarea,.agent-risk-confirmation-form select{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #cbdfe9;border-radius:9px;color:#244b64;background:#fff;font:inherit;font-weight:400}.agent-risk-confirmation-form textarea{min-height:84px;resize:vertical}.agent-risk-confirmation-form output{padding:10px 12px;border-radius:9px;color:#315f7b;background:#f2f7fa;font-weight:600}.agent-risk-confirmation-form small{color:#718a9b;font-size:12px;font-weight:400;line-height:1.45}.agent-form-error{margin:0;padding:9px 11px;border-radius:8px;color:#a43e46;background:#fff0f1;line-height:1.45}
 </style>
