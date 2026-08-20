@@ -9,10 +9,10 @@ serialized JSON matches the existing frontend contract exactly.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from risk_platform.shared.http import StrictRequestModel
 
@@ -90,6 +90,63 @@ class MailAttachmentItem(StrictRequestModel):
     sizeBytes: int
     status: MailAttachmentStatus
     summary: str | None
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_parser_metadata(cls, value: Any) -> Any:
+        """Map persisted parser metadata onto the frozen frontend contract.
+
+        The mailbox parser stores its internal attachment facts as
+        ``mimeType``/``extension``/``allowedFormat``/``code`` and can emit
+        granular parser statuses. The sync-results API predates that storage
+        shape and exposes the stable ``type``/``summary`` plus a coarse
+        PARSED/SKIPPED/FAILED status. Normalize only parser-shaped dictionaries;
+        already-compatible historical rows pass through unchanged.
+        """
+
+        if not isinstance(value, dict) or "type" in value:
+            return value
+
+        name = value.get("name")
+        size_bytes = value.get("sizeBytes")
+        raw_status = value.get("status")
+        if not isinstance(name, str) or not isinstance(size_bytes, int):
+            return value
+        if not isinstance(raw_status, str):
+            return value
+
+        allowed_format = value.get("allowedFormat")
+        extension = value.get("extension")
+        mime_type = value.get("mimeType")
+        attachment_type = (
+            allowed_format
+            if isinstance(allowed_format, str) and allowed_format
+            else extension.lstrip(".").upper()
+            if isinstance(extension, str) and extension
+            else mime_type
+            if isinstance(mime_type, str) and mime_type
+            else "UNKNOWN"
+        )
+
+        if raw_status == "PARSED":
+            status: MailAttachmentStatus = "PARSED"
+        elif raw_status in {"UNSUPPORTED", "TOO_LARGE", "OUTPUT_TRUNCATED"}:
+            status = "SKIPPED"
+        else:
+            status = "FAILED"
+
+        code = value.get("code")
+        summary = value.get("summary")
+        if not isinstance(summary, str):
+            summary = code if isinstance(code, str) else None
+
+        return {
+            "name": name,
+            "type": attachment_type,
+            "sizeBytes": size_bytes,
+            "status": status,
+            "summary": summary,
+        }
 
 
 class MailProcessingTraceItem(StrictRequestModel):
