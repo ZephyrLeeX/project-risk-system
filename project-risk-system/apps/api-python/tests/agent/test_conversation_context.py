@@ -25,6 +25,7 @@ from risk_platform.agent.models import AgentConversation, AgentMessage, AgentMes
 from risk_platform.agent.schemas import AgentToolResult
 from risk_platform.agent.tools import AgentToolRegistry
 from risk_platform.ai_providers.v2_adapter import (
+    ByteTokenEstimator,
     ProviderChatRequest,
     ProviderChatResponse,
     ProviderError,
@@ -789,3 +790,67 @@ def test_active_project_is_revalidated_and_cleared_after_scope_revocation() -> N
     assert asyncio.run(service._active_project(conversation, _identity())) is None
     assert conversation.activeProjectId is None
     assert conversation.activeProjectName is None
+
+
+def test_build_uses_per_call_policy_override_not_static_default() -> None:
+    # Verification #6 / P4: the per-call ``policy=`` override (``active_policy``)
+    # must drive compression, the recent-turn count and the trigger — not the
+    # static ``self._policy``.  ``self._policy`` here is a large budget whose
+    # trigger (9000) is far above the ~820-token context, so under it no
+    # compression would run and all 5 turns would be carried.  The override has
+    # a small trigger (500) and ``minimum_recent_turns=3``; build must use those.
+    conversation, messages, current = _conversation_fixture(5, content_size=50)
+    calls: list[str] = []
+
+    async def summarize(_snapshot: object, _summary: str | None, transcript: str) -> str:
+        calls.append(transcript)
+        return "已压缩历史。"
+
+    service = _MemoryContextService(
+        conversation,
+        messages,
+        summarize,
+        ConversationContextPolicy(
+            history_budget=10_000,
+            compression_trigger=9_000,
+            compression_target=200,
+            summary_input_budget=5_000,
+            minimum_recent_turns=2,
+        ),
+    )
+    override = ConversationContextPolicy(
+        history_budget=600,
+        compression_trigger=500,
+        compression_target=200,
+        summary_input_budget=200,
+        minimum_recent_turns=3,
+    )
+    result = asyncio.run(
+        service.build(conversation.id, current.id, _identity(), (), policy=override)
+    )
+
+    # The override's small trigger drove compression; ``self._policy`` would not.
+    assert calls, "compression must run under the override trigger, not the static default"
+    # The override's ``minimum_recent_turns=3`` kept 3 turns (6 messages);
+    # ``self._policy`` (min 2, no compression) would have carried all 5 turns.
+    assert len(result.recent_messages) == 6
+    assert result.context_degraded is False
+    # Two compress passes ran (through sequences 2 then 4).
+    assert result.summarized_through_sequence == 4
+
+
+def test_bounded_text_truncates_by_token_budget_without_splitting_multibyte() -> None:
+    # P4: ``_bounded_text`` now takes a *token* budget and must use the
+    # estimator, not raw UTF-8 byte truncation.  A CJK-heavy summary (3 B/char)
+    # truncated to a 150-token budget yields exactly 50 chars; the
+    # binary-search + ``decode(errors="ignore")`` path never splits a multibyte
+    # sequence, so the result is always valid and within budget.
+    est = ByteTokenEstimator()
+    value = "风" * 100
+    bounded = ConversationContextService._bounded_text(value, 150, est)
+    assert ByteTokenEstimator().estimate(bounded) <= 150
+    assert bounded == "风" * 50
+    # Under-budget text is returned unchanged (whitespace stripped only).
+    assert ConversationContextService._bounded_text("  短  ", 100, est) == "短"
+    # Empty / whitespace-only collapses to the empty string.
+    assert ConversationContextService._bounded_text("   ", 100, est) == ""

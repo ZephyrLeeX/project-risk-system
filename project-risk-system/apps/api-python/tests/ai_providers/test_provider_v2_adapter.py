@@ -26,6 +26,7 @@ from risk_platform.ai_providers.v2_adapter import (
     AiProviderAdapterRegistry,
     DeepSeekOfficialAdapter,
     DeepSeekOfficialHttpTransport,
+    DeepSeekOfficialTokenEstimator,
     ProviderCandidate,
     ProviderChatRequest,
     ProviderError,
@@ -37,8 +38,10 @@ from risk_platform.ai_providers.v2_adapter import (
     ProviderRole,
     ProviderToolCall,
     ProviderToolDefinition,
+    ProviderTransportPolicy,
     ProviderType,
     measure_provider_request,
+    measure_provider_request_tokens,
 )
 from risk_platform.model_types import JSONValue
 from risk_platform.shared.crypto import KeyRing, SecretCipher
@@ -674,3 +677,330 @@ def test_secret_prompt_and_raw_response_are_not_logged(caplog: pytest.LogCapture
     assert "sk-test-secret-value" not in logs
     assert "business prompt" not in logs
     assert "provider-sensitive-body" not in logs
+
+
+# ---------------------------------------------------------------------------
+# DeepSeek thinking-mode ``reasoning_content`` round-trip (P1).
+# ---------------------------------------------------------------------------
+
+
+def test_chat_reads_reasoning_content_from_thinking_response() -> None:
+    cipher = _cipher()
+    transport = ScriptedTransport(
+        [
+            _response(
+                200,
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": None,
+                                "reasoning_content": "analyzing which risks are high",
+                                "tool_calls": [
+                                    {
+                                        "id": "call-1",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "risk_list",
+                                            "arguments": '{"level":"HIGH"}',
+                                        },
+                                    }
+                                ],
+                            },
+                            "finish_reason": "tool_calls",
+                        }
+                    ],
+                    "usage": {},
+                },
+            )
+        ]
+    )
+    adapter = DeepSeekOfficialAdapter(cipher, transport)
+
+    result = asyncio.run(
+        adapter.chat(
+            _candidate(cipher),
+            ProviderChatRequest((ProviderMessage(ProviderRole.USER, "当前有哪些高风险?"),)),
+        )
+    )
+
+    assert result.reasoning_content == "analyzing which risks are high"
+    assert result.tool_calls[0].name == "risk_list"
+    assert result.finish_reason is ProviderFinishReason.TOOL_CALLS
+
+
+def test_non_thinking_response_carries_no_reasoning_content() -> None:
+    cipher = _cipher()
+    transport = ScriptedTransport(
+        [
+            _response(
+                200,
+                {
+                    "choices": [
+                        {"message": {"content": "answer"}, "finish_reason": "stop"}
+                    ],
+                    "usage": {},
+                },
+            )
+        ]
+    )
+    adapter = DeepSeekOfficialAdapter(cipher, transport)
+
+    result = asyncio.run(
+        adapter.chat(
+            _candidate(cipher),
+            ProviderChatRequest((ProviderMessage(ProviderRole.USER, "hi"),)),
+        )
+    )
+
+    assert result.reasoning_content is None
+    assert result.content == "answer"
+
+
+def test_non_string_reasoning_content_is_malformed() -> None:
+    cipher = _cipher()
+    adapter = DeepSeekOfficialAdapter(
+        cipher,
+        ScriptedTransport(
+            [
+                _response(
+                    200,
+                    {
+                        "choices": [
+                            {
+                                "message": {"content": "ok", "reasoning_content": 123},
+                                "finish_reason": "stop",
+                            }
+                        ],
+                        "usage": {},
+                    },
+                )
+            ],
+        ),
+    )
+    with pytest.raises(ProviderError) as caught:
+        asyncio.run(
+            adapter.chat(
+                _candidate(cipher),
+                ProviderChatRequest((ProviderMessage(ProviderRole.USER, "hi"),)),
+            )
+        )
+    assert caught.value.classification is ProviderErrorClassification.MALFORMED_RESPONSE
+
+
+# ---------------------------------------------------------------------------
+# Independent HTTP transport byte-safety limits (P2).
+# ---------------------------------------------------------------------------
+
+
+def test_default_transport_policy_carries_full_deepseek_v4_context() -> None:
+    policy = ProviderTransportPolicy()
+    assert policy.max_request_bytes == 8 * 1024 * 1024
+    assert policy.max_response_bytes == 8 * 1024 * 1024
+    # The old 64 KiB / 128 KiB transport bottleneck no longer gates DeepSeek's
+    # 1M-token context; 8 MiB carries a full V4 request and output with margin.
+    assert policy.max_request_bytes > 64 * 1024
+    assert policy.max_response_bytes > 128 * 1024
+
+
+def test_transport_policy_rejects_non_positive_limits() -> None:
+    with pytest.raises(ValueError, match="invalid provider transport policy"):
+        ProviderTransportPolicy(max_request_bytes=0)
+    with pytest.raises(ValueError, match="invalid provider transport policy"):
+        ProviderTransportPolicy(max_response_bytes=-1)
+
+
+def test_request_above_64kib_but_below_transport_limit_is_sent() -> None:
+    # The old 64 KiB transport cap is gone: a request whose encoded body is
+    # larger than 64 KiB but well within the 8 MiB transport safety limit is
+    # sent to the provider, not rejected at the adapter.
+    cipher = _cipher()
+    transport = ScriptedTransport(
+        [
+            _response(
+                200,
+                {
+                    "choices": [
+                        {"message": {"content": "ok"}, "finish_reason": "stop"}
+                    ],
+                    "usage": {},
+                },
+            )
+        ]
+    )
+    adapter = DeepSeekOfficialAdapter(cipher, transport)
+
+    asyncio.run(
+        adapter.chat(
+            _candidate(cipher),
+            ProviderChatRequest((ProviderMessage(ProviderRole.USER, "x" * (70 * 1024)),)),
+        )
+    )
+
+    assert len(transport.calls) == 1
+    body = transport.calls[0][3]
+    assert body is not None and len(body) > 64 * 1024
+
+
+def test_request_exceeding_transport_max_request_bytes_fails_closed() -> None:
+    cipher = _cipher()
+    transport = ScriptedTransport(
+        [
+            _response(
+                200,
+                {
+                    "choices": [
+                        {"message": {"content": "ok"}, "finish_reason": "stop"}
+                    ],
+                    "usage": {},
+                },
+            )
+        ]
+    )
+    adapter = DeepSeekOfficialAdapter(
+        cipher, transport, transport_policy=ProviderTransportPolicy(max_request_bytes=128)
+    )
+
+    with pytest.raises(ProviderError) as caught:
+        asyncio.run(
+            adapter.chat(
+                _candidate(cipher),
+                ProviderChatRequest((ProviderMessage(ProviderRole.USER, "x" * 1024),)),
+            )
+        )
+
+    assert caught.value.classification is ProviderErrorClassification.INVALID_REQUEST
+    # The over-transport request never reached the socket.
+    assert transport.calls == []
+
+
+def test_response_exceeding_transport_max_response_bytes_fails_closed() -> None:
+    cipher = _cipher()
+    adapter = DeepSeekOfficialAdapter(
+        cipher,
+        ScriptedTransport([_response(200, b"x" * 65)]),
+        transport_policy=ProviderTransportPolicy(max_response_bytes=64),
+    )
+
+    with pytest.raises(ProviderError) as caught:
+        asyncio.run(adapter.list_models(_candidate(cipher).encrypted_api_key, 10))
+
+    assert caught.value.classification is ProviderErrorClassification.MALFORMED_RESPONSE
+
+
+# ---------------------------------------------------------------------------
+# Conservative estimator + full-request token measurement (P3).
+# ---------------------------------------------------------------------------
+
+
+def test_deepseek_estimator_never_undercounts_ascii_cjk_emoji_control() -> None:
+    est = DeepSeekOfficialTokenEstimator()
+    # ASCII / digit / punctuation: one token-per-byte is the worst case for any
+    # BPE tokenizer, so the byte bound never under-counts.  (``bytes / 3`` would:
+    # "abc" -> 1, under-counting by 2x-3x on ASCII/digit/punctuation/control.)
+    assert est.estimate("abc") == 3
+    assert est.estimate("123!@#") == 6
+    # CJK: 3 bytes/char; one token/char is the worst case -> 6 >= real ~2.
+    assert est.estimate("你好") == 6
+    # Emoji: 4 bytes; one-or-two tokens -> 4 >= real.
+    assert est.estimate("😀") == 4
+    # Control characters: one byte each -> 2.
+    assert est.estimate("\x00\x01") == 2
+    assert est.estimate("") == 0
+    # The estimate equals the UTF-8 byte length for every case: a BPE token
+    # covers at least one byte, so this is a provably-safe upper bound.
+    for text in ("abc", "你好", "😀", "\x00\x01", "mixed 你好 ascii 😀"):
+        assert est.estimate(text) == len(text.encode("utf-8"))
+
+
+def _full_request_with_reasoning_and_tools() -> ProviderChatRequest:
+    return ProviderChatRequest(
+        (
+            ProviderMessage(ProviderRole.SYSTEM, "你是项目风险管理助手"),
+            ProviderMessage(ProviderRole.USER, "当前有哪些高风险?"),
+            ProviderMessage(
+                ProviderRole.ASSISTANT,
+                None,
+                tool_calls=(ProviderToolCall("call-1", "risk_list", {"level": "HIGH"}),),
+                reasoning_content="先查高风险列表",
+            ),
+            ProviderMessage(ProviderRole.TOOL, '{"items":[]}', tool_call_id="call-1"),
+        ),
+        (ProviderToolDefinition("risk_list", "risks", {"type": "object", "properties": {}}),),
+        response_format=ProviderResponseFormat.JSON_OBJECT,
+    )
+
+
+def test_measure_provider_request_tokens_covers_all_request_context() -> None:
+    est = DeepSeekOfficialTokenEstimator()
+    full = _full_request_with_reasoning_and_tools()
+    measured_full = measure_provider_request_tokens(full, est)
+
+    # assistant tool_calls (id/type/function wrapper + name + JSON-stringified
+    # arguments) are counted.
+    without_tool_calls = ProviderChatRequest(
+        (
+            ProviderMessage(ProviderRole.SYSTEM, "你是项目风险管理助手"),
+            ProviderMessage(ProviderRole.USER, "当前有哪些高风险?"),
+            ProviderMessage(ProviderRole.ASSISTANT, None, reasoning_content="先查高风险列表"),
+            ProviderMessage(ProviderRole.TOOL, '{"items":[]}', tool_call_id="call-1"),
+        ),
+        full.tools,
+        response_format=ProviderResponseFormat.JSON_OBJECT,
+    )
+    assert measured_full > measure_provider_request_tokens(without_tool_calls, est)
+
+    # assistant reasoning_content (thinking round-trip) is counted.
+    without_reasoning = ProviderChatRequest(
+        (
+            ProviderMessage(ProviderRole.SYSTEM, "你是项目风险管理助手"),
+            ProviderMessage(ProviderRole.USER, "当前有哪些高风险?"),
+            ProviderMessage(
+                ProviderRole.ASSISTANT,
+                None,
+                tool_calls=(ProviderToolCall("call-1", "risk_list", {"level": "HIGH"}),),
+            ),
+            ProviderMessage(ProviderRole.TOOL, '{"items":[]}', tool_call_id="call-1"),
+        ),
+        full.tools,
+        response_format=ProviderResponseFormat.JSON_OBJECT,
+    )
+    assert measured_full > measure_provider_request_tokens(without_reasoning, est)
+
+    # tool definitions (type/function wrapper + name + description + parameters)
+    # and response_format are counted.
+    assert measured_full > measure_provider_request_tokens(
+        ProviderChatRequest(full.messages, response_format=ProviderResponseFormat.JSON_OBJECT), est
+    )
+
+    # Shares the canonical wire serializer with ``measure_provider_request``:
+    # with the byte-based DeepSeek estimator both yield the same conservative
+    # byte count, so the token gate and the transport byte gate never drift.
+    assert measure_provider_request_tokens(full, est) == measure_provider_request(full)
+
+
+def test_measure_provider_request_tokens_counts_reasoning_content() -> None:
+    est = DeepSeekOfficialTokenEstimator()
+    base = ProviderChatRequest(
+        (
+            ProviderMessage(
+                ProviderRole.ASSISTANT,
+                None,
+                tool_calls=(ProviderToolCall("c", "t", {"k": "v"}),),
+            ),
+        )
+    )
+    with_reasoning = ProviderChatRequest(
+        (
+            ProviderMessage(
+                ProviderRole.ASSISTANT,
+                None,
+                tool_calls=(ProviderToolCall("c", "t", {"k": "v"}),),
+                reasoning_content="thinking step by step about the risk level",
+            ),
+        )
+    )
+    assert measure_provider_request_tokens(with_reasoning, est) > measure_provider_request_tokens(
+        base, est
+    )

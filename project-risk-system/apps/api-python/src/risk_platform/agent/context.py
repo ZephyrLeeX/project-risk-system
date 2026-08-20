@@ -213,21 +213,27 @@ class ConversationContextService:
             )
             active = await self._active_project(conversation, identity)
             if self._context_size(conversation.contextSummary, turns, active_estimator) <= trigger:
-                return self._result(conversation, turns, active, effective_budget, active_estimator)
+                return self._result(
+                    conversation, turns, active, effective_budget, active_estimator, active_policy
+                )
             compressible = turns[: -active_policy.minimum_recent_turns]
-            batch = self._bounded_prefix(compressible, active_estimator)
+            batch = self._bounded_prefix(compressible, active_estimator, active_policy)
             # No compressible batch means only the protected recent window
             # remains unsummarized; everything older is already in the summary,
             # so the no-dropped-history invariant holds by construction.
             if not batch:
-                return self._result(conversation, turns, active, effective_budget, active_estimator)
+                return self._result(
+                    conversation, turns, active, effective_budget, active_estimator, active_policy
+                )
             if passes >= active_policy.max_compression_passes:
                 # Execution-budget exhaustion is explicit degradation, never a
                 # silent stop.  We do not claim the unsummarized middle turns
                 # have entered memory; the persisted summary + latest turns are
                 # returned and the next turn resumes monotonic compression.
                 logger.warning("AGENT_CONTEXT_COMPRESSION_DEGRADED")
-                return self._result(conversation, turns, active, effective_budget, active_estimator)
+                return self._result(
+                    conversation, turns, active, effective_budget, active_estimator, active_policy
+                )
             passes += 1
             through = batch[-1].last_sequence
             transcript = "\n\n".join(turn.transcript() for turn in batch)
@@ -237,11 +243,17 @@ class ConversationContextService:
                 )
             except ProviderError:
                 logger.warning("AGENT_CONTEXT_COMPRESSION_DEGRADED")
-                return self._result(conversation, turns, active, effective_budget, active_estimator)
-            summary = self._bounded_text(summary, active_policy.compression_target)
+                return self._result(
+                    conversation, turns, active, effective_budget, active_estimator, active_policy
+                )
+            summary = self._bounded_text(
+                summary, active_policy.compression_target, active_estimator
+            )
             if not summary:
                 logger.warning("AGENT_CONTEXT_COMPRESSION_DEGRADED")
-                return self._result(conversation, turns, active, effective_budget, active_estimator)
+                return self._result(
+                    conversation, turns, active, effective_budget, active_estimator, active_policy
+                )
             updated = await self._compare_and_set_summary(
                 conversation.id,
                 expected_version=conversation.contextSummaryVersion,
@@ -260,6 +272,7 @@ class ConversationContextService:
             await self._active_project(conversation, identity),
             effective_budget,
             active_estimator,
+            active_policy,
         )
 
     async def _load(
@@ -355,11 +368,12 @@ class ConversationContextService:
         active: ActiveProject | None,
         history_budget: int,
         estimator: TokenEstimator,
+        active_policy: ConversationContextPolicy,
     ) -> AgentConversationContext:
         selected: list[_Turn] = []
         used = estimator.estimate(conversation.contextSummary or "")
         for turn in reversed(turns):
-            required = len(selected) < self._policy.minimum_recent_turns
+            required = len(selected) < active_policy.minimum_recent_turns
             if not required and used + _turn_size(turn, estimator) > history_budget:
                 break
             selected.append(turn)
@@ -396,12 +410,15 @@ class ConversationContextService:
         )
 
     def _bounded_prefix(
-        self, turns: Sequence[_Turn], estimator: TokenEstimator
+        self,
+        turns: Sequence[_Turn],
+        estimator: TokenEstimator,
+        active_policy: ConversationContextPolicy,
     ) -> list[_Turn]:
         result: list[_Turn] = []
         used = 0
         for turn in turns:
-            if used + _turn_size(turn, estimator) > self._policy.summary_input_budget:
+            if used + _turn_size(turn, estimator) > active_policy.summary_input_budget:
                 break
             result.append(turn)
             used += _turn_size(turn, estimator)
@@ -428,11 +445,31 @@ class ConversationContextService:
         )
 
     @staticmethod
-    def _bounded_text(value: str, budget: int) -> str:
-        encoded = value.strip().encode()
-        if len(encoded) <= budget:
-            return value.strip()
-        return encoded[:budget].decode(errors="ignore").rstrip()
+    def _bounded_text(value: str, budget: int, estimator: TokenEstimator) -> str:
+        # ``budget`` is tokens, not UTF-8 bytes: truncating by raw bytes would
+        # under-size CJK-heavy summaries (3 B/token) relative to the token
+        # budget and could split a multibyte sequence.  Truncate by the
+        # estimator's token count instead.  ``estimate`` is monotonic
+        # non-decreasing in the UTF-8 byte length for the byte-derived
+        # estimators in use, so binary-search the largest byte prefix whose
+        # re-decoded estimate stays within the token budget.  Decoding with
+        # errors ignored drops any partial trailing multibyte sequence, so the
+        # decoded prefix is always valid and its estimate never exceeds the
+        # byte-prefix's (it holds a subset of the same bytes).
+        text = value.strip()
+        if not text or estimator.estimate(text) <= budget:
+            return text
+        encoded = text.encode("utf-8")
+        lo, hi, best = 0, len(encoded), 0
+        while lo <= hi:
+            mid = (lo + hi) // 2
+            candidate = encoded[:mid].decode("utf-8", errors="ignore")
+            if estimator.estimate(candidate) <= budget:
+                best = mid
+                lo = mid + 1
+            else:
+                hi = mid - 1
+        return encoded[:best].decode("utf-8", errors="ignore").rstrip()
 
 
 def refers_to_active_project(message: str) -> bool:

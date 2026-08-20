@@ -11,13 +11,17 @@ from risk_platform.agent.context import (
     AgentConversationContext,
     ConversationMessage,
 )
-from risk_platform.agent.core import AgentLoopError, AgentLoopLimits, ReadOnlyAgentCore
+from risk_platform.agent.core import (
+    AgentLoopError,
+    AgentLoopLimits,
+    ContextBudget,
+    ReadOnlyAgentCore,
+)
 from risk_platform.agent.schemas import AgentToolResult, CandidateRisk, CandidateRiskBasisType
 from risk_platform.agent.scope import OUT_OF_SCOPE_MESSAGE, ScopeDecision, ScopePolicy
 from risk_platform.agent.tools import AgentToolRegistry
 from risk_platform.agent.v2_execution import _project_selection_resume_context
 from risk_platform.ai_providers.v2_adapter import (
-    ModelCapabilities,
     ProviderCandidate,
     ProviderChatRequest,
     ProviderChatResponse,
@@ -26,6 +30,7 @@ from risk_platform.ai_providers.v2_adapter import (
     ProviderTokenUsage,
     ProviderToolCall,
     ProviderType,
+    _canonical_chat_payload,
     _deepseek_official_capabilities,
 )
 from risk_platform.ai_providers.v2_service import ProviderV2Runtime
@@ -690,3 +695,95 @@ def test_model_scope_rule_does_not_block_in_scope_business(message: str) -> None
     assert result.out_of_scope is False
     assert runtime.calls == 2
     assert tools.invocations == 1
+
+
+def test_high_risk_query_reaches_risk_list_then_final_answer() -> None:
+    # Verification #2: "当前有哪些高风险?" -> Provider round 1 -> risk_list ->
+    # tool -> Provider round 2 -> normal final answer (no thinking).
+    runtime, tools = (
+        _Runtime(
+            [
+                _response(ProviderToolCall("risk-1", "risk_list", {"level": "HIGH"})),
+                _response(text="已列出当前高风险"),
+            ]
+        ),
+        _Tools(),
+    )
+    result = asyncio.run(
+        ReadOnlyAgentCore(cast(ProviderV2Runtime, runtime), cast(AgentToolRegistry, tools)).run(
+            _identity(), "当前有哪些高风险?"
+        )
+    )
+    assert result.text == "已列出当前高风险"
+    assert runtime.calls == 2
+    assert tools.invocations == 1
+
+
+def test_reasoning_content_round_trips_through_tool_call_loop() -> None:
+    # Verification #1 (DeepSeek thinking tool-call two-round chain):
+    # round 1 returns reasoning_content + tool_calls -> the assistant message
+    # Core appends for round 2 must carry the original reasoning_content back
+    # to the provider (DeepSeek requires it on a producing assistant message),
+    # and the canonical wire serializer puts it on the wire.  The final answer
+    # succeeds and the reasoning never reaches the user-visible outcome text.
+    call = ProviderToolCall("risk-1", "risk_list", {"level": "HIGH"})
+    runtime, tools = (
+        _Runtime(
+            [
+                ProviderChatResponse(
+                    content=None,
+                    tool_calls=(call,),
+                    finish_reason=ProviderFinishReason.TOOL_CALLS,
+                    usage=ProviderTokenUsage(1, 1, 2),
+                    latency_ms=1,
+                    reasoning_content="reasoning: which risks are high",
+                ),
+                _response(text="已列出当前高风险"),
+            ]
+        ),
+        _Tools(),
+    )
+    result = asyncio.run(
+        ReadOnlyAgentCore(cast(ProviderV2Runtime, runtime), cast(AgentToolRegistry, tools)).run(
+            _identity(), "当前有哪些高风险?"
+        )
+    )
+
+    assert result.text == "已列出当前高风险"
+    assert "reasoning" not in result.text  # never exposed to user UI
+    assert runtime.calls == 2
+
+    # Round 2's request carries the round-1 assistant reasoning_content back.
+    round_two = cast(ProviderChatRequest, runtime.requests[1])
+    assistant = next(
+        message for message in round_two.messages if message.role is ProviderRole.ASSISTANT
+    )
+    assert assistant.reasoning_content == "reasoning: which risks are high"
+    assert assistant.tool_calls == (call,)
+    # ...and the canonical wire serializer the DeepSeek adapter uses puts it on
+    # the wire for round 2 (the measurement path and the wire path share it).
+    payload = _canonical_chat_payload(round_two, "deepseek-reasoner")
+    assert any(
+        item.get("role") == "assistant"
+        and item.get("reasoning_content") == "reasoning: which risks are high"
+        for item in cast(list[dict[str, object]], payload["messages"])
+    )
+
+
+def test_request_exceeding_hard_context_budget_fails_closed_before_http() -> None:
+    # Verification #4: a request that truly exceeds the effective model input
+    # budget fails closed *before* any HTTP call rather than reaching the wire.
+    # The static system instruction alone is far larger than a 64-token budget.
+    runtime, tools = _Runtime([_response(text="should not reach")]), _Tools()
+    core = ReadOnlyAgentCore(
+        cast(ProviderV2Runtime, runtime),
+        cast(AgentToolRegistry, tools),
+        limits=AgentLoopLimits(
+            context=ContextBudget(
+                hard_context_budget=64, tool_result_reserve=16, output_safety_reserve=16
+            )
+        ),
+    )
+    with pytest.raises(AgentLoopError, match="AGENT_CONTEXT_TOO_LARGE"):
+        asyncio.run(core.run(_identity(), "当前有哪些高风险?"))
+    assert runtime.calls == 0
