@@ -94,12 +94,29 @@ copy_state_directory() {
   done < <(find "${source_dir}" -mindepth 1 \( -type f -o -type l \) -print0)
 }
 
+validate_migratable_env_path() {
+  local path="$1" part
+  local -a parts=()
+
+  [[ -n "${path}" ]] || die "ENV_FILE must not be empty during layout migration"
+  [[ "${path}" != /* ]] \
+    || die "layout migration requires ENV_FILE to be project-relative: ${path}"
+
+  IFS='/' read -r -a parts <<< "${path}"
+  for part in "${parts[@]}"; do
+    [[ -n "${part}" && "${part}" != "." && "${part}" != ".." ]] \
+      || die "layout migration refuses unsafe ENV_FILE path: ${path}"
+  done
+}
+
 migrate_ignored_deploy_state() {
   local target_root="$1"
   [[ "${LEGACY_PROJECT_ROOT}" != "${target_root}" ]] || return 0
 
+  validate_migratable_env_path "${ENV_FILE}"
+
   log "copying ignored deployment state to new repository root"
-  copy_state_file "${LEGACY_PROJECT_ROOT}/.env.production" "${target_root}/.env.production"
+  copy_state_file "${LEGACY_PROJECT_ROOT}/${ENV_FILE}" "${target_root}/${ENV_FILE}"
   copy_state_file "${LEGACY_PROJECT_ROOT}/infra/deploy/deploy.conf" "${target_root}/infra/deploy/deploy.conf"
   copy_state_file "${LEGACY_PROJECT_ROOT}/infra/deploy/.deployed-sha" "${target_root}/infra/deploy/.deployed-sha"
   copy_state_directory "${LEGACY_PROJECT_ROOT}/infra/secrets" "${target_root}/infra/secrets"
