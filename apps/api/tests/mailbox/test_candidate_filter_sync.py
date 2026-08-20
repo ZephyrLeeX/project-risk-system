@@ -24,7 +24,7 @@ import uuid
 from collections.abc import Coroutine, Iterator
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, TypeVar, cast
+from typing import Any, cast
 
 import pytest
 from alembic import command
@@ -54,7 +54,6 @@ from risk_platform.reliability.models import DurableTask, DurableTaskKind
 from risk_platform.shared.crypto import SecretCipher
 
 ROOT = Path(__file__).resolve().parents[2]
-_T = TypeVar("_T")
 
 
 class _StubCipher:
@@ -165,7 +164,7 @@ async def _seed(factory: async_sessionmaker[AsyncSession]) -> dict[str, object]:
         return {"mailbox": mailbox.id, "batch": batch.id, "owner": owner.id}
 
 
-def _run(coro: Coroutine[Any, Any, _T]) -> _T:
+def _run[T](coro: Coroutine[Any, Any, T]) -> T:
     return asyncio.run(coro)
 
 
