@@ -536,6 +536,64 @@ def _project_memory_context() -> AgentConversationContext:
     )
 
 
+def _cancelled_project_selection_context() -> AgentConversationContext:
+    return AgentConversationContext(
+        summary=None,
+        recent_messages=(
+            ConversationMessage(1, ProviderRole.USER, "大足有哪些项目"),
+            ConversationMessage(
+                2,
+                ProviderRole.ASSISTANT,
+                "项目选择已取消，上一问题尚未完成。你可以稍后说“继续上一个问题”重新处理。",
+            ),
+        ),
+        active_project=None,
+        summarized_through_sequence=0,
+    )
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "继续",
+        "继续上一个问题",
+        "继续刚才的问题",
+        "接着上一个问题",
+        "接着刚才的问题",
+        "接着说",
+    ),
+)
+def test_continuation_followup_resumes_cancelled_domain_turn(message: str) -> None:
+    runtime, tools = _Runtime([_response(text="继续处理大足项目查询")]), _Tools()
+    result = asyncio.run(
+        ReadOnlyAgentCore(cast(ProviderV2Runtime, runtime), cast(AgentToolRegistry, tools)).run(
+            _identity(),
+            message,
+            conversation_context=_cancelled_project_selection_context(),
+            candidate_snapshot=(),
+        )
+    )
+    assert result.out_of_scope is False
+    assert runtime.calls == 1
+    request = cast(ProviderChatRequest, runtime.requests[0])
+    history = [item.content for item in request.messages]
+    assert "大足有哪些项目" in history
+    assert history[-1] == message
+
+
+def test_continuation_without_domain_history_stays_out_of_scope() -> None:
+    runtime, tools = _Runtime([]), _Tools()
+    result = asyncio.run(
+        ReadOnlyAgentCore(cast(ProviderV2Runtime, runtime), cast(AgentToolRegistry, tools)).run(
+            _identity(), "继续上一个问题"
+        )
+    )
+    assert result.out_of_scope is True
+    assert result.text == OUT_OF_SCOPE_MESSAGE
+    assert runtime.calls == 0
+    assert tools.invocations == 0
+
+
 def test_contextual_followup_inherits_domain_context_and_reaches_provider() -> None:
     # "第二个展开说一下" is out-of-scope by the static policy, but with a recent
     # domain turn it is a contextually-ambiguous anchored shorthand: layer 1
