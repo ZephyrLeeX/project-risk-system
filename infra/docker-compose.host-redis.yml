@@ -1,0 +1,21 @@
+# OPT-IN override: publish a localhost-only host port for Redis.
+#
+# The base stack (infra/docker-compose.yml) deliberately publishes NO host port
+# for redis — worker/scheduler reach it over the compose network at the service
+# name `redis:6379`, and CELERY_BROKER_URL is fixed to that in-container port.
+# This override exists for local dev / integration tests (pytest's celery
+# fixtures default to redis://localhost:6379/0) and operator redis-cli.
+#
+# Use it by appending this file after the base file:
+#
+#   docker compose --env-file .env \
+#     -f infra/docker-compose.yml -f infra/docker-compose.host-redis.yml \
+#     up -d redis
+#
+# The host bind is controlled by REDIS_HOST_PORT (independent of the fixed
+# in-container 6379). Leave it unset or remove the override for deployments so
+# no host 6379 is ever published.
+services:
+  redis:
+    ports:
+      - "127.0.0.1:${REDIS_HOST_PORT:-6379}:6379"
