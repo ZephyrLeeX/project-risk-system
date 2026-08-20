@@ -77,9 +77,22 @@ const scopeOptions: Array<{ value: DataScopeType; label: string }> = [
   { value: "ASSIGNED", label: "被授权项目" },
   { value: "NONE", label: "无项目数据" },
 ];
+const allowedScopeValuesByRole: Partial<Record<string, DataScopeType[]>> = {
+  SYSTEM_ADMIN: ["ALL"],
+  RISK_ADMIN: ["ALL", "ASSIGNED"],
+  PROJECT_MANAGER: ["OWNED_OR_ASSIGNED", "OWNED", "ASSIGNED", "NONE"],
+  VIEWER_AUDITOR: ["ASSIGNED", "NONE"],
+};
 const selectedRole = computed(() =>
   roles.value.find((role) => role.id === form.roleId),
 );
+const availableScopeOptions = computed(() => {
+  const roleCode = selectedRole.value?.code;
+  if (!roleCode) return scopeOptions;
+  const allowed = allowedScopeValuesByRole[roleCode];
+  if (!allowed) return scopeOptions;
+  return scopeOptions.filter((option) => allowed.includes(option.value));
+});
 const selectedProjectsVisible = computed(() =>
   ["ASSIGNED", "OWNED_OR_ASSIGNED"].includes(form.dataScope),
 );
@@ -166,8 +179,15 @@ const allCurrentSelected = computed(() =>
 watch(
   () => form.roleId,
   () => {
-    if (!editingUserId.value && selectedRole.value) {
+    if (!selectedRole.value) return;
+    const currentScopeAllowed = availableScopeOptions.value.some(
+      (option) => option.value === form.dataScope,
+    );
+    if (!editingUserId.value || !currentScopeAllowed) {
       form.dataScope = selectedRole.value.defaultDataScope;
+    }
+    if (selectedRole.value.code !== "PROJECT_MANAGER") {
+      form.ownedProjectIds = [];
     }
   },
 );
@@ -764,7 +784,7 @@ function getErrorMessage(error: unknown): string {
               <div><h3>项目数据范围</h3><p>所有项目查询均在服务端应用该范围</p></div>
             </div>
             <div class="scope-choice-grid">
-              <label v-for="scope in scopeOptions" :key="scope.value">
+              <label v-for="scope in availableScopeOptions" :key="scope.value">
                 <input
                   v-model="form.dataScope"
                   type="radio"
