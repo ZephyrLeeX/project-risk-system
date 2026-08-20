@@ -103,13 +103,16 @@ def test_abnormal_disconnect_does_not_cancel_the_durable_execution(
     monkeypatch.setattr(events, "request_cancellation", cancellation)
 
     async def close_mid_stream() -> bytes:
-        stream = events._stream(
-            cast(async_sessionmaker[AsyncSession], _Sessions()),
-            uuid4(),
-            0,
-            poll_interval=0,
-            idle_seconds=0,
-            keepalive_seconds=0,
+        stream = cast(
+            AsyncGenerator[bytes, None],
+            events._stream(
+                cast(async_sessionmaker[AsyncSession], _Sessions()),
+                uuid4(),
+                0,
+                poll_interval=0,
+                idle_seconds=0,
+                keepalive_seconds=0,
+            ),
         )
         frame = await anext(stream)
         await stream.aclose()
