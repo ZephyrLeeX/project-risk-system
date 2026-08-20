@@ -31,7 +31,11 @@ docker compose --env-file .env.production -f infra/docker-compose.yml ps
 
 `infra/deploy/update.sh <tag-or-sha>` 只接受可解析的固定 Git target，升级前建议执行加密备份，随后构建 API/web image、执行 `alembic upgrade head`、重建 stack 并运行统一 healthcheck。
 
-从历史 `project-risk-system/` 目录布局升级到当前仓库根布局时，必须先部署 bridge commit，再使用 bridge 版 `update.sh` 升到新布局。bridge 会复制而不覆盖 `.env.production`、`deploy.conf`、`.deployed-sha`、Compose secret 和 TLS cert；旧副本保留供代码回滚使用。
+从历史 `project-risk-system/` 目录布局升级到当前仓库根布局时，必须先部署 replacement bridge commit `159da04d279bf84aed7d9d7b836beb8662c16a69`，再使用该 bridge 版 `update.sh` 升到新布局。bridge 会复制而不覆盖配置的 `ENV_FILE`、`deploy.conf`、`.deployed-sha`、Compose secret 和 TLS cert；旧副本保留供代码回滚使用。
+
+bridge 只接受 project-relative 的 `ENV_FILE`。绝对路径、空路径、`.` / `..` 路径组件以及空路径组件都会 fail closed，避免跨出旧项目目录复制 secret。默认 `.env.production` 和类似 `config/prod.env` 的相对路径均受支持。
+
+旧 bridge commit `87e60f5d37e1fd2c8885c8b8daded8ef5df8c7d6` 只自动迁移默认 `.env.production`；生产环境若覆盖了 `ENV_FILE`，不要再使用该旧 bridge 进行布局迁移。
 
 ## 健康检查
 

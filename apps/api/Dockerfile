@@ -2,7 +2,6 @@
 # Shared production image for the FastAPI API, Celery worker and the ADR 0030
 # scheduler process. The per-service command is selected in docker-compose;
 # this image only installs the locked application and its production deps.
-# NestJS / Prisma are never part of this image (reference-only legacy stack).
 
 FROM python:3.12-slim AS runtime
 
