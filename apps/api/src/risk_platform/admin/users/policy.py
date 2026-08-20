@@ -7,7 +7,7 @@ from risk_platform.shared.errors import ApiError
 
 _ALLOWED_SCOPES: dict[str, frozenset[DataScopeType]] = {
     "SYSTEM_ADMIN": frozenset({DataScopeType.ALL}),
-    "RISK_ADMIN": frozenset({DataScopeType.ALL}),
+    "RISK_ADMIN": frozenset({DataScopeType.ALL, DataScopeType.ASSIGNED}),
     "PROJECT_MANAGER": frozenset(
         {
             DataScopeType.OWNED,
