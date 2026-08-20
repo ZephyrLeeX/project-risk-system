@@ -1,0 +1,166 @@
+name: CI mypy fix apply
+
+on:
+  push:
+    branches:
+      - chore/add-ci-workflow
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Apply reviewed typing fixes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              text = file.read_text()
+              if old not in text:
+                  raise SystemExit(f"expected snippet not found in {path}: {old[:80]!r}")
+              file.write_text(text.replace(old, new, 1))
+
+          replace(
+              "apps/api/tests/mailbox/test_filtering.py",
+              '    for subject in accepted:\n        assert flt.evaluate(subject=subject, sender="anyone@example.com") is True\n    for subject in rejected:\n        assert flt.evaluate(subject=subject, sender="anyone@example.com") is False\n',
+              '    for accepted_subject in accepted:\n        assert flt.evaluate(subject=accepted_subject, sender="anyone@example.com") is True\n    for rejected_subject in rejected:\n        assert flt.evaluate(subject=rejected_subject, sender="anyone@example.com") is False\n',
+          )
+
+          replace(
+              "apps/api/src/risk_platform/auth/wechat.py",
+              'import ssl\nfrom dataclasses import dataclass\nfrom urllib.error import HTTPError, URLError\n',
+              'import ssl\nfrom dataclasses import dataclass\nfrom http.client import HTTPMessage\nfrom typing import IO\nfrom urllib.error import HTTPError, URLError\n',
+          )
+          replace(
+              "apps/api/src/risk_platform/auth/wechat.py",
+              '    def redirect_request(self, request: UrlRequest, *args: object, **kwargs: object) -> None:\n        del request, args, kwargs\n        raise _RedirectBlockedError\n',
+              '    def redirect_request(\n        self,\n        req: UrlRequest,\n        fp: IO[bytes],\n        code: int,\n        msg: str,\n        headers: HTTPMessage,\n        newurl: str,\n    ) -> UrlRequest | None:\n        del req, fp, code, msg, headers, newurl\n        raise _RedirectBlockedError\n',
+          )
+
+          replace(
+              "apps/api/src/risk_platform/mailbox/sync.py",
+              '        keywords = config.subjectKeywords\n        if not isinstance(keywords, list) or not keywords:\n            keywords = list(DEFAULT_WEEKLY_REPORT_KEYWORDS)\n        keywords = tuple(str(item) for item in keywords if isinstance(item, str) and item.strip())\n        allowlist = config.senderAllowlist\n        if not isinstance(allowlist, list):\n            allowlist = []\n        allowlist = tuple(str(item) for item in allowlist if isinstance(item, str) and item.strip())\n',
+              '        raw_keywords = config.subjectKeywords\n        keywords = (\n            tuple(item for item in raw_keywords if isinstance(item, str) and item.strip())\n            if isinstance(raw_keywords, list) and raw_keywords\n            else DEFAULT_WEEKLY_REPORT_KEYWORDS\n        )\n        raw_allowlist = config.senderAllowlist\n        allowlist = (\n            tuple(item for item in raw_allowlist if isinstance(item, str) and item.strip())\n            if isinstance(raw_allowlist, list)\n            else ()\n        )\n',
+          )
+
+          replace(
+              "apps/api/tests/mailbox/test_candidate_filter_sync.py",
+              'from collections.abc import Iterator\n',
+              'from collections.abc import Coroutine, Iterator\n',
+          )
+          replace(
+              "apps/api/tests/mailbox/test_candidate_filter_sync.py",
+              'from typing import cast\n',
+              'from typing import Any, TypeVar, cast\n',
+          )
+          replace(
+              "apps/api/tests/mailbox/test_candidate_filter_sync.py",
+              'from risk_platform.reliability.models import DurableTask, DurableTaskKind\n\nROOT = Path(__file__).resolve().parents[2]\n',
+              'from risk_platform.reliability.models import DurableTask, DurableTaskKind\nfrom risk_platform.shared.crypto import SecretCipher\n\nROOT = Path(__file__).resolve().parents[2]\n_T = TypeVar("_T")\n',
+          )
+          replace(
+              "apps/api/tests/mailbox/test_candidate_filter_sync.py",
+              'def _run(coro):\n    return asyncio.run(coro)\n',
+              'def _run(coro: Coroutine[Any, Any, _T]) -> _T:\n    return asyncio.run(coro)\n',
+          )
+          file = Path("apps/api/tests/mailbox/test_candidate_filter_sync.py")
+          text = file.read_text()
+          if 'cast("object", _StubCipher())' not in text:
+              raise SystemExit("expected StubCipher casts not found")
+          text = text.replace('cast("object", _StubCipher())', 'cast("SecretCipher", _StubCipher())')
+          text = text.replace('  # type: ignore[attr-defined]', '')
+          old = '            batch2 = await session.get(MailSyncBatch, batch2_id)\n            assert batch2 is not None\n            assert batch2.handedOffCount == 0\n            assert batch2.status == MailSyncStatus.SUCCESS\n'
+          new = '            loaded_batch2 = await session.get(MailSyncBatch, batch2_id)\n            assert loaded_batch2 is not None\n            assert loaded_batch2.handedOffCount == 0\n            assert loaded_batch2.status == MailSyncStatus.SUCCESS\n'
+          if old not in text:
+              raise SystemExit("expected batch2 reload snippet not found")
+          file.write_text(text.replace(old, new, 1))
+
+          replace(
+              "apps/api/src/risk_platform/auth/service.py",
+              'from risk_platform.auth.schemas import AuthenticatedUser, DataScope, RoleCode\nfrom risk_platform.auth.schemas import AuthMethod as AuthMethodLiteral\n',
+              'from risk_platform.auth.schemas import AuthenticatedUser, DataScope, RoleCode\n',
+          )
+          replace(
+              "apps/api/src/risk_platform/auth/service.py",
+              '            authMethod=cast(AuthMethodLiteral, auth_method.value),\n',
+              '            authMethod=auth_method.value,\n',
+          )
+
+          replace(
+              "apps/api/tests/agent/test_sse_transport_regression.py",
+              'from collections.abc import Iterator\n',
+              'from collections.abc import AsyncGenerator, Iterator\n',
+          )
+          replace(
+              "apps/api/tests/agent/test_sse_transport_regression.py",
+              '        stream = events._stream(\n            cast(async_sessionmaker[AsyncSession], _Sessions()),\n            uuid4(),\n            0,\n            poll_interval=0,\n            idle_seconds=0,\n            keepalive_seconds=0,\n        )\n',
+              '        stream = cast(\n            AsyncGenerator[bytes, None],\n            events._stream(\n                cast(async_sessionmaker[AsyncSession], _Sessions()),\n                uuid4(),\n                0,\n                poll_interval=0,\n                idle_seconds=0,\n                keepalive_seconds=0,\n            ),\n        )\n',
+          )
+
+          replace("apps/api/src/risk_platform/auth/api.py", '        location=location,\n', '        url=location,\n')
+
+          replace(
+              "apps/api/src/risk_platform/agent/tools.py",
+              '            if project_id is not None:\n                page = await service.list_for_project(identity, project_id, query)\n            else:\n                page = await service.list(identity, query)\n            return AgentRiskListPage(\n                items=[_compact_risk_item(item) for item in page.items],\n                page=page.page,\n                pageSize=page.pageSize,\n                total=page.total,\n            )\n',
+              '            if project_id is not None:\n                project_page = await service.list_for_project(identity, project_id, query)\n                return AgentRiskListPage(\n                    items=[_compact_risk_item(item) for item in project_page.items],\n                    page=project_page.page,\n                    pageSize=project_page.pageSize,\n                    total=project_page.total,\n                )\n            general_page = await service.list(identity, query)\n            return AgentRiskListPage(\n                items=[_compact_risk_item(item) for item in general_page.items],\n                page=general_page.page,\n                pageSize=general_page.pageSize,\n                total=general_page.total,\n            )\n',
+          )
+
+          replace(
+              "apps/api/tests/agent/test_v2_core.py",
+              '    system = cast(ProviderChatRequest, runtime.requests[0]).messages[0].content\n',
+              '    system = runtime.requests[0].messages[0].content\n',
+          )
+
+          replace(
+              "apps/api/tests/agent/test_conversation_runtime_restore.py",
+              'from collections.abc import Iterator\n',
+              'from collections.abc import Callable, Iterator\n',
+          )
+          replace(
+              "apps/api/tests/agent/test_conversation_runtime_restore.py",
+              'from pathlib import Path\nfrom uuid import UUID, uuid4\n',
+              'from pathlib import Path\nfrom typing import Any\nfrom uuid import UUID, uuid4\n',
+          )
+          replace(
+              "apps/api/tests/agent/test_conversation_runtime_restore.py",
+              'def _seed_write_confirmation_environment(\n',
+              'async def _seed_write_confirmation_environment(\n',
+          )
+          replace(
+              "apps/api/tests/agent/test_conversation_runtime_restore.py",
+              '    return seed()  # type: ignore[return-value]\n',
+              '    return await seed()\n',
+          )
+          replace(
+              "apps/api/tests/agent/test_conversation_runtime_restore.py",
+              '        def build_app(identity_override: object) -> httpx2.AsyncClient:\n',
+              '        def build_app(identity_override: Callable[..., Any]) -> httpx2.AsyncClient:\n',
+          )
+          PY
+
+      - name: Commit fixes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- \
+            apps/api/tests/mailbox/test_filtering.py \
+            apps/api/src/risk_platform/auth/wechat.py \
+            apps/api/src/risk_platform/mailbox/sync.py \
+            apps/api/tests/mailbox/test_candidate_filter_sync.py \
+            apps/api/src/risk_platform/auth/service.py \
+            apps/api/tests/agent/test_sse_transport_regression.py \
+            apps/api/src/risk_platform/auth/api.py \
+            apps/api/src/risk_platform/agent/tools.py \
+            apps/api/tests/agent/test_v2_core.py \
+            apps/api/tests/agent/test_conversation_runtime_restore.py
+          git commit -m "fix: satisfy API type checks"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
