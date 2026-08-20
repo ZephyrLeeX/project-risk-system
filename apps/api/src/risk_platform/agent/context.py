@@ -493,6 +493,11 @@ _REFERENCE_MARKERS = (
     "刚才",
     "上面",
     "上述",
+    "继续",
+    "接着",
+    "上一个问题",
+    "刚才的问题",
+    "前一个问题",
 )
 _CORRECTION_MARKERS = ("不是", "我说的是")
 _DOMAIN_TERMS = ("项目", "风险", "待办", "周报", "看板", "状态", "数量", "金额")
@@ -524,8 +529,8 @@ def is_contextual_shorthand(
     hard-rejects a request only when it is *clearly* out of scope — a fresh
     general request with no domain keyword and no established domain context
     to inherit.  A short referential shorthand or correction ("不是 A，我说的是
-    B", "第二个", "这个…") that is anchored to a prior domain turn (the
-    server-owned active project, or a recent turn carrying a domain term) is
+    B", "第二个", "这个…", "继续上一个问题") that is anchored to a prior domain turn
+    (the server-owned active project, or a recent turn carrying a domain term) is
     *contextually ambiguous*: deterministic text cannot tell a bare project
     name ("江湾") from a non-domain topic ("天气") without an ever-expanding
     blacklist, so it is deferred to the model-level ``AGENT_SCOPE_POLICY``

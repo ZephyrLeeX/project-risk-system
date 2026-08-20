@@ -3,7 +3,10 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from risk_platform.agent.interaction import _validate_action
+from risk_platform.agent.interaction import (
+    _PROJECT_SELECTION_CANCELLED_MESSAGE,
+    _validate_action,
+)
 from risk_platform.agent.models import (
     AgentEventType,
     AgentExecutionStatus,
@@ -27,6 +30,12 @@ def test_interaction_contract_keeps_project_selection_and_adds_write_confirmatio
     assert AgentExecutionStatus.WAITING_FOR_USER.value not in {"RETRY_WAIT"}
     assert AgentEventType.INTERACTION_REQUIRED.value == "interaction.required"
     assert AgentEventType.INTERACTION_RESOLVED.value == "interaction.resolved"
+
+
+def test_project_selection_cancel_message_keeps_a_continuation_anchor() -> None:
+    assert "项目选择已取消" in _PROJECT_SELECTION_CANCELLED_MESSAGE
+    assert "上一问题尚未完成" in _PROJECT_SELECTION_CANCELLED_MESSAGE
+    assert "继续上一个问题" in _PROJECT_SELECTION_CANCELLED_MESSAGE
 
 
 def test_select_and_manual_input_are_strictly_mutually_exclusive() -> None:

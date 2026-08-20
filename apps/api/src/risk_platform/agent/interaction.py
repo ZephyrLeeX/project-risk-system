@@ -37,6 +37,7 @@ from .models import (
     AgentInteractionStatus,
     AgentInteractionType,
     AgentMessage,
+    AgentMessageRole,
     MutationDraft,
 )
 from .mutations import MutationDraftService, _display_proposal
@@ -50,6 +51,9 @@ INTERACTION_TTL = timedelta(minutes=30)
 
 _PROJECT_SELECTION_ACTIONS = frozenset({"SELECT", "MANUAL_INPUT", "CANCEL"})
 _WRITE_CONFIRMATION_ACTIONS = frozenset({"CONFIRM", "CANCEL"})
+_PROJECT_SELECTION_CANCELLED_MESSAGE = (
+    "项目选择已取消，上一问题尚未完成。你可以稍后说“继续上一个问题”重新处理。"
+)
 
 
 def _validate_action(interaction_type: AgentInteractionType, action: str) -> None:
@@ -277,6 +281,34 @@ class AgentInteractionService:
             if payload.action == "CANCEL":
                 execution.status = AgentExecutionStatus.CANCELLED
                 execution.completedAt = now
+                # Preserve a complete USER/ASSISTANT turn in durable history.
+                # ConversationContextService intentionally builds memory from
+                # completed turns; without this deterministic assistant marker,
+                # cancelling PROJECT_SELECTION leaves the original USER question
+                # unpaired and a later “继续上一个问题” has no domain anchor to
+                # inherit. This message records no business fact and requires no
+                # model/provider call.
+                conversation = await session.scalar(
+                    select(AgentConversation)
+                    .where(AgentConversation.id == row.conversationId)
+                    .with_for_update()
+                )
+                if conversation is None:
+                    raise ApiError(
+                        409,
+                        "AGENT_INTERACTION_CONTEXT_INVALID",
+                        "交互恢复上下文不可用",
+                    )
+                assistant = AgentMessage(
+                    conversationId=conversation.id,
+                    sequence=conversation.lastMessageSequence + 1,
+                    role=AgentMessageRole.ASSISTANT,
+                    content=_PROJECT_SELECTION_CANCELLED_MESSAGE,
+                    traceId=message.traceId,
+                    dataAsOf=now,
+                )
+                session.add(assistant)
+                await session.flush()
                 return AgentInteractionRespondResponse(
                     interaction=interaction_view(row), streamUrl=None
                 )

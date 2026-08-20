@@ -38,7 +38,10 @@ from risk_platform.admin.models import User
 from risk_platform.agent.api import get_agent_service
 from risk_platform.agent.api import router as agent_router
 from risk_platform.agent.events import append_event, open_event_stream
-from risk_platform.agent.interaction import AgentInteractionService
+from risk_platform.agent.interaction import (
+    _PROJECT_SELECTION_CANCELLED_MESSAGE,
+    AgentInteractionService,
+)
 from risk_platform.agent.models import (
     AgentConversation,
     AgentEvent,
@@ -461,6 +464,10 @@ def test_explicit_cancel_sets_flag_and_interaction_cancel_still_cancels(
         assert response.interaction.status == "CANCELLED"
         cancelled = await app_service.history(identity(), conversation_id)
         assert cancelled.runtime is None
+        assert [message.content for message in cancelled.messages] == [
+            "查询本周风险",
+            _PROJECT_SELECTION_CANCELLED_MESSAGE,
+        ]
 
     asyncio.run(run())
 
