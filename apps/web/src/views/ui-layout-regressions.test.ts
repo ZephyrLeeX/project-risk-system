@@ -100,6 +100,19 @@ describe("live UI layout regressions", () => {
     expect(businessHeader).not.toContain("<b>3</b>");
   });
 
+  it("keeps Agent project selection compact and search-ready", () => {
+    expect(dashboardView).not.toContain("以上都不是，重新搜索");
+    expect(dashboardView).not.toContain("manualProjectSearchOpen");
+    expect(dashboardView).toContain('class="project-manual-search"');
+    expect(dashboardView).toContain(
+      "'is-completed': agent.state.interaction.status !== 'OPEN'",
+    );
+    expect(dashboardView).toContain("max-height:280px");
+    expect(dashboardView).toContain("overflow-y:auto");
+    expect(dashboardView).toContain("animation:project-selection-dismiss");
+    expect(dashboardView).toContain("@keyframes project-selection-dismiss");
+  });
+
   it("turns the send button into a durable stop button while a turn is streaming", () => {
     // The agent form still submits via sendAgent() — the stop button is a
     // type="button" so it never triggers a form submit / re-send.
