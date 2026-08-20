@@ -57,6 +57,19 @@ class SameProjectRisk(BaseModel):
     categoryName: str
 
 
+class ResolvedRiskItem(RiskItem):
+    """A resolved risk list item carrying the resolution record inline.
+
+    The resolved list must return these fields directly from the same
+    DataScope/RBAC query as ``RiskItem`` (the row already joins the resolver
+    user) so the frontend never fans out to per-risk ``RiskDetail`` calls.
+    """
+
+    resolvedAt: str | None
+    resolvedByName: str | None
+    resolutionReason: str | None
+
+
 class RiskPage(BaseModel):
     items: list[RiskItem]
     page: int
@@ -64,8 +77,14 @@ class RiskPage(BaseModel):
     total: int
 
 
-class ResolvedRiskPage(RiskPage):
-    items: list[RiskItem]
+class ResolvedRiskPage(BaseModel):
+    # Standalone (not ``RiskPage``-derived): ``items`` narrows to
+    # ``ResolvedRiskItem``, and ``list`` is invariant, so mypy rejects a
+    # subclass narrowing ``RiskPage.items``. The wire shape is identical.
+    items: list[ResolvedRiskItem]
+    page: int
+    pageSize: int
+    total: int
     owners: list[str]
     updatedAt: str | None
     dataScope: DataScopeType
@@ -154,6 +173,7 @@ class TimelineDetail(TimelineItem):
 
 __all__ = [
     "LifecycleRequest",
+    "ResolvedRiskItem",
     "ResolvedRiskPage",
     "RiskDetail",
     "RiskFilterOptions",

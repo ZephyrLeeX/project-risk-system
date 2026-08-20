@@ -20,6 +20,7 @@ from .schemas import (
     AgentConfirmationResponse,
     AgentConversationEnvelope,
     AgentConversationHistory,
+    AgentConversationListPage,
     AgentConversationRuntime,
     AgentHelpResponse,
     AgentInteractionRespondRequest,
@@ -94,6 +95,23 @@ async def continue_conversation(
     return ok(
         request,
         await service.continue_conversation(identity, conversation_id, payload.message),
+    )
+
+
+@router.get(
+    "/conversations",
+    response_model=ApiResponse[AgentConversationListPage],
+)
+async def list_conversations(
+    request: Request,
+    identity: Annotated[SessionIdentity, Depends(require_permissions("agent.use"))],
+    service: Annotated[AgentConversationService, Depends(get_agent_service)],
+    page: Annotated[int, Query(ge=1)] = 1,
+    pageSize: Annotated[int, Query(alias="pageSize", ge=1, le=100)] = 20,
+) -> ApiResponse[AgentConversationListPage]:
+    return ok(
+        request,
+        await service.list_conversations(identity, page=page, pageSize=pageSize),
     )
 
 

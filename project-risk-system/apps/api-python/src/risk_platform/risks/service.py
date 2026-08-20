@@ -30,6 +30,7 @@ from risk_platform.risks.models import (
 )
 from risk_platform.risks.schemas import (
     LifecycleRequest,
+    ResolvedRiskItem,
     ResolvedRiskPage,
     RiskCategoryOption,
     RiskDetail,
@@ -488,9 +489,16 @@ class RisksService:
                 )
                 or 0
             )
-            items = [_item(cast(tuple[Any, ...], row)) for row in rows]
             if not resolved:
-                return RiskPage(items=items, page=query.page, pageSize=query.pageSize, total=total)
+                items = [_item(cast(tuple[Any, ...], row)) for row in rows]
+                return RiskPage(
+                    items=items, page=query.page, pageSize=query.pageSize, total=total
+                )
+            # The resolved list returns the resolution record inline from the
+            # same scoped query (no per-item RiskDetail fan-out); the row already
+            # carries the resolver user via the `resolved` join in
+            # ``_risk_statement``.
+            resolved_items = [_resolved_item(cast(tuple[Any, ...], row)) for row in rows]
             owners = (
                 await session.scalars(
                     select(Project.deliveryOwnerName)
@@ -516,7 +524,7 @@ class RisksService:
                 )
             )
             return ResolvedRiskPage(
-                items=items,
+                items=resolved_items,
                 page=query.page,
                 pageSize=query.pageSize,
                 total=total,
@@ -818,6 +826,17 @@ def _item(row: tuple[Any, ...]) -> RiskItem:
         ),
         detectedAt=_iso(risk.detectedAt) or "",
         updatedAt=_iso(risk.updatedAt) or "",
+    )
+
+
+def _resolved_item(row: tuple[Any, ...]) -> ResolvedRiskItem:
+    risk, _project, _department, _category, _reporter, resolved = row
+    item = _item(row)
+    return ResolvedRiskItem(
+        **item.model_dump(),
+        resolvedAt=_iso(risk.resolvedAt),
+        resolvedByName=resolved.displayName if resolved else None,
+        resolutionReason=risk.resolutionReason,
     )
 
 

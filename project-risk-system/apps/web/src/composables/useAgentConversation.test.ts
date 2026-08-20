@@ -941,3 +941,118 @@ describe("Agent conversation sequence baseline + drain hardening", () => {
     await cancelPromise;
   });
 });
+
+describe("Agent conversation history switch", () => {
+  it("switches to another conversation, applying its history and persisting the new id", async () => {
+    const store = stubLocalStorage();
+    store.set("risk-platform:agent-conversation-id", "current-id");
+    mockedAgentApi.history.mockResolvedValue({
+      conversation: { id: "target-id" },
+      messages: [
+        {
+          id: "t-m1",
+          role: "USER",
+          content: "目标会话的消息",
+          createdAt: "",
+          dataAsOf: null,
+          sequence: 1,
+        },
+      ],
+      nextMessageSequence: 2,
+      runtime: null,
+    } as never);
+    const agent = useAgentConversation();
+    // Simulate a completed restored conversation so the switch is allowed.
+    agent.state.conversationId = "current-id";
+    agent.state.messages = [
+      {
+        id: "c-m1",
+        role: "USER",
+        content: "当前会话",
+        createdAt: "",
+        dataAsOf: null,
+        sequence: 1,
+      },
+    ] as never;
+    agent.state.status = "completed";
+
+    await agent.switchToConversation("target-id");
+
+    expect(mockedAgentApi.history).toHaveBeenCalledWith("target-id");
+    expect(agent.state.conversationId).toBe("target-id");
+    expect(agent.state.messages.map((m) => m.content)).toEqual(["目标会话的消息"]);
+    expect(store.get("risk-platform:agent-conversation-id")).toBe("target-id");
+    // The next send continues the target conversation instead of creating one.
+    expect(mockedAgentApi.continueConversation).not.toHaveBeenCalled();
+  });
+
+  it("refuses to switch while a RUNNING stream is active and never cancels the execution", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null)));
+    const agent = useAgentConversation();
+    agent.state.conversationId = "running-id";
+    agent.state.status = "streaming";
+
+    await agent.switchToConversation("other-id");
+
+    expect(mockedAgentApi.history).not.toHaveBeenCalled();
+    expect(mockedAgentApi.cancelConversation).not.toHaveBeenCalled();
+    expect(agent.state.conversationId).toBe("running-id");
+    expect(agent.historySwitchDisabled.value).toBe(true);
+  });
+
+  it("refuses to switch while an OPEN interaction is waiting for the user", async () => {
+    const agent = useAgentConversation();
+    agent.state.conversationId = "open-id";
+    agent.state.status = "completed";
+    agent.state.interaction = {
+      id: "interaction-1",
+      type: "PROJECT_SELECTION",
+      status: "OPEN",
+      conversationId: "open-id",
+      executionId: "exec-1",
+      candidates: [],
+      draft: null,
+      expiresAt: "",
+    } as never;
+
+    await agent.switchToConversation("other-id");
+
+    expect(mockedAgentApi.history).not.toHaveBeenCalled();
+    expect(agent.historySwitchDisabled.value).toBe(true);
+  });
+
+  it("refuses to switch while an explicit cancel is draining", async () => {
+    const agent = useAgentConversation();
+    agent.state.conversationId = "cancel-id";
+    agent.state.status = "cancelling";
+
+    await agent.switchToConversation("other-id");
+
+    expect(mockedAgentApi.history).not.toHaveBeenCalled();
+    expect(agent.historySwitchDisabled.value).toBe(true);
+  });
+
+  it("is a no-op when switching to the already-active conversation", async () => {
+    const agent = useAgentConversation();
+    agent.state.conversationId = "same-id";
+    agent.state.status = "completed";
+
+    await agent.switchToConversation("same-id");
+
+    expect(mockedAgentApi.history).not.toHaveBeenCalled();
+  });
+
+  it("surfaces the fetch error and keeps the current conversation when the target is gone", async () => {
+    mockedAgentApi.history.mockRejectedValue(
+      new ApiError("Agent 会话不存在或不属于当前用户", 404, "AGENT_CONVERSATION_NOT_FOUND"),
+    );
+    const agent = useAgentConversation();
+    agent.state.conversationId = "current-id";
+    agent.state.status = "completed";
+
+    await agent.switchToConversation("gone-id");
+
+    expect(agent.state.conversationId).toBe("current-id");
+    expect(agent.state.status).toBe("error");
+  });
+});

@@ -9,12 +9,13 @@ import type {
   UserAuditRecord,
   UserMutationRequest,
 } from "@risk-platform/contracts";
-import { computed, onMounted, reactive, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 
 import { adminApi } from "@/api/admin";
 import { ApiError } from "@/api/http";
 import AdminShell from "@/components/AdminShell.vue";
 import ModalDialog from "@/components/ModalDialog.vue";
+import { copyTextToClipboard } from "@/utils/clipboard";
 
 const users = ref<AdminUserListItem[]>([]);
 const roles = ref<RoleListItem[]>([]);
@@ -55,6 +56,9 @@ const form = reactive<UserMutationRequest>({
 });
 const oneTimePassword = ref("");
 const passwordUserName = ref("");
+/** Transient copy-success toast; never carries the password itself. */
+const copyNotice = ref("");
+let copyNoticeTimer: ReturnType<typeof setTimeout> | null = null;
 const records = ref<UserAuditRecord[] | null>(null);
 const recordsUserName = ref("");
 const pendingConfirm = ref<{
@@ -330,12 +334,27 @@ async function viewRecords(user: AdminUserListItem): Promise<void> {
 }
 
 async function copyPassword(): Promise<void> {
-  try {
-    await navigator.clipboard.writeText(oneTimePassword.value);
-  } catch {
+  const copied = await copyTextToClipboard(oneTimePassword.value);
+  if (copied) {
+    showCopyNotice("一次性密码已复制");
+  } else {
     errorMessage.value = "浏览器未允许自动复制，请手动选择密码复制";
   }
 }
+
+/** Show the transient copy-success toast for ~2.5 s (no password content). */
+function showCopyNotice(message: string): void {
+  if (copyNoticeTimer !== null) clearTimeout(copyNoticeTimer);
+  copyNotice.value = message;
+  copyNoticeTimer = setTimeout(() => {
+    copyNotice.value = "";
+    copyNoticeTimer = null;
+  }, 2500);
+}
+
+onUnmounted(() => {
+  if (copyNoticeTimer !== null) clearTimeout(copyNoticeTimer);
+});
 
 function scopeName(scope: DataScopeType): string {
   return (
@@ -774,5 +793,9 @@ function getErrorMessage(error: unknown): string {
       </div>
       <p v-else class="modal-copy">暂无操作记录。</p>
     </ModalDialog>
+
+    <p v-if="copyNotice" class="prototype-toast" role="status">
+      {{ copyNotice }}
+    </p>
   </AdminShell>
 </template>

@@ -6,7 +6,7 @@ from collections.abc import AsyncIterator, Callable
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from risk_platform.auth.service import SessionIdentity
@@ -36,6 +36,8 @@ from .repository import AgentConversationRepository
 from .schemas import (
     AgentConversationEnvelope,
     AgentConversationHistory,
+    AgentConversationListItem,
+    AgentConversationListPage,
     AgentConversationResponse,
     AgentConversationRuntime,
     AgentInteractionResponse,
@@ -260,6 +262,78 @@ class AgentConversationService:
             runtime=runtime,
         )
 
+    async def list_conversations(
+        self,
+        identity: SessionIdentity,
+        *,
+        page: int,
+        pageSize: int,
+    ) -> AgentConversationListPage:
+        """Owner-scoped "my history" list, newest activity first.
+
+        Only conversations the current user owns and can still access (not
+        expired) are returned, ordered by ``updatedAt`` DESC. The list title is
+        derived from the first USER message in the same query (a correlated
+        scalar subquery), so the whole page is served without per-row message
+        lookups.
+        """
+
+        owner_id = UUID(identity.user.id)
+        now = datetime.now(UTC)
+        first_user_content = (
+            select(AgentMessage.content)
+            .where(
+                AgentMessage.conversationId == AgentConversation.id,
+                AgentMessage.role == AgentMessageRole.USER,
+            )
+            .order_by(AgentMessage.sequence)
+            .limit(1)
+            .scalar_subquery()
+        )
+        async with self._sessions() as session:
+            rows = (
+                await session.execute(
+                    select(AgentConversation, first_user_content)
+                    .where(
+                        AgentConversation.ownerUserId == owner_id,
+                        AgentConversation.expiresAt > now,
+                    )
+                    .order_by(
+                        AgentConversation.updatedAt.desc(),
+                        AgentConversation.createdAt.desc(),
+                    )
+                    .offset((page - 1) * pageSize)
+                    .limit(pageSize)
+                )
+            ).all()
+            total = (
+                await session.scalar(
+                    select(func.count())
+                    .select_from(AgentConversation)
+                    .where(
+                        AgentConversation.ownerUserId == owner_id,
+                        AgentConversation.expiresAt > now,
+                    )
+                )
+                or 0
+            )
+        return AgentConversationListPage(
+            items=[
+                AgentConversationListItem(
+                    id=conversation.id,
+                    title=_conversation_title(first_content),
+                    createdAt=conversation.createdAt,
+                    updatedAt=conversation.updatedAt,
+                    activeProjectName=conversation.activeProjectName,
+                    lastMessageSequence=conversation.lastMessageSequence,
+                )
+                for conversation, first_content in rows
+            ],
+            page=page,
+            pageSize=pageSize,
+            total=total,
+        )
+
     async def message_page(
         self,
         identity: SessionIdentity,
@@ -449,6 +523,21 @@ class AgentConversationService:
             dataAsOf=value.dataAsOf,
             createdAt=value.createdAt,
         )
+
+
+def _conversation_title(first_user_content: str | None) -> str:
+    """Derive a history-list title from the conversation's first USER message.
+
+    Not a stored column (no migration): trim, cap at ~40 characters, and fall
+    back to "新会话" when a conversation has no user text.
+    """
+
+    title = (first_user_content or "").strip()
+    if not title:
+        return "新会话"
+    if len(title) > 40:
+        return f"{title[:40]}…"
+    return title
 
 
 __all__ = ["AgentConversationService"]

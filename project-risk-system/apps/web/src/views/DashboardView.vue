@@ -33,6 +33,7 @@ import {
 } from "@/api/weekly-reports";
 import AgentMarkdown from "@/components/AgentMarkdown.vue";
 import ModalDialog from "@/components/ModalDialog.vue";
+import { agentApi, type AgentConversationListItem } from "@/api/agent";
 import { useAgentConversation } from "@/composables/useAgentConversation";
 import { useAuthStore } from "@/stores/auth";
 import {
@@ -121,6 +122,11 @@ const agentCanStop = computed(
 const agentInputDisabled = computed(
   () => agent.sending.value || agent.state.status === "cancelling" || agentCanStop.value,
 );
+/** History switching is locked while a turn owns the conversation (RUNNING / cancelling / OPEN interaction / request in flight). */
+const agentHistoryDisabled = computed(() => agent.historySwitchDisabled.value);
+/** "My history" rows for the drawer, newest activity first. */
+const agentHistory = ref<AgentConversationListItem[]>([]);
+const agentHistoryLoading = ref(false);
 /** Submit-button label surfaces the cancelling drain as "取消中" and the in-flight send as "处理中". */
 const agentSendLabel = computed(() =>
   agent.state.status === "cancelling" ? "取消中" : agent.state.status === "loading" ? "处理中" : "发送",
@@ -409,6 +415,7 @@ function openMetricDetail(key: string): void {
 function openAgent(): void {
   agentOpen.value = true;
   profileMenuOpen.value = false;
+  void loadAgentHistory();
 }
 
 function closeAgent(): void {
@@ -420,6 +427,34 @@ function startNewAgentConversation(): void {
   if (agent.sending.value) return;
   agent.reset();
   agentInput.value = "";
+}
+
+/** Load the caller's accessible conversations (newest activity first) for the history list. */
+async function loadAgentHistory(): Promise<void> {
+  if (agentHistoryLoading.value) return;
+  agentHistoryLoading.value = true;
+  try {
+    const page = await agentApi.listConversations(1, 20);
+    agentHistory.value = page.items;
+  } catch {
+    // The history list is a convenience surface; a failure keeps the last
+    // loaded rows (or empty) without blocking the drawer.
+  } finally {
+    agentHistoryLoading.value = false;
+  }
+}
+
+/**
+ * Switch the visible conversation to the clicked history row.
+ *
+ * The composable guards the switch against RUNNING / cancelling / OPEN
+ * interaction (never cancelling durable execution); this keeps the same guard
+ * on the UI button. After the switch the list is refreshed so the newest
+ * activity ordering stays current.
+ */
+function switchAgentConversation(conversationId: string): void {
+  if (agent.historySwitchDisabled.value) return;
+  void agent.switchToConversation(conversationId).then(loadAgentHistory);
 }
 
 function sendAgent(prompt?: string): void {
@@ -2059,10 +2094,10 @@ onUnmounted(() => {
                   <td data-label="原类别">{{ item.category.name }}</td>
                   <td data-label="解除信息">
                     <strong>{{ formatDateTime(item.resolvedAt) }}</strong>
-                    <small>解除人：{{ item.resolvedByName }}</small>
+                    <small>解除人：{{ item.resolvedByName || "待补充" }}</small>
                   </td>
                   <td data-label="解除原因" class="resolved-reason-cell">
-                    {{ item.resolutionReason }}
+                    {{ item.resolutionReason ?? "未记录解除原因" }}
                   </td>
                 </tr>
               </tbody>
@@ -2234,6 +2269,32 @@ onUnmounted(() => {
           <button type="button" aria-label="关闭" @click="closeAgent">×</button>
         </div>
       </header>
+
+      <section
+        v-if="agentHistory.length"
+        class="agent-history"
+        aria-label="历史会话"
+      >
+        <h3>历史会话</h3>
+        <ul>
+          <li
+            v-for="item in agentHistory"
+            :key="item.id"
+            :class="{ 'is-current': item.id === agent.state.conversationId }"
+          >
+            <button
+              type="button"
+              :disabled="agentHistoryDisabled"
+              :aria-disabled="agentHistoryDisabled"
+              :title="agentHistoryDisabled ? '当前有进行中的执行，请先完成或取消' : undefined"
+              @click="switchAgentConversation(item.id)"
+            >
+              <span class="agent-history-title">{{ item.title }}</span>
+              <span class="agent-history-time">{{ formatDateTime(item.updatedAt) }}</span>
+            </button>
+          </li>
+        </ul>
+      </section>
 
       <div v-if="!agent.state.messages.length && agent.state.status === 'idle'" class="agent-suggestions">
         <button
