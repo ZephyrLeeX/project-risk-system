@@ -92,6 +92,9 @@ export interface ProjectOption {
   externalCode: string | null;
   name: string;
   departmentName: string | null;
+  deliveryOwnerName: string | null;
+  managerId: string | null;
+  managerName: string | null;
 }
 
 export type SystemConfigModule = "ALL" | "RISK" | "MAIL" | "ALIAS" | "SECURITY" | "NOTIFICATION";
@@ -237,6 +240,8 @@ export interface AdminUserListItem {
   dataScope: DataScopeType;
   assignedProjectIds: string[];
   assignedProjectCount: number;
+  ownedProjectIds: string[];
+  ownedProjectCount: number;
   mustChangePassword: boolean;
   lastLoginAt: string | null;
   lockedUntil: string | null;
@@ -260,6 +265,7 @@ export interface UserMutationRequest {
   roleId: string;
   dataScope: DataScopeType;
   projectIds: string[];
+  ownedProjectIds: string[];
   enabled: boolean;
 }
 

@@ -52,8 +52,10 @@ const form = reactive<UserMutationRequest>({
   roleId: "",
   dataScope: "NONE",
   projectIds: [],
+  ownedProjectIds: [],
   enabled: true,
 });
+const ownedProjectKeyword = ref("");
 const oneTimePassword = ref("");
 const passwordUserName = ref("");
 /** Transient copy-success toast; never carries the password itself. */
@@ -81,6 +83,78 @@ const selectedRole = computed(() =>
 const selectedProjectsVisible = computed(() =>
   ["ASSIGNED", "OWNED_OR_ASSIGNED"].includes(form.dataScope),
 );
+/** The "本人负责项目" selector only appears for PROJECT_MANAGER role accounts. */
+const ownedProjectsVisible = computed(() => {
+  if (!selectedRole.value) return false;
+  return (
+    selectedRole.value.code === "PROJECT_MANAGER" &&
+    ["OWNED", "OWNED_OR_ASSIGNED"].includes(form.dataScope)
+  );
+});
+/** Normalize display names the same way on both sides of the Excel-name match. */
+function normalizeName(value: string): string {
+  return value.replace(/\s+/g, "").trim().toLowerCase();
+}
+/** Projects whose Excel deliveryOwnerName matches the current form name. */
+const recommendedProjects = computed(() => {
+  const name = normalizeName(form.displayName);
+  if (!name) return [];
+  return projects.value.filter(
+    (project) =>
+      project.deliveryOwnerName &&
+      normalizeName(project.deliveryOwnerName) === name,
+  );
+});
+function ownedProjectBlocked(project: ProjectOption): boolean {
+  return Boolean(project.managerId) && project.managerId !== editingUserId.value;
+}
+function ownedProjectStatus(project: ProjectOption): string {
+  if (!project.managerId) return "尚未绑定系统账号";
+  if (project.managerId === editingUserId.value) return "当前已负责";
+  return `已由 ${project.managerName ?? "其他用户"} 负责`;
+}
+const selectableRecommended = computed(() =>
+  recommendedProjects.value.filter((project) => !ownedProjectBlocked(project)),
+);
+const allRecommendedSelected = computed(
+  () =>
+    selectableRecommended.value.length > 0 &&
+    selectableRecommended.value.every((project) =>
+      form.ownedProjectIds.includes(project.id),
+    ),
+);
+const ownedSearchProjects = computed(() => {
+  const keyword = ownedProjectKeyword.value.trim().toLowerCase();
+  const recommendedIds = new Set(
+    recommendedProjects.value.map((project) => project.id),
+  );
+  const all = projects.value.filter(
+    (project) => !recommendedIds.has(project.id),
+  );
+  if (!keyword) return all;
+  return all.filter(
+    (project) =>
+      project.name.toLowerCase().includes(keyword) ||
+      (project.externalCode ?? "").toLowerCase().includes(keyword),
+  );
+});
+function toggleAllRecommended(): void {
+  if (allRecommendedSelected.value) {
+    cancelAllRecommended();
+    return;
+  }
+  const selected = new Set(form.ownedProjectIds);
+  selectableRecommended.value.forEach((project) => selected.add(project.id));
+  form.ownedProjectIds = [...selected];
+}
+function cancelAllRecommended(): void {
+  const recommendedIds = new Set(
+    recommendedProjects.value.map((project) => project.id),
+  );
+  form.ownedProjectIds = form.ownedProjectIds.filter(
+    (id) => !recommendedIds.has(id),
+  );
+}
 const totalPages = computed(() =>
   Math.max(1, Math.ceil(total.value / pageSize)),
 );
@@ -206,8 +280,10 @@ function openCreate(): void {
     dataScope:
       roles.value.find((role) => role.enabled)?.defaultDataScope ?? "NONE",
     projectIds: [],
+    ownedProjectIds: [],
     enabled: true,
   });
+  ownedProjectKeyword.value = "";
   errorMessage.value = "";
   drawerOpen.value = true;
 }
@@ -223,8 +299,10 @@ function openEdit(user: AdminUserListItem): void {
     roleId: user.role?.id ?? "",
     dataScope: user.dataScope,
     projectIds: [...user.assignedProjectIds],
+    ownedProjectIds: [...user.ownedProjectIds],
     enabled: user.status !== "DISABLED",
   });
+  ownedProjectKeyword.value = "";
   errorMessage.value = "";
   drawerOpen.value = true;
 }
@@ -240,6 +318,7 @@ async function saveUser(): Promise<void> {
       email: form.email?.trim() || null,
       mobile: form.mobile?.trim() || null,
       projectIds: [...form.projectIds],
+      ownedProjectIds: [...form.ownedProjectIds],
     };
     const result = editingUserId.value
       ? await adminApi.updateUser(editingUserId.value, payload)
@@ -524,6 +603,9 @@ function getErrorMessage(error: unknown): string {
               <td>
                 <span class="scope-table-cell">
                   <strong>{{ scopeName(user.dataScope) }}</strong>
+                  <small v-if="user.ownedProjectCount">
+                    {{ user.ownedProjectCount }}个负责项目
+                  </small>
                   <small v-if="user.assignedProjectCount">
                     {{ user.assignedProjectCount }}个授权项目
                   </small>
@@ -705,6 +787,97 @@ function getErrorMessage(error: unknown): string {
                 <span>
                   <strong>{{ project.name }}</strong>
                   <small>{{ project.departmentName ?? "未分配部门" }}</small>
+                </span>
+              </label>
+            </div>
+            <div v-if="ownedProjectsVisible" class="owned-project-selector">
+              <div class="owned-selector-head">
+                <strong>本人负责项目</strong>
+                <div class="owned-selector-actions">
+                  <button
+                    type="button"
+                    :disabled="!selectableRecommended.length"
+                    @click="toggleAllRecommended"
+                  >
+                    {{ allRecommendedSelected ? "取消全选推荐" : "全选推荐项目" }}
+                  </button>
+                  <button
+                    type="button"
+                    :disabled="!recommendedProjects.length"
+                    @click="cancelAllRecommended"
+                  >
+                    取消全选
+                  </button>
+                </div>
+              </div>
+              <p v-if="recommendedProjects.length" class="owned-recommend-note">
+                根据 Excel 项目负责人“{{ form.displayName }}”匹配到
+                {{ recommendedProjects.length }} 个项目
+              </p>
+              <p v-else class="owned-recommend-empty">
+                未匹配到与当前姓名同名的 Excel 项目负责人，可在下方搜索后手动勾选。
+              </p>
+              <label
+                v-for="project in recommendedProjects"
+                :key="project.id"
+                class="owned-project-row"
+                :class="{ 'is-conflict': ownedProjectBlocked(project) }"
+              >
+                <input
+                  v-model="form.ownedProjectIds"
+                  type="checkbox"
+                  :value="project.id"
+                  :disabled="ownedProjectBlocked(project)"
+                />
+                <span>
+                  <strong>{{ project.name }}</strong>
+                  <small>
+                    {{
+                      [project.externalCode, project.departmentName]
+                        .filter(Boolean)
+                        .join(" · ") || "未分配部门"
+                    }}
+                  </small>
+                  <small class="owned-project-status">
+                    {{ ownedProjectStatus(project) }}
+                  </small>
+                </span>
+              </label>
+              <div class="owned-search-head">
+                <strong>全部项目 / 搜索项目</strong>
+                <input
+                  v-model="ownedProjectKeyword"
+                  type="search"
+                  placeholder="按项目名或编码搜索"
+                />
+              </div>
+              <p v-if="ownedSearchProjects.length === 0" class="owned-recommend-empty">
+                未找到匹配的项目。
+              </p>
+              <label
+                v-for="project in ownedSearchProjects"
+                :key="project.id"
+                class="owned-project-row"
+                :class="{ 'is-conflict': ownedProjectBlocked(project) }"
+              >
+                <input
+                  v-model="form.ownedProjectIds"
+                  type="checkbox"
+                  :value="project.id"
+                  :disabled="ownedProjectBlocked(project)"
+                />
+                <span>
+                  <strong>{{ project.name }}</strong>
+                  <small>
+                    {{
+                      [project.externalCode, project.departmentName]
+                        .filter(Boolean)
+                        .join(" · ") || "未分配部门"
+                    }}
+                  </small>
+                  <small class="owned-project-status">
+                    {{ ownedProjectStatus(project) }}
+                  </small>
                 </span>
               </label>
             </div>

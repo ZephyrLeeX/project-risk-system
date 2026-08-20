@@ -225,6 +225,17 @@
             "title": "Mustchangepassword",
             "type": "boolean"
           },
+          "ownedProjectCount": {
+            "title": "Ownedprojectcount",
+            "type": "integer"
+          },
+          "ownedProjectIds": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ownedprojectids",
+            "type": "array"
+          },
           "role": {
             "anyOf": [
               {
@@ -259,6 +270,8 @@
           "dataScope",
           "assignedProjectIds",
           "assignedProjectCount",
+          "ownedProjectIds",
+          "ownedProjectCount",
           "mustChangePassword",
           "lastLoginAt",
           "lockedUntil",
@@ -12888,6 +12901,13 @@
             ],
             "title": "Mobile"
           },
+          "ownedProjectIds": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Ownedprojectids",
+            "type": "array"
+          },
           "projectIds": {
             "items": {
               "type": "string"
@@ -12914,6 +12934,7 @@
           "roleId",
           "dataScope",
           "projectIds",
+          "ownedProjectIds",
           "enabled"
         ],
         "title": "UserMutationRequest",
@@ -13259,6 +13280,17 @@
         "additionalProperties": false,
         "description": "Compatible `ProjectOption` contract for the project selector.",
         "properties": {
+          "deliveryOwnerName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deliveryownername"
+          },
           "departmentName": {
             "anyOf": [
               {
@@ -13285,6 +13317,28 @@
             "title": "Id",
             "type": "string"
           },
+          "managerId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Managerid"
+          },
+          "managerName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Managername"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -13294,7 +13348,10 @@
           "id",
           "externalCode",
           "name",
-          "departmentName"
+          "departmentName",
+          "deliveryOwnerName",
+          "managerId",
+          "managerName"
         ],
         "title": "ProjectOptionResponse",
         "type": "object"

@@ -1942,6 +1942,10 @@ export interface components {
             mobile: string | null;
             /** Mustchangepassword */
             mustChangePassword: boolean;
+            /** Ownedprojectcount */
+            ownedProjectCount: number;
+            /** Ownedprojectids */
+            ownedProjectIds: string[];
             role: components["schemas"]["risk_platform__admin__users__schemas__RoleResponse"] | null;
             status: components["schemas"]["UserStatus"];
             /** Updatedat */
@@ -5479,12 +5483,18 @@ export interface components {
          * @description Compatible `ProjectOption` contract for the project selector.
          */
         risk_platform__admin__options__schemas__ProjectOptionResponse: {
+            /** Deliveryownername */
+            deliveryOwnerName: string | null;
             /** Departmentname */
             departmentName: string | null;
             /** Externalcode */
             externalCode: string | null;
             /** Id */
             id: string;
+            /** Managerid */
+            managerId: string | null;
+            /** Managername */
+            managerName: string | null;
             /** Name */
             name: string;
         };
@@ -6305,6 +6315,8 @@ export interface components {
             enabled: boolean;
             /** Mobile */
             mobile?: string | null;
+            /** Ownedprojectids */
+            ownedProjectIds: string[];
             /** Projectids */
             projectIds: string[];
             /** Roleid */

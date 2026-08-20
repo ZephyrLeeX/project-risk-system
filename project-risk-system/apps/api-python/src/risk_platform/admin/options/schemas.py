@@ -20,6 +20,9 @@ class ProjectOptionResponse(BaseModel):
     externalCode: str | None
     name: str
     departmentName: str | None
+    deliveryOwnerName: str | None
+    managerId: str | None
+    managerName: str | None
 
 
 __all__ = ["DepartmentResponse", "ProjectOptionResponse"]

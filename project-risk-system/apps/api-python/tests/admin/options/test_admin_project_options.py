@@ -23,7 +23,7 @@ from alembic.config import Config
 from sqlalchemy import create_engine, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from risk_platform.admin.models import Department, User
+from risk_platform.admin.models import Department, User, UserStatus
 from risk_platform.admin.options.api import get_admin_options_service, router
 from risk_platform.admin.options.service import AdminOptionsService
 from risk_platform.app import AppComposition, create_app
@@ -102,8 +102,11 @@ async def _identity(
     )
 
 
-async def _seed_projects(factory: async_sessionmaker[AsyncSession]) -> None:
-    """Create projects spanning every selector branch the legacy contract covers."""
+async def _seed_projects(factory: async_sessionmaker[AsyncSession]) -> uuid.UUID:
+    """Create projects spanning every selector branch the legacy contract covers.
+
+    Returns the bound manager account id so callers can assert the owner fields.
+    """
 
     async with factory() as session:
         tech = await session.scalar(select(Department).where(Department.code == "TECH_MANAGEMENT"))
@@ -112,6 +115,16 @@ async def _seed_projects(factory: async_sessionmaker[AsyncSession]) -> None:
         tech_id = tech.id
         risk_id = risk.id
     async with transaction(factory) as session:
+        manager = User(
+            username="owner-manager",
+            passwordHash="unused",
+            displayName="负责人王五",
+            departmentId=tech_id,
+            status=UserStatus.ACTIVE,
+            mustChangePassword=False,
+        )
+        session.add(manager)
+        await session.flush()
         # Zebra sorts before Alpha lexically only if ordering were absent; the
         # selector must reorder to Alpha, Loose, Zebra by name ascending.
         session.add(
@@ -120,6 +133,8 @@ async def _seed_projects(factory: async_sessionmaker[AsyncSession]) -> None:
                 departmentId=tech_id,
                 externalCode="EXT-001",
                 status=ProjectStatus.DELIVERY,
+                deliveryOwnerName="负责人王五",
+                managerId=manager.id,
             )
         )
         session.add(
@@ -128,6 +143,7 @@ async def _seed_projects(factory: async_sessionmaker[AsyncSession]) -> None:
                 departmentId=risk_id,
                 externalCode=None,
                 status=ProjectStatus.COMPLETED,
+                deliveryOwnerName="交付负责人乙",
             )
         )
         session.add(
@@ -147,6 +163,7 @@ async def _seed_projects(factory: async_sessionmaker[AsyncSession]) -> None:
                 status=ProjectStatus.ARCHIVED,
             )
         )
+        return manager.id
 
 
 def _client(
@@ -176,7 +193,7 @@ def test_projects_options_excludes_archived_orders_by_name_and_joins_department(
     options_database: async_sessionmaker[AsyncSession],
 ) -> None:
     async def scenario() -> None:
-        await _seed_projects(options_database)
+        manager_id = await _seed_projects(options_database)
         identity = await _identity(options_database, ["admin.scope.manage"])
         client = _client(options_database, identity)
         async with client:
@@ -191,7 +208,15 @@ def test_projects_options_excludes_archived_orders_by_name_and_joins_department(
         assert names == ["Alpha 项目", "Loose 项目", "Zebra 项目"]
         by_name = {item["name"]: item for item in data}
         # Exact contract keys only — no leakage of internal columns.
-        assert set(by_name["Alpha 项目"]) == {"id", "externalCode", "name", "departmentName"}
+        assert set(by_name["Alpha 项目"]) == {
+            "id",
+            "externalCode",
+            "name",
+            "departmentName",
+            "deliveryOwnerName",
+            "managerId",
+            "managerName",
+        }
         # externalCode nullable is preserved.
         assert by_name["Alpha 项目"]["externalCode"] is None
         # departmentName comes from the joined department.
@@ -199,6 +224,18 @@ def test_projects_options_excludes_archived_orders_by_name_and_joins_department(
         assert by_name["Zebra 项目"]["departmentName"] == "技术管理部"
         # Projects without a department surface a null departmentName.
         assert by_name["Loose 项目"]["departmentName"] is None
+        # Owner metadata feeds the "本人负责项目" recommendation UI.
+        assert by_name["Zebra 项目"]["deliveryOwnerName"] == "负责人王五"
+        assert by_name["Zebra 项目"]["managerId"] == str(manager_id)
+        assert by_name["Zebra 项目"]["managerName"] == "负责人王五"
+        # A deliveryOwnerName alone never implies a bound manager account.
+        assert by_name["Alpha 项目"]["deliveryOwnerName"] == "交付负责人乙"
+        assert by_name["Alpha 项目"]["managerId"] is None
+        assert by_name["Alpha 项目"]["managerName"] is None
+        # Projects without any owner metadata surface nulls.
+        assert by_name["Loose 项目"]["deliveryOwnerName"] is None
+        assert by_name["Loose 项目"]["managerId"] is None
+        assert by_name["Loose 项目"]["managerName"] is None
 
     asyncio.run(scenario())
 

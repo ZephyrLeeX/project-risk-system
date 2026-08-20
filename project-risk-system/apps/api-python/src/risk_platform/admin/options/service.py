@@ -5,7 +5,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from risk_platform.admin.models import Department
+from risk_platform.admin.models import Department, User
 from risk_platform.admin.options.schemas import DepartmentResponse, ProjectOptionResponse
 from risk_platform.projects.models import Project, ProjectStatus
 
@@ -29,17 +29,21 @@ class AdminOptionsService:
             ]
 
     async def list_projects(self) -> list[ProjectOptionResponse]:
-        """Return non-archived projects for the data-scope selector.
+        """Return non-archived projects for the data-scope and owner selectors.
 
         Mirrors the legacy ``admin.scope.manage`` selector: exclude archived
         projects, order by name ascending, join the owning department name
-        (nullable) and bound the result to the legacy ``take: 500`` ceiling.
+        (nullable) and the bound manager account (nullable), and cap the result
+        at the legacy ``take: 500`` ceiling. The manager fields feed the
+        name-based "本人负责项目" recommendation UI; the manager link itself is
+        only ever written through the administrator-confirmed user mutation.
         """
         async with self._session_factory() as session:
             rows = (
                 await session.execute(
-                    select(Project, Department.name)
+                    select(Project, Department.name, User.displayName)
                     .join(Department, Department.id == Project.departmentId, isouter=True)
+                    .outerjoin(User, User.id == Project.managerId)
                     .where(Project.status != ProjectStatus.ARCHIVED)
                     .order_by(Project.name.asc())
                     .limit(500)
@@ -51,8 +55,11 @@ class AdminOptionsService:
                     externalCode=project.externalCode,
                     name=project.name,
                     departmentName=department_name,
+                    deliveryOwnerName=project.deliveryOwnerName,
+                    managerId=str(project.managerId) if project.managerId else None,
+                    managerName=manager_name,
                 )
-                for project, department_name in rows
+                for project, department_name, manager_name in rows
             ]
 
 

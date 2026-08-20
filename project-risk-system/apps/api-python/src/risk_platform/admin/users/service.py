@@ -33,7 +33,7 @@ from risk_platform.audit.service import AuditService
 from risk_platform.auth.models import Session
 from risk_platform.auth.service import SessionIdentity
 from risk_platform.db import transaction
-from risk_platform.projects.models import Project
+from risk_platform.projects.models import Project, ProjectStatus
 from risk_platform.rbac.models import (
     DataScopeType,
     Permission,
@@ -145,6 +145,7 @@ class AdminUsersService:
             await self._replace_project_scopes(
                 session, user.id, project_ids, UUID(identity.user.id)
             )
+            await self._replace_owned_projects(session, user.id, payload.ownedProjectIds)
             await self._audit(session, identity, trace_id, "ADMIN_USER_CREATED", user.id)
             response = await self._map_user(session, user)
         return UserMutationResponse(user=response, initialPassword=password)
@@ -188,6 +189,7 @@ class AdminUsersService:
             await session.execute(delete(UserRole).where(UserRole.userId == user_id))
             session.add(UserRole(userId=user_id, roleId=role.id, dataScope=data_scope))
             await self._replace_project_scopes(session, user_id, project_ids, actor_id)
+            await self._replace_owned_projects(session, user_id, payload.ownedProjectIds)
             if not payload.enabled:
                 await self._revoke_sessions(session, user_id)
             await self._audit(session, identity, trace_id, "ADMIN_USER_UPDATED", user_id)
@@ -371,6 +373,61 @@ class AdminUsersService:
             ]
         )
 
+    async def _validate_owned_projects(
+        self, session: AsyncSession, user_id: UUID, owned_project_ids: list[UUID]
+    ) -> list[Project]:
+        """Lock and validate the target projects for ``managerId`` binding.
+
+        Archived projects are never bindable, and a project already managed by a
+        different account is never silently taken over (``PROJECT_MANAGER_CONFLICT``).
+        """
+        if not owned_project_ids:
+            return []
+        rows = list(
+            await session.scalars(
+                select(Project)
+                .where(Project.id.in_(owned_project_ids))
+                .with_for_update()
+            )
+        )
+        if len(rows) != len(owned_project_ids):
+            raise ApiError(400, "BAD_REQUEST", "指定项目中包含不存在的项目")
+        for project in rows:
+            if project.status is ProjectStatus.ARCHIVED:
+                raise ApiError(400, "BAD_REQUEST", "归档项目不可绑定负责人")
+            if project.managerId is not None and project.managerId != user_id:
+                raise ApiError(
+                    409,
+                    "PROJECT_MANAGER_CONFLICT",
+                    "所选项目已由其他负责人负责,不能静默接管",
+                )
+        return rows
+
+    async def _replace_owned_projects(
+        self, session: AsyncSession, user_id: UUID, owned_project_ids: list[str]
+    ) -> None:
+        """Bind ``Project.managerId`` to the confirmed target set.
+
+        Projects previously owned by this user but no longer selected are unbound
+        (``managerId`` back to NULL); the confirmed targets become owned by the
+        user. The name-based recommendation never reaches this path directly --
+        ownership only changes through an administrator-confirmed mutation.
+        """
+        target = await self._validate_owned_projects(
+            session, user_id, [UUID(value) for value in owned_project_ids]
+        )
+        target_ids = {project.id for project in target}
+        stale = (
+            await session.scalars(
+                select(Project).where(Project.managerId == user_id).with_for_update()
+            )
+        ).all()
+        for project in stale:
+            if project.id not in target_ids:
+                project.managerId = None
+        for project in target:
+            project.managerId = user_id
+
     async def _revoke_sessions(self, session: AsyncSession, user_id: UUID) -> None:
         now = datetime.now(UTC)
         rows = await session.scalars(
@@ -399,11 +456,24 @@ class AdminUsersService:
             )
         )
 
+    async def _owned_project_ids(self, session: AsyncSession, user_id: UUID) -> list[UUID]:
+        """Projects whose ``managerId`` is this user, regardless of status.
+
+        Bound-but-archived projects stay listed so editing preserves them instead
+        of silently unbinding on the next save.
+        """
+        return list(
+            await session.scalars(
+                select(Project.id).where(Project.managerId == user_id)
+            )
+        )
+
     async def _map_user(self, session: AsyncSession, user: User) -> AdminUserResponse:
         department = await session.get(Department, user.departmentId) if user.departmentId else None
         user_role = await self._first_user_role(session, user.id)
         role = await session.get(Role, user_role.roleId) if user_role else None
         project_ids = await self._project_ids(session, user.id)
+        owned_ids = await self._owned_project_ids(session, user.id)
         role_response = await self._map_role(session, role) if role is not None else None
         return AdminUserResponse(
             id=str(user.id),
@@ -423,6 +493,8 @@ class AdminUsersService:
             dataScope=user_role.dataScope if user_role else DataScopeType.NONE,
             assignedProjectIds=[str(project_id) for project_id in project_ids],
             assignedProjectCount=len(project_ids),
+            ownedProjectIds=[str(project_id) for project_id in owned_ids],
+            ownedProjectCount=len(owned_ids),
             mustChangePassword=user.mustChangePassword,
             lastLoginAt=_optional_iso(user.lastLoginAt),
             lockedUntil=_optional_iso(user.lockedUntil),

@@ -1480,6 +1480,144 @@ h1 {
   font-size: 12px;
 }
 
+.owned-project-selector {
+  display: grid;
+  max-height: 380px;
+  margin-top: 16px;
+  padding: 16px;
+  overflow-y: auto;
+  border: 1px solid #d9e6ed;
+  border-radius: 13px;
+  gap: 9px;
+  background: #f8fbfd;
+}
+
+.owned-project-selector > strong,
+.owned-selector-head > strong,
+.owned-search-head > strong {
+  color: #315c75;
+  font-size: 13px;
+}
+
+.owned-selector-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.owned-selector-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.owned-selector-actions button {
+  padding: 4px 9px;
+  border: 1px solid #c7d8e3;
+  border-radius: 8px;
+  color: #2a7eda;
+  background: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.owned-selector-actions button:hover:not(:disabled) {
+  border-color: #2a7eda;
+  background: #f0f7ff;
+}
+
+.owned-selector-actions button:disabled {
+  color: #a9bcc9;
+  cursor: not-allowed;
+}
+
+.owned-recommend-note,
+.owned-recommend-empty {
+  margin: 0;
+  color: #8198a7;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.owned-recommend-empty {
+  font-style: italic;
+}
+
+.owned-project-row {
+  display: flex;
+  min-height: 46px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  align-items: flex-start;
+  gap: 9px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.owned-project-row > input {
+  width: 17px;
+  height: 17px;
+  margin: 2px 0 0;
+  flex: 0 0 auto;
+  accent-color: #176de2;
+}
+
+.owned-project-row > span {
+  display: grid;
+  gap: 2px;
+}
+
+.owned-project-row strong {
+  color: #31576e;
+  font-size: 12px;
+}
+
+.owned-project-row small {
+  color: #8da2af;
+  font-size: 12px;
+}
+
+.owned-project-row .owned-project-status {
+  color: #5b86a1;
+}
+
+.owned-project-row.is-conflict {
+  opacity: 0.72;
+  background: #f2f5f7;
+  cursor: not-allowed;
+}
+
+.owned-project-row.is-conflict .owned-project-status {
+  color: #c5563f;
+}
+
+.owned-search-head {
+  display: flex;
+  margin-top: 6px;
+  padding-top: 12px;
+  border-top: 1px dashed #d9e6ed;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.owned-search-head input {
+  width: 180px;
+  max-width: 55%;
+  padding: 6px 10px;
+  border: 1px solid #d4e2eb;
+  border-radius: 8px;
+  outline: none;
+  background: #fff;
+  color: #31576e;
+  font-size: 12px;
+}
+
+.owned-search-head input:focus {
+  border-color: #2a7eda;
+  box-shadow: 0 0 0 3px rgba(42, 126, 218, 0.08);
+}
+
 .switch-row {
   display: flex !important;
   min-height: 64px;

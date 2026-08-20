@@ -44,6 +44,8 @@ class AdminUserResponse(BaseModel):
     dataScope: DataScopeType
     assignedProjectIds: list[str]
     assignedProjectCount: int
+    ownedProjectIds: list[str]
+    ownedProjectCount: int
     mustChangePassword: bool
     lastLoginAt: str | None
     lockedUntil: str | None
@@ -78,6 +80,7 @@ class UserMutationRequest(StrictRequestModel):
     roleId: str
     dataScope: DataScopeType
     projectIds: list[str]
+    ownedProjectIds: list[str]
     enabled: bool
 
     @field_validator("departmentId", "roleId", mode="before")
@@ -97,6 +100,17 @@ class UserMutationRequest(StrictRequestModel):
 
         if len(set(value)) != len(value):
             raise ValueError("projectIds must be unique")
+        for item in value:
+            UUID(item)
+        return value
+
+    @field_validator("ownedProjectIds")
+    @classmethod
+    def unique_owned_project_ids(cls, value: list[str]) -> list[str]:
+        from uuid import UUID
+
+        if len(set(value)) != len(value):
+            raise ValueError("ownedProjectIds must be unique")
         for item in value:
             UUID(item)
         return value
