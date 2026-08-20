@@ -376,7 +376,7 @@ class MailSyncResultsService:
                 raise ApiError(400, "BAD_REQUEST", "当前已有同步任务正在排队或运行")
             uid_validity = message.uidValidity
             if uid_validity is None:
-                raise ApiError(400, "BAD_REQUEST", "邮件缺少同步标识，无法重试")  # noqa: RUF001
+                raise ApiError(400, "BAD_REQUEST", "邮件缺少同步标识，无法重试")
             handoff = await session.scalar(
                 select(MailSourceHandoff)
                 .where(

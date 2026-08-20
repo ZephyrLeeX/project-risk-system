@@ -222,7 +222,7 @@ class AuditQueryService:
         item = _map_item(row)
         return AuditLogDetail(
             **item.model_dump(),
-            context="操作记录仅包含受控元数据；未写入快照、请求正文或敏感内容。",  # noqa: RUF001
+            context="操作记录仅包含受控元数据；未写入快照、请求正文或敏感内容。",
             previousHash=row[0].previousHash,
             integrityHash=row[0].integrityHash,
         )
@@ -258,7 +258,7 @@ class AuditQueryService:
                     raise ApiError(
                         400,
                         "EXPORT_SCOPE_TOO_LARGE",
-                        "当前筛选结果超过10000条，请缩小日期或筛选范围后重试",  # noqa: RUF001
+                        "当前筛选结果超过10000条，请缩小日期或筛选范围后重试",
                     )
                 items = [_map_item(row) for row in rows]
                 audit = AuditService(session)

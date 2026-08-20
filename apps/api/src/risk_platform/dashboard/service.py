@@ -379,7 +379,7 @@ class DashboardService:
                 )
                 for risk, category in view.risks
             ],
-            statisticalScope="仅统计当前存在有效风险的项目；Excel 空金额不按 0 计算，已确认关联的涵谷回款可作为补充金额来源。",  # noqa: E501, RUF001
+            statisticalScope="仅统计当前存在有效风险的项目；Excel 空金额不按 0 计算，已确认关联的涵谷回款可作为补充金额来源。",  # noqa: E501
         )
 
     async def _collection_views(

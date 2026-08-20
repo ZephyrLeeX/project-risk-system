@@ -90,7 +90,7 @@ async def create_user(
     return ok(
         request,
         await service.create(payload, identity, UUID(get_trace_id(request))),
-        "用户创建成功，请安全转交一次性初始密码",  # noqa: RUF001
+        "用户创建成功，请安全转交一次性初始密码",
     )
 
 
@@ -183,7 +183,7 @@ async def reset_password(
                 user_id, identity, UUID(get_trace_id(request))
             )
         },
-        "密码已重置，原有会话已撤销",  # noqa: RUF001
+        "密码已重置，原有会话已撤销",
     )
 
 

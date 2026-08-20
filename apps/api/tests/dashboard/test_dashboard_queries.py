@@ -251,7 +251,7 @@ def test_resolved_risk_list_returns_resolution_record_inline_without_fanout(
                         status=RiskStatus.RESOLVED,
                         resolvedAt=now,
                         resolvedById=USER_ID,
-                        resolutionReason="整改完成，已验收",  # noqa: RUF001
+                        resolutionReason="整改完成，已验收",
                     ),
                     Risk(
                         projectId=outside_id,
@@ -281,7 +281,7 @@ def test_resolved_risk_list_returns_resolution_record_inline_without_fanout(
             assert {"resolvedAt", "resolvedByName", "resolutionReason"} <= item.keys()
             assert item["status"] == "RESOLVED"
             assert item["resolvedByName"] == "T020"
-            assert item["resolutionReason"] == "整改完成，已验收"  # noqa: RUF001
+            assert item["resolutionReason"] == "整改完成，已验收"
             assert item["resolvedAt"] is not None
         finally:
             await client.aclose()

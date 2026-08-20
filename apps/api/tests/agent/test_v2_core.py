@@ -654,7 +654,7 @@ def test_model_scope_rule_refuses_out_of_scope_even_when_gate_bypassed(
         ).run(_identity(), message, candidate_snapshot=())
     )
     assert runtime.calls == 1  # bypassed layer 1 -> reached the provider
-    system = cast(ProviderChatRequest, runtime.requests[0]).messages[0].content
+    system = runtime.requests[0].messages[0].content
     assert system is not None
     assert "AGENT_SCOPE_POLICY" in system
     assert "不调用任何 tool" in system

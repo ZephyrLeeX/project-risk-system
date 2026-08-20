@@ -61,6 +61,8 @@ src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+# Chinese user-facing strings and comments intentionally use full-width punctuation.
+ignore = ["RUF001", "RUF003"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["risk_platform"]

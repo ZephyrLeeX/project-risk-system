@@ -7843,6 +7843,13 @@
             "title": "Readattachments",
             "type": "boolean"
           },
+          "senderAllowlist": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Senderallowlist",
+            "type": "array"
+          },
           "senderRule": {
             "anyOf": [
               {
@@ -7863,6 +7870,11 @@
             "minItems": 1,
             "title": "Subjectkeywords",
             "type": "array"
+          },
+          "weeklyReportOnly": {
+            "default": true,
+            "title": "Weeklyreportonly",
+            "type": "boolean"
           }
         },
         "required": [
@@ -8147,6 +8159,13 @@
             "title": "Readattachments",
             "type": "boolean"
           },
+          "senderAllowlist": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Senderallowlist",
+            "type": "array"
+          },
           "senderRule": {
             "title": "Senderrule",
             "type": "string"
@@ -8187,6 +8206,10 @@
               }
             ],
             "title": "Updatedat"
+          },
+          "weeklyReportOnly": {
+            "title": "Weeklyreportonly",
+            "type": "boolean"
           }
         },
         "required": [
@@ -8202,6 +8225,8 @@
           "folder",
           "subjectKeywords",
           "senderRule",
+          "weeklyReportOnly",
+          "senderAllowlist",
           "initialSyncWeeks",
           "readAttachments",
           "aiExtractionEnabled",

@@ -62,7 +62,7 @@ class ImportPreviewService:
                         raise ApiError(
                             409,
                             "IMPORT_FILE_ALREADY_IMPORTED",
-                            "相同内容的文件已经导入，请从导入历史查看",  # noqa: RUF001
+                            "相同内容的文件已经导入，请从导入历史查看",
                             data={"existingBatchId": str(existing.id)},
                         )
                     # FAILED and ROLLED_BACK start a new preview attempt. The

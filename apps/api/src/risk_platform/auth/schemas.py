@@ -52,8 +52,8 @@ class ChangePasswordResponse(BaseModel):
 
 
 __all__ = [
-    "AuthenticatedUser",
     "AuthMethod",
+    "AuthenticatedUser",
     "ChangePasswordRequest",
     "ChangePasswordResponse",
     "DataScope",

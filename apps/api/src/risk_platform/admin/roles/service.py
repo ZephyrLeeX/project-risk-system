@@ -125,7 +125,7 @@ class AdminRolesService:
             if await session.scalar(
                 select(func.count()).select_from(UserRole).where(UserRole.roleId == role.id)
             ):
-                raise ApiError(409, "CONFLICT", "角色仍有关联用户，请先迁移用户")  # noqa: RUF001
+                raise ApiError(409, "CONFLICT", "角色仍有关联用户，请先迁移用户")
             await session.delete(role)
             await self._audit(session, identity, trace_id, "ADMIN_ROLE_DELETED", role.id)
 

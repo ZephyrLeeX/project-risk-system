@@ -78,7 +78,7 @@ def test_export_formats_are_metadata_only_and_readable() -> None:
 
 def test_postgresql_validation_is_skipped_without_test_database_url() -> None:
     if os.environ.get("TEST_DATABASE_URL"):
-        pytest.skip("TEST_DATABASE_URL 已配置；PostgreSQL 集成由数据库专项测试执行")  # noqa: RUF001
+        pytest.skip("TEST_DATABASE_URL 已配置；PostgreSQL 集成由数据库专项测试执行")
     pytest.skip("TEST_DATABASE_URL 未配置; PostgreSQL audit query validation 未执行")
 
 

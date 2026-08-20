@@ -77,9 +77,7 @@ class MailCandidateFilter:
         if not self._subject_matches(subject):
             return False
         allowlist = self._normalized_allowlist()
-        if allowlist and not self._sender_matches(sender, allowlist):
-            return False
-        return True
+        return not allowlist or self._sender_matches(sender, allowlist)
 
     def _subject_matches(self, subject: str | None) -> bool:
         haystack = normalize_text(subject)

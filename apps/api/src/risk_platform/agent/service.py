@@ -157,7 +157,7 @@ class AgentConversationService:
                 raise ApiError(
                     409,
                     "AGENT_EXECUTION_ACTIVE",
-                    "当前对话仍有进行中的执行，请先恢复或取消",  # noqa: RUF001
+                    "当前对话仍有进行中的执行，请先恢复或取消",
                 )
             user_message = AgentMessage(
                 conversationId=conversation.id,

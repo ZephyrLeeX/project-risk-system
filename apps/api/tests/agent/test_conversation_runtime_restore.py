@@ -21,9 +21,10 @@ import asyncio
 import os
 import re
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 from uuid import UUID, uuid4
 
 import httpx2
@@ -937,7 +938,7 @@ def test_project_selection_respond_envelope_sequence_baseline_replays_gap(
     asyncio.run(run())
 
 
-def _seed_write_confirmation_environment(
+async def _seed_write_confirmation_environment(
     factory: async_sessionmaker[AsyncSession],
     *,
     owner: UUID = OWNER,
@@ -1009,7 +1010,7 @@ def _seed_write_confirmation_environment(
         )
         return conversation_id, execution_id, interaction_id, project_id
 
-    return seed()  # type: ignore[return-value]
+    return await seed()
 
 
 def test_write_confirmation_confirm_terminalizes_execution_and_continues(
@@ -1267,7 +1268,7 @@ def test_conversation_list_is_owner_scoped_ordered_and_paginated(
             database,
             owner=list_owner,
             first_user_message=(
-                "这是用于测试标题截断的一段非常长非常长的用户消息，"  # noqa: RUF001
+                "这是用于测试标题截断的一段非常长非常长的用户消息，"
                 "用来验证超过四十个字符时会显示省略号"
             ),
             updated_at=base - timedelta(minutes=30),
@@ -1306,7 +1307,7 @@ def test_conversation_list_is_owner_scoped_ordered_and_paginated(
         assert page.items[0].activeProjectName == "南岸项目"
         assert page.items[0].lastMessageSequence == 1
         long_title = (
-            "这是用于测试标题截断的一段非常长非常长的用户消息，"  # noqa: RUF001
+            "这是用于测试标题截断的一段非常长非常长的用户消息，"
             "用来验证超过四十个字符时会显示省略号"
         )
         assert page.items[1].title == f"{long_title[:40]}…"
@@ -1390,7 +1391,7 @@ def test_conversations_list_route_returns_owner_page_and_forbids_without_permiss
         async def identity_owner_no_permission() -> SessionIdentity:
             return await override_identity(list_owner, agent_use=False)
 
-        def build_app(identity_override: object) -> httpx2.AsyncClient:
+        def build_app(identity_override: Callable[..., Any]) -> httpx2.AsyncClient:
             app = create_app(
                 Settings(environment="test", cors_origins=("https://web.internal",)),
                 AppComposition(

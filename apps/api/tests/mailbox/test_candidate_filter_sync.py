@@ -21,10 +21,10 @@ import asyncio
 import os
 import re
 import uuid
-from collections.abc import Iterator
+from collections.abc import Coroutine, Iterator
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import pytest
 from alembic import command
@@ -51,6 +51,7 @@ from risk_platform.mailbox.models import (
 )
 from risk_platform.mailbox.sync import MailboxSyncService
 from risk_platform.reliability.models import DurableTask, DurableTaskKind
+from risk_platform.shared.crypto import SecretCipher
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -69,14 +70,14 @@ class RecordingConnection:
         self._uid_validity = uid_validity
         self.discover_calls = 0
 
-    async def test(self, **kwargs: object) -> ConnectionOutcome:  # noqa: ARG002
+    async def test(self, **kwargs: object) -> ConnectionOutcome:
         return ConnectionOutcome(success=True, latency_ms=1)
 
-    async def discover(self, **kwargs: object) -> MailSyncSnapshot:  # noqa: ARG002
+    async def discover(self, **kwargs: object) -> MailSyncSnapshot:
         self.discover_calls += 1
         return MailSyncSnapshot(uid_validity=self._uid_validity, envelopes=self._envelopes)
 
-    async def fetch_source(self, **kwargs: object) -> bytes:  # noqa: ARG002
+    async def fetch_source(self, **kwargs: object) -> bytes:
         raise AssertionError("non-candidate mail must never fetch its body")
 
 
@@ -163,7 +164,7 @@ async def _seed(factory: async_sessionmaker[AsyncSession]) -> dict[str, object]:
         return {"mailbox": mailbox.id, "batch": batch.id, "owner": owner.id}
 
 
-def _run(coro):
+def _run[T](coro: Coroutine[Any, Any, T]) -> T:
     return asyncio.run(coro)
 
 
@@ -193,7 +194,7 @@ def test_sync_filters_non_weekly_mail_and_advances_cursor_past_skipped_uids(
         )
         connection = RecordingConnection(envelopes)
         service = MailboxSyncService(
-            factory, cast("object", _StubCipher()), cast("MailboxConnection", connection)
+            factory, cast("SecretCipher", _StubCipher()), cast("MailboxConnection", connection)
         )
         await service.run(cast("uuid.UUID", seed["batch"]))
 
@@ -243,7 +244,7 @@ def test_sync_does_not_re_scan_skipped_uids_on_next_round(
             )
         )
         service = MailboxSyncService(
-            factory, cast("object", _StubCipher()), cast("MailboxConnection", connection)
+            factory, cast("SecretCipher", _StubCipher()), cast("MailboxConnection", connection)
         )
         await service.run(cast("uuid.UUID", seed["batch"]))
         assert connection.discover_calls == 1
@@ -269,17 +270,17 @@ def test_sync_does_not_re_scan_skipped_uids_on_next_round(
             await session.flush()
             batch2_id = batch2.id
         # Second round discovers nothing past the cursor.
-        connection._envelopes = ()  # type: ignore[attr-defined]
+        connection._envelopes = ()
         await service.run(batch2_id)
         assert connection.discover_calls == 2
         async with factory() as session:
             config = await session.get(MailboxConfig, cast("uuid.UUID", seed["mailbox"]))
             assert config is not None
             assert config.uidCursor == 3
-            batch2 = await session.get(MailSyncBatch, batch2_id)
-            assert batch2 is not None
-            assert batch2.handedOffCount == 0
-            assert batch2.status == MailSyncStatus.SUCCESS
+            loaded_batch2 = await session.get(MailSyncBatch, batch2_id)
+            assert loaded_batch2 is not None
+            assert loaded_batch2.handedOffCount == 0
+            assert loaded_batch2.status == MailSyncStatus.SUCCESS
 
     _run(scenario())
 
@@ -304,7 +305,7 @@ def test_sync_uidvalidity_reset_fails_batch_and_clears_cursor(
             (_envelope(101, "项目周报"),), uid_validity=99
         )
         service = MailboxSyncService(
-            factory, cast("object", _StubCipher()), cast("MailboxConnection", connection)
+            factory, cast("SecretCipher", _StubCipher()), cast("MailboxConnection", connection)
         )
         await service.run(cast("uuid.UUID", seed["batch"]))
         async with factory() as session:
@@ -339,7 +340,7 @@ def test_weekly_report_only_false_accepts_all_envelopes(
             )
         )
         service = MailboxSyncService(
-            factory, cast("object", _StubCipher()), cast("MailboxConnection", connection)
+            factory, cast("SecretCipher", _StubCipher()), cast("MailboxConnection", connection)
         )
         await service.run(cast("uuid.UUID", seed["batch"]))
         async with factory() as session:
@@ -370,7 +371,7 @@ def test_keyword_change_changes_acceptance_and_hides_historical_non_weekly(
             (_envelope(1, "验证码"), _envelope(2, "项目周报"))
         )
         service = MailboxSyncService(
-            factory, cast("object", _StubCipher()), cast("MailboxConnection", connection)
+            factory, cast("SecretCipher", _StubCipher()), cast("MailboxConnection", connection)
         )
         await service.run(cast("uuid.UUID", seed["batch"]))
         async with factory() as session:
@@ -384,7 +385,7 @@ def test_keyword_change_changes_acceptance_and_hides_historical_non_weekly(
             )
             assert config is not None
             config.subjectKeywords = ["里程碑"]
-        connection._envelopes = (_envelope(3, "项目里程碑汇报"),)  # type: ignore[attr-defined]
+        connection._envelopes = (_envelope(3, "项目里程碑汇报"),)
         await service.run(cast("uuid.UUID", seed["batch"]))
         async with factory() as session:
             config = await session.get(MailboxConfig, cast("uuid.UUID", seed["mailbox"]))

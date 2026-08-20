@@ -76,7 +76,7 @@ class ConversationContextPolicy:
             raise ValueError("invalid conversation context policy")
 
     @classmethod
-    def from_budget(cls, budget: "ContextBudget") -> ConversationContextPolicy:
+    def from_budget(cls, budget: ContextBudget) -> ConversationContextPolicy:
         """Derive token thresholds from the execution's frozen context budget.
 
         Compression triggers near the ceiling (the history is about to stop

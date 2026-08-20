@@ -46,7 +46,7 @@ from risk_platform.shared.crypto import SecretCipher, SecretCryptoError
 from risk_platform.shared.errors import ApiError
 from risk_platform.shared.outbound import OutboundEndpointGuard
 
-NOTICE = "AI调用日志仅保留调用元数据，不包含完整密钥、提示词、模型原文或业务正文。"  # noqa: RUF001
+NOTICE = "AI调用日志仅保留调用元数据，不包含完整密钥、提示词、模型原文或业务正文。"
 
 
 class AiProvidersService:
@@ -194,7 +194,7 @@ class AiProvidersService:
             await self._name_available(session, payload.name, provider_id)
             self._endpoint_shape(payload.endpoint)
             if row.isDefault and not payload.enabled:
-                raise ApiError(400, "BAD_REQUEST", "默认服务不能直接停用，请先切换默认服务")  # noqa: RUF001
+                raise ApiError(400, "BAD_REQUEST", "默认服务不能直接停用，请先切换默认服务")
             endpoint = self._normalize_endpoint(payload.endpoint)
             protocol = AiProviderProtocol(payload.protocol)
             model = payload.model.strip()
@@ -273,7 +273,7 @@ class AiProvidersService:
         async with transaction(self._session_factory) as session:
             row = await self._get(session, provider_id, lock=True)
             if row.isDefault and not payload.enabled:
-                raise ApiError(400, "BAD_REQUEST", "默认服务不能直接停用，请先切换默认服务")  # noqa: RUF001
+                raise ApiError(400, "BAD_REQUEST", "默认服务不能直接停用，请先切换默认服务")
             row.enabled, row.updatedById = payload.enabled, UUID(identity.user.id)
             await self._audit(session, identity, trace_id, "AI_PROVIDER_STATUS_CHANGED", row)
             return self._provider(row, await self._usage_count(session, row.id))

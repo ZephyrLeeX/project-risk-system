@@ -1,6 +1,7 @@
 """Add mobile identity mapping and authentication method to sessions."""
 
 from typing import Final
+
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
