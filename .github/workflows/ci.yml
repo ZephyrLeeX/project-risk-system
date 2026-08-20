@@ -15,68 +15,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  bootstrap-baseline:
-    name: Bootstrap CI baseline
-    if: >-
-      github.event_name == 'push' &&
-      github.ref_name == 'chore/add-ci-workflow' &&
-      github.actor != 'github-actions[bot]'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout branch
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref_name }}
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 11.9.0
-          run_install: false
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version-file: .nvmrc
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Setup uv
-        uses: astral-sh/setup-uv@v6
-        with:
-          enable-cache: true
-          cache-dependency-glob: apps/api/uv.lock
-
-      - name: Install dependencies
-        run: |
-          pnpm install --frozen-lockfile
-          uv sync --project apps/api --frozen
-
-      - name: Apply safe Ruff fixes and sync contracts
-        run: |
-          (cd apps/api && uv run --frozen ruff check . --fix || true)
-          pnpm contracts:sync
-
-      - name: Commit generated baseline fixes
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -- apps/api packages/contracts/openapi/openapi.json packages/contracts/src/generated/openapi.ts
-          if git diff --cached --quiet; then
-            echo "No baseline changes to commit"
-            exit 0
-          fi
-          git commit -m "chore: align CI baseline"
-          git push origin "HEAD:${GITHUB_REF_NAME}"
-
   web:
     name: Web checks
     runs-on: ubuntu-latest
