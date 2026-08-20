@@ -26,6 +26,14 @@ describe("user management owned-project binding regressions", () => {
     expect(view).toContain('v-if="ownedProjectsVisible" class="owned-project-selector"');
   });
 
+  it("limits risk admins to all or explicitly assigned projects", () => {
+    expect(view).toContain('RISK_ADMIN: ["ALL", "ASSIGNED"]');
+    expect(view).toContain("availableScopeOptions");
+    expect(view).toContain('v-for="scope in availableScopeOptions"');
+    expect(view).toContain('selectedRole.value.code !== "PROJECT_MANAGER"');
+    expect(view).toContain("form.ownedProjectIds = []");
+  });
+
   it("offers select-all and cancel-all over the recommended projects", () => {
     expect(view).toContain("function toggleAllRecommended(): void");
     expect(view).toContain("function cancelAllRecommended(): void");
