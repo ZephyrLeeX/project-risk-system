@@ -26,7 +26,6 @@ from risk_platform.auth.models import AuthMethod
 from risk_platform.auth.policy import password_policy_violations
 from risk_platform.auth.repository import AuthRepository, UserAccess
 from risk_platform.auth.schemas import AuthenticatedUser, DataScope, RoleCode
-from risk_platform.auth.schemas import AuthMethod as AuthMethodLiteral
 from risk_platform.config import Settings
 from risk_platform.db import transaction
 from risk_platform.shared.errors import ApiError
@@ -653,7 +652,7 @@ class AuthService:
             permissions=list(access.permissions),
             dataScope=AuthService._aggregate_data_scope(scopes),
             mustChangePassword=user.mustChangePassword,
-            authMethod=cast(AuthMethodLiteral, auth_method.value),
+            authMethod=auth_method.value,
         )
 
     @staticmethod

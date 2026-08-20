@@ -236,7 +236,7 @@ def _wechat_redirect(error_code: str | None) -> RedirectResponse:
     safe_code = error_code if error_code in _WECHAT_ERROR_CODES else "WECHAT_USER_INFO_UNAVAILABLE"
     location = "/" if error_code is None else f"/login?wechatError={safe_code}"
     return RedirectResponse(
-        location=location,
+        url=location,
         status_code=303,
         headers={
             "Cache-Control": "no-store",

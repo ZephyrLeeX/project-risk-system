@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Iterator
+from collections.abc import AsyncGenerator, Iterator
 from typing import cast
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -45,13 +45,16 @@ def test_running_stream_sends_transport_keepalive_beyond_idle_threshold(
     monkeypatch.setattr(events, "request_cancellation", cancellation)
 
     async def collect() -> list[bytes]:
-        stream = events._stream(
-            cast(async_sessionmaker[AsyncSession], _Sessions()),
-            uuid4(),
-            0,
-            poll_interval=0,
-            idle_seconds=0,
-            keepalive_seconds=0,
+        stream = cast(
+            AsyncGenerator[bytes, None],
+            events._stream(
+                cast(async_sessionmaker[AsyncSession], _Sessions()),
+                uuid4(),
+                0,
+                poll_interval=0,
+                idle_seconds=0,
+                keepalive_seconds=0,
+            ),
         )
         frames = [await anext(stream), await anext(stream), await anext(stream)]
         with pytest.raises(StopAsyncIteration):

@@ -6,6 +6,8 @@ import asyncio
 import json
 import ssl
 from dataclasses import dataclass
+from http.client import HTTPMessage
+from typing import IO
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import (
@@ -23,8 +25,16 @@ class _RedirectBlockedError(RuntimeError):
 
 
 class _NoRedirectHandler(HTTPRedirectHandler):
-    def redirect_request(self, request: UrlRequest, *args: object, **kwargs: object) -> None:
-        del request, args, kwargs
+    def redirect_request(
+        self,
+        req: UrlRequest,
+        fp: IO[bytes],
+        code: int,
+        msg: str,
+        headers: HTTPMessage,
+        newurl: str,
+    ) -> UrlRequest | None:
+        del req, fp, code, msg, headers, newurl
         raise _RedirectBlockedError
 
 

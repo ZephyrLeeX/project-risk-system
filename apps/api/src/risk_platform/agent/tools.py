@@ -371,14 +371,19 @@ class AgentToolRegistry:
             )
             project_id = cast(UUID | None, arguments.get("projectId"))
             if project_id is not None:
-                page = await service.list_for_project(identity, project_id, query)
-            else:
-                page = await service.list(identity, query)
+                project_page = await service.list_for_project(identity, project_id, query)
+                return AgentRiskListPage(
+                    items=[_compact_risk_item(item) for item in project_page.items],
+                    page=project_page.page,
+                    pageSize=project_page.pageSize,
+                    total=project_page.total,
+                )
+            general_page = await service.list(identity, query)
             return AgentRiskListPage(
-                items=[_compact_risk_item(item) for item in page.items],
-                page=page.page,
-                pageSize=page.pageSize,
-                total=page.total,
+                items=[_compact_risk_item(item) for item in general_page.items],
+                page=general_page.page,
+                pageSize=general_page.pageSize,
+                total=general_page.total,
             )
 
         return call

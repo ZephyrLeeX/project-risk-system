@@ -43,10 +43,10 @@ def test_default_filter_accepts_weekly_report_subjects_and_rejects_noise() -> No
         None,
         "",
     ]
-    for subject in accepted:
-        assert flt.evaluate(subject=subject, sender="anyone@example.com") is True
-    for subject in rejected:
-        assert flt.evaluate(subject=subject, sender="anyone@example.com") is False
+    for accepted_subject in accepted:
+        assert flt.evaluate(subject=accepted_subject, sender="anyone@example.com") is True
+    for rejected_subject in rejected:
+        assert flt.evaluate(subject=rejected_subject, sender="anyone@example.com") is False
 
 
 def test_weekly_report_only_false_accepts_everything() -> None:

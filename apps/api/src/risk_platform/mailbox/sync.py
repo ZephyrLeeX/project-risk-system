@@ -249,14 +249,18 @@ class MailboxSyncService:
     def _candidate_filter(config: MailboxConfig) -> MailCandidateFilter:
         """Build the deterministic envelope candidate filter from a mailbox config."""
 
-        keywords = config.subjectKeywords
-        if not isinstance(keywords, list) or not keywords:
-            keywords = list(DEFAULT_WEEKLY_REPORT_KEYWORDS)
-        keywords = tuple(str(item) for item in keywords if isinstance(item, str) and item.strip())
-        allowlist = config.senderAllowlist
-        if not isinstance(allowlist, list):
-            allowlist = []
-        allowlist = tuple(str(item) for item in allowlist if isinstance(item, str) and item.strip())
+        raw_keywords = config.subjectKeywords
+        keywords = (
+            tuple(item for item in raw_keywords if isinstance(item, str) and item.strip())
+            if isinstance(raw_keywords, list) and raw_keywords
+            else DEFAULT_WEEKLY_REPORT_KEYWORDS
+        )
+        raw_allowlist = config.senderAllowlist
+        allowlist = (
+            tuple(item for item in raw_allowlist if isinstance(item, str) and item.strip())
+            if isinstance(raw_allowlist, list)
+            else ()
+        )
         return MailCandidateFilter(
             MailCandidateFilterConfig(
                 weekly_report_only=bool(config.weeklyReportOnly),
