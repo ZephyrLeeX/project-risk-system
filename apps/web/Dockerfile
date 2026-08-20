@@ -2,7 +2,7 @@
 # Production frontend image: build the Vue SPA from source (consuming the
 # generated OpenAPI contract from @risk-platform/contracts), then serve the
 # static bundle with nginx. The runtime image contains only static assets —
-# no Node, no NestJS, no Prisma.
+# no Node or backend runtime dependencies.
 
 # ---- build the SPA --------------------------------------------------------
 # Node 22: pnpm 11.9.0 requires node >=22.13 (within the repo's engines.node <25).
@@ -14,8 +14,7 @@ RUN npm install -g pnpm@11.9.0
 WORKDIR /app
 
 # Workspace manifests + lockfile for a frozen, filtered install that pulls only
-# @risk-platform/web and its workspace dependency @risk-platform/contracts
-# (the legacy NestJS app under apps/api is never installed).
+# @risk-platform/web and its workspace dependency @risk-platform/contracts.
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY packages/contracts/package.json packages/contracts/
 COPY apps/web/package.json apps/web/

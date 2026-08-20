@@ -53,10 +53,11 @@ Node 使用当前 `package.json` / `pnpm-lock.yaml`；Python 使用 `apps/api/py
 pnpm install --frozen-lockfile
 pnpm check
 pnpm contracts:check
-uv sync --project apps/api --frozen
-uv run --project apps/api --frozen ruff check .
-uv run --project apps/api --frozen mypy .
-uv run --project apps/api --frozen pytest -ra
+cd apps/api
+uv sync --frozen
+uv run --frozen ruff check .
+uv run --frozen mypy .
+uv run --frozen pytest -ra
 ```
 
 不得通过删除测试、降低断言、大量 skip、禁用类型检查或 lint 规则来制造通过结果。版本与最终命令应以当前仓库配置为准。
