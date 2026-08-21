@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -34,6 +34,7 @@ from risk_platform.risks.models import (
 )
 from risk_platform.risks.schemas import RiskItem, RiskQuery
 from risk_platform.risks.service import RisksService
+from risk_platform.shared.time_ranges import current_week_start
 
 from .schemas import (
     ActiveCollectionRisk,
@@ -81,9 +82,12 @@ class DashboardService:
     async def summary(self, identity: SessionIdentity) -> DashboardSummary:
         scope = self._scope(identity)
         now = datetime.now(UTC)
-        week_start = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(
-            days=now.weekday()
-        )
+        # "本周新增" boundary: the shared Asia/Shanghai Monday-00:00 authority
+        # (``shared.time_ranges``), the same instant the Agent risk_list
+        # CURRENT_WEEK preset resolves to — previously this was a UTC-midnight
+        # Monday, which disagreed with the weekly-report week convention by
+        # eight hours and with the Agent time-range presets.
+        week_start = current_week_start(now)
         async with self._session_factory() as session:
             project_stats = (
                 await session.execute(

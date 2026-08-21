@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_valid
 from risk_platform.model_types import JSONValue
 from risk_platform.risks.models import ProjectRiskLevel, RiskStatus
 from risk_platform.shared.http import StrictRequestModel
+from risk_platform.shared.time_ranges import RiskTimeRangePreset
 
 
 class _Contract(BaseModel):
@@ -416,12 +417,47 @@ class DashboardFocusToolResponse(_Contract):
 
 
 class RiskToolArguments(StrictRequestModel):
+    """``risk_list`` contract with deterministic server-side time ranges.
+
+    ``timeRange`` is the closed preset enum: the model only *selects* the
+    relative-time semantics (本周/上周/最近7天/本月/上个月); the server resolves
+    it into a half-open ``[start, end)`` window on ``Risk.detectedAt`` in the
+    business timezone (Asia/Shanghai) — see ``shared.time_ranges``.  Explicit
+    ``detectedFrom``/``detectedTo`` (both required together, timezone-aware,
+    ``detectedFrom < detectedTo``) express an absolute window instead; the
+    preset and the explicit window are mutually exclusive.  All three fields
+    are optional, so the legacy argument shapes (e.g. ``{"level": "HIGH"}``)
+    keep working unchanged.
+    """
+
     keyword: str | None = Field(default=None, max_length=100)
     level: ProjectRiskLevel | None = None
     status: RiskStatus | None = None
     projectId: UUID | None = None
+    timeRange: RiskTimeRangePreset | None = None
+    detectedFrom: datetime | None = None
+    detectedTo: datetime | None = None
     page: int = Field(default=1, ge=1)
     pageSize: int = Field(default=10, ge=1, le=20)
+
+    @model_validator(mode="after")
+    def strict_time_range(self) -> RiskToolArguments:
+        if self.timeRange is not None and (
+            self.detectedFrom is not None or self.detectedTo is not None
+        ):
+            raise ValueError("timeRange 与 detectedFrom/detectedTo 互斥, 只能二选一")
+        if (self.detectedFrom is None) != (self.detectedTo is None):
+            raise ValueError("detectedFrom 与 detectedTo 必须同时提供")
+        for name, value in (("detectedFrom", self.detectedFrom), ("detectedTo", self.detectedTo)):
+            if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+                raise ValueError(f"{name} 必须携带时区信息")
+        if (
+            self.detectedFrom is not None
+            and self.detectedTo is not None
+            and self.detectedFrom >= self.detectedTo
+        ):
+            raise ValueError("detectedFrom 必须早于 detectedTo")
+        return self
 
 
 class RiskDetailToolArguments(StrictRequestModel):

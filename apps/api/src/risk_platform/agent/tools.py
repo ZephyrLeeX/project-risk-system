@@ -21,6 +21,7 @@ from risk_platform.risks.models import ProjectRiskLevel, RiskStatus
 from risk_platform.risks.schemas import RiskDetail, RiskItem, RiskQuery
 from risk_platform.risks.service import RisksService
 from risk_platform.shared.errors import ApiError
+from risk_platform.shared.time_ranges import RiskTimeRangePreset, resolve_time_range
 from risk_platform.todos.schemas import ListTodosQuery, ManagerTodoDetail, ManagerTodoListResponse
 from risk_platform.todos.service import TodosService
 from risk_platform.weekly_reports.schemas import WeeklyProjectDetail, WeeklyReportResponse
@@ -85,8 +86,13 @@ class AgentToolRegistry:
         risks: RisksService,
         todos: TodosService,
         weekly_reports: WeeklyReportService,
+        *,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._sessions = sessions
+        # Injectable now-provider: relative time-range presets must resolve
+        # deterministically against a controllable clock in tests.
+        self._clock = clock or (lambda: datetime.now(UTC))
         self._tools = (
             AgentTool(
                 "project_search",
@@ -135,12 +141,14 @@ class AgentToolRegistry:
             ),
             AgentTool(
                 "risk_list",
-                "查询当前授权范围的风险列表, 可用 projectId 精确关联项目",
+                "查询当前授权范围的风险列表, 可用 projectId 精确关联项目; "
+                "可用 timeRange 查询相对时间范围内新增的风险(CURRENT_WEEK/PREVIOUS_WEEK/"
+                "LAST_7_DAYS/CURRENT_MONTH/PREVIOUS_MONTH), 服务端按上海时区解析",
                 ("dashboard.view",),
                 False,
                 RiskToolArguments,
                 _model_adapter(AgentRiskListPage),
-                self._risk_list(risks),
+                self._risk_list(risks, self._clock),
             ),
             AgentTool(
                 "risk_detail",
@@ -360,7 +368,11 @@ class AgentToolRegistry:
         return call
 
     @staticmethod
-    def _risk_list(service: RisksService) -> ToolCallable:
+    def _risk_list(
+        service: RisksService, clock: Callable[[], datetime] | None = None
+    ) -> ToolCallable:
+        now_provider = clock or (lambda: datetime.now(UTC))
+
         async def call(identity: SessionIdentity, arguments: Mapping[str, object]) -> object:
             query = RiskQuery(
                 keyword=cast(str | None, arguments.get("keyword")),
@@ -369,16 +381,36 @@ class AgentToolRegistry:
                 page=_int_argument(arguments.get("page"), 1),
                 pageSize=_int_argument(arguments.get("pageSize"), 10),
             )
+            # Relative presets resolve server-side into a half-open
+            # [start, end) window on Risk.detectedAt (the risk-added
+            # authority); the model never computes absolute dates.
+            detected_from = cast(datetime | None, arguments.get("detectedFrom"))
+            detected_to = cast(datetime | None, arguments.get("detectedTo"))
+            raw_preset = arguments.get("timeRange")
+            preset = (
+                RiskTimeRangePreset(str(raw_preset)) if raw_preset is not None else None
+            )
+            if preset is not None:
+                window = resolve_time_range(preset, now_provider())
+                detected_from, detected_to = window.start, window.end
             project_id = cast(UUID | None, arguments.get("projectId"))
             if project_id is not None:
-                project_page = await service.list_for_project(identity, project_id, query)
+                project_page = await service.list_for_project(
+                    identity,
+                    project_id,
+                    query,
+                    detected_from=detected_from,
+                    detected_to=detected_to,
+                )
                 return AgentRiskListPage(
                     items=[_compact_risk_item(item) for item in project_page.items],
                     page=project_page.page,
                     pageSize=project_page.pageSize,
                     total=project_page.total,
                 )
-            general_page = await service.list(identity, query)
+            general_page = await service.list(
+                identity, query, detected_from=detected_from, detected_to=detected_to
+            )
             return AgentRiskListPage(
                 items=[_compact_risk_item(item) for item in general_page.items],
                 page=general_page.page,

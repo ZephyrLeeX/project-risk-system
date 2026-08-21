@@ -265,9 +265,15 @@ export function applyFrame(
       return next;
     }
     case "error": {
+      // A missing server message must NOT default to a provider-outage text:
+      // most terminal errors (tool validation, internal failure, unknown
+      // codes) are not AI-provider faults. Resolve a known code to its label
+      // and fall back to the neutral Agent message; AGENT_PROVIDER_UNAVAILABLE
+      // keeps its explicit provider label via AGENT_ERROR_LABELS.
+      const code = asString(base.raw.code);
       next.error = {
-        code: asString(base.raw.code),
-        message: asString(base.raw.message, "AI服务暂时不可用"),
+        code,
+        message: asString(base.raw.message) || agentErrorLabel(code, AGENT_ERROR_FALLBACK),
         retryable: asBoolean(base.raw.retryable),
       };
       next.streamingText = "";
@@ -321,6 +327,7 @@ const AGENT_ERROR_LABELS: Record<string, string> = {
   AGENT_STREAM_BACKPRESSURE: "Agent事件积压过多，请重新读取会话",
   AGENT_PROVIDER_REQUEST_REJECTED: "AI服务拒绝了请求",
   AGENT_PROVIDER_UNAVAILABLE: "AI服务暂时不可用，请稍后重试",
+  AGENT_INTERNAL_ERROR: "Agent执行失败，请稍后重试",
   AGENT_TOOL_RESULT_TOO_LARGE: "Agent工具结果超出限制",
   AGENT_TOTAL_TOOL_RESULT_TOO_LARGE: "查询结果过多，请缩小查询范围后重试",
   AGENT_REPORT_CATEGORY_STALE: "风险分类已变更，请重新发起",
@@ -328,6 +335,16 @@ const AGENT_ERROR_LABELS: Record<string, string> = {
   AGENT_EXECUTION_CONFIG_INVALID: "Agent执行配置无效，请重新发起对话",
   AGENT_CONTEXT_TOO_LARGE: "对话上下文超出限制，请新建对话后继续",
 };
+
+/**
+ * Neutral fallback for any terminal Agent error whose code has no label and
+ * whose event carried no server message. Deliberately NOT provider-flavored:
+ * only `AGENT_PROVIDER_UNAVAILABLE` may tell the user the AI service is down.
+ * `AGENT_TOOL_ERROR` is intentionally NOT in the label map: its events carry a
+ * safe server-authored message (e.g. the WEEKLY_REPORT_STALE rebuild notice)
+ * that must be shown verbatim instead of a generic label.
+ */
+const AGENT_ERROR_FALLBACK = "Agent执行失败，请稍后重试";
 
 export function agentErrorLabel(code: string, fallback: string): string {
   return AGENT_ERROR_LABELS[code] ?? fallback;

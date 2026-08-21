@@ -176,13 +176,28 @@ def test_risk_list_maps_bounded_level_and_status_to_risk_query() -> None:
     captured: list[object] = []
 
     class FakeRisks:
-        async def list(self, _identity: SessionIdentity, query: object) -> RiskPage:
+        async def list(
+            self,
+            _identity: SessionIdentity,
+            query: object,
+            *,
+            detected_from: object = None,
+            detected_to: object = None,
+        ) -> RiskPage:
+            del detected_from, detected_to
             captured.append(query)
             return RiskPage(items=[], page=1, pageSize=10, total=0)
 
         async def list_for_project(
-            self, _identity: SessionIdentity, _project_id: UUID, query: object
+            self,
+            _identity: SessionIdentity,
+            _project_id: UUID,
+            query: object,
+            *,
+            detected_from: object = None,
+            detected_to: object = None,
         ) -> RiskPage:
+            del detected_from, detected_to
             captured.append(query)
             return RiskPage(items=[], page=1, pageSize=10, total=0)
 

@@ -467,10 +467,21 @@ class RisksService:
         *,
         resolved: bool = False,
         project_id: UUID | None = None,
+        detected_from: datetime | None = None,
+        detected_to: datetime | None = None,
     ) -> RiskPage | ResolvedRiskPage:
+        """Scoped risk list; ``detected_from``/``detected_to`` filter on the
+        risk-added authority ``Risk.detectedAt`` as a half-open
+        ``[detected_from, detected_to)`` window (both bounds optional)."""
+
         async with self._session_factory() as session:
             conditions = self._risk_conditions(
-                identity, query, resolved=resolved, project_id=project_id
+                identity,
+                query,
+                resolved=resolved,
+                project_id=project_id,
+                detected_from=detected_from,
+                detected_to=detected_to,
             )
             rows = (
                 await session.execute(
@@ -534,9 +545,21 @@ class RisksService:
             )
 
     async def list_for_project(
-        self, identity: SessionIdentity, project_id: UUID, query: RiskQuery
+        self,
+        identity: SessionIdentity,
+        project_id: UUID,
+        query: RiskQuery,
+        *,
+        detected_from: datetime | None = None,
+        detected_to: datetime | None = None,
     ) -> RiskPage:
-        page = await self.list(identity, query, project_id=project_id)
+        page = await self.list(
+            identity,
+            query,
+            project_id=project_id,
+            detected_from=detected_from,
+            detected_to=detected_to,
+        )
         assert isinstance(page, RiskPage)
         return page
 
@@ -703,6 +726,8 @@ class RisksService:
         *,
         resolved: bool,
         project_id: UUID | None = None,
+        detected_from: datetime | None = None,
+        detected_to: datetime | None = None,
     ) -> Sequence[Any]:
         conditions: list[Any] = [
             project_scope_predicate(UUID(identity.user.id), DataScopeType(identity.user.dataScope)),
@@ -731,6 +756,13 @@ class RisksService:
             conditions.append(Project.deliveryOwnerName == query.owner.strip())
         if query.sourceType:
             conditions.append(Risk.sourceType == query.sourceType)
+        # Half-open [detected_from, detected_to) window on the risk-added
+        # authority; the end bound is exclusive so no fuzzy 23:59:59.999999
+        # boundary is ever needed.
+        if detected_from is not None:
+            conditions.append(Risk.detectedAt >= detected_from)
+        if detected_to is not None:
+            conditions.append(Risk.detectedAt < detected_to)
         return conditions
 
     @staticmethod

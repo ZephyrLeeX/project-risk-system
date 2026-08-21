@@ -20,6 +20,7 @@ from risk_platform.model_types import JSONValue
 from risk_platform.reliability.core import TaskHandler, heartbeat
 from risk_platform.reliability.dispatcher import DurableTaskCancelled, DurableTaskFailure
 from risk_platform.reliability.models import DurableTask, DurableTaskStatus
+from risk_platform.shared.errors import ApiError
 
 from .context import (
     ActiveProject,
@@ -165,6 +166,29 @@ class NativeAgentExecutionWorker:
                 "AGENT_PROVIDER_UNAVAILABLE",
                 retryable=error.retryable,
                 summary="provider candidates unavailable",
+            ) from None
+        except ApiError as error:
+            # A domain/tool failure (Agent tool argument validation, scoped
+            # risk-query validation, WEEKLY_REPORT_STALE, proposal validation)
+            # is NOT a provider outage: it must never surface as
+            # AGENT_PROVIDER_UNAVAILABLE, and it deserves a more precise
+            # terminal code than the generic AGENT_INTERNAL_ERROR below.
+            # Agent-scoped codes (AGENT_*) pass through unchanged; everything
+            # else is classified as AGENT_TOOL_ERROR. Only the safe,
+            # server-authored ApiError message/code cross the SSE boundary —
+            # never exception text, SQL detail or infrastructure secrets.
+            code = error.code if error.code.startswith("AGENT_") else "AGENT_TOOL_ERROR"
+            await self._error(
+                payload,
+                task_id,
+                lease_token,
+                code,
+                retryable=False,
+                error_message=error.message,
+                detail_code=error.code,
+            )
+            raise DurableTaskFailure(
+                code, retryable=False, summary="agent tool or domain failure"
             ) from None
         except DurableTaskFailure as error:
             if error.code == "AGENT_STREAM_BACKPRESSURE":
@@ -621,7 +645,13 @@ class NativeAgentExecutionWorker:
         code: str,
         *,
         retryable: bool,
+        error_message: str | None = None,
+        detail_code: str | None = None,
     ) -> None:
+        # ``error_message``/``detail_code`` are only ever the safe,
+        # server-authored ApiError message/code (client-safe by contract — the
+        # same text the REST envelope returns); they never carry exception
+        # text, SQL detail or provider secrets.
         async with self._sessions.begin() as session:
             config_id_value = payload.get("execution_configuration_id")
             config_id = UUID(str(config_id_value)) if config_id_value is not None else None
@@ -645,13 +675,18 @@ class NativeAgentExecutionWorker:
                 execution.completedAt = datetime.now(UTC)
             message = await session.get(AgentMessage, config.userMessageId)
             if message is not None:
+                error_payload: dict[str, object] = {"code": code, "retryable": retryable}
+                if error_message is not None:
+                    error_payload["message"] = error_message
+                if detail_code is not None:
+                    error_payload["detailCode"] = detail_code
                 await self._append(
                     session,
                     config,
                     message,
                     task_id,
                     AgentEventType.ERROR,
-                    {"code": code, "retryable": retryable},
+                    error_payload,
                     message.id,
                 )
 
