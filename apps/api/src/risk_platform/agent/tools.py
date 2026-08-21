@@ -374,10 +374,15 @@ class AgentToolRegistry:
         now_provider = clock or (lambda: datetime.now(UTC))
 
         async def call(identity: SessionIdentity, arguments: Mapping[str, object]) -> object:
+            # ``invoke`` forwards model_dump(exclude_none=True), so a concrete
+            # status here means the model explicitly selected one; None means
+            # "no status intent" (an explicit null is indistinguishable and
+            # equally intent-free).
+            status = cast(RiskStatus | None, arguments.get("status"))
             query = RiskQuery(
                 keyword=cast(str | None, arguments.get("keyword")),
                 level=cast(ProjectRiskLevel | None, arguments.get("level")),
-                status=cast(RiskStatus | None, arguments.get("status")),
+                status=status,
                 page=_int_argument(arguments.get("page"), 1),
                 pageSize=_int_argument(arguments.get("pageSize"), 10),
             )
@@ -393,6 +398,13 @@ class AgentToolRegistry:
             if preset is not None:
                 window = resolve_time_range(preset, now_provider())
                 detected_from, detected_to = window.start, window.end
+            # A creation-window query ("本周新增风险") is a historical fact on
+            # detectedAt: without an explicit status it must also return
+            # risks that were resolved after detection, not just the
+            # currently-ACTIVE subset.
+            include_all_statuses = status is None and (
+                detected_from is not None or detected_to is not None
+            )
             project_id = cast(UUID | None, arguments.get("projectId"))
             if project_id is not None:
                 project_page = await service.list_for_project(
@@ -401,6 +413,7 @@ class AgentToolRegistry:
                     query,
                     detected_from=detected_from,
                     detected_to=detected_to,
+                    include_all_statuses=include_all_statuses,
                 )
                 return AgentRiskListPage(
                     items=[_compact_risk_item(item) for item in project_page.items],
@@ -409,7 +422,11 @@ class AgentToolRegistry:
                     total=project_page.total,
                 )
             general_page = await service.list(
-                identity, query, detected_from=detected_from, detected_to=detected_to
+                identity,
+                query,
+                detected_from=detected_from,
+                detected_to=detected_to,
+                include_all_statuses=include_all_statuses,
             )
             return AgentRiskListPage(
                 items=[_compact_risk_item(item) for item in general_page.items],

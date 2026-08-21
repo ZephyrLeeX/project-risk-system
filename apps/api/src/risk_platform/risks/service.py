@@ -469,10 +469,19 @@ class RisksService:
         project_id: UUID | None = None,
         detected_from: datetime | None = None,
         detected_to: datetime | None = None,
+        include_all_statuses: bool = False,
     ) -> RiskPage | ResolvedRiskPage:
         """Scoped risk list; ``detected_from``/``detected_to`` filter on the
         risk-added authority ``Risk.detectedAt`` as a half-open
-        ``[detected_from, detected_to)`` window (both bounds optional)."""
+        ``[detected_from, detected_to)`` window (both bounds optional).
+
+        ``include_all_statuses`` is the explicit historical-intent switch:
+        by default a ``query.status`` of ``None`` means "current risks"
+        (ACTIVE, or RESOLVED for the resolved page); with the switch set,
+        no implicit status condition is applied, so a creation-window
+        query also sees risks that were resolved later.  An explicit
+        ``query.status`` always wins over both defaults.
+        """
 
         async with self._session_factory() as session:
             conditions = self._risk_conditions(
@@ -482,6 +491,7 @@ class RisksService:
                 project_id=project_id,
                 detected_from=detected_from,
                 detected_to=detected_to,
+                include_all_statuses=include_all_statuses,
             )
             rows = (
                 await session.execute(
@@ -552,6 +562,7 @@ class RisksService:
         *,
         detected_from: datetime | None = None,
         detected_to: datetime | None = None,
+        include_all_statuses: bool = False,
     ) -> RiskPage:
         page = await self.list(
             identity,
@@ -559,6 +570,7 @@ class RisksService:
             project_id=project_id,
             detected_from=detected_from,
             detected_to=detected_to,
+            include_all_statuses=include_all_statuses,
         )
         assert isinstance(page, RiskPage)
         return page
@@ -728,15 +740,21 @@ class RisksService:
         project_id: UUID | None = None,
         detected_from: datetime | None = None,
         detected_to: datetime | None = None,
+        include_all_statuses: bool = False,
     ) -> Sequence[Any]:
         conditions: list[Any] = [
-            project_scope_predicate(UUID(identity.user.id), DataScopeType(identity.user.dataScope)),
-            Risk.status == (
-                query.status
-                if query.status is not None
-                else (RiskStatus.RESOLVED if resolved else RiskStatus.ACTIVE)
-            ),
+            project_scope_predicate(UUID(identity.user.id), DataScopeType(identity.user.dataScope))
         ]
+        # "新增时间范围" is a historical fact on Risk.detectedAt: a risk stays
+        # in the window's answer after it is resolved.  Callers opt in with
+        # include_all_statuses; every default caller keeps the "current
+        # risks" (ACTIVE / resolved-page RESOLVED) semantics.
+        if query.status is not None:
+            conditions.append(Risk.status == query.status)
+        elif not include_all_statuses:
+            conditions.append(
+                Risk.status == (RiskStatus.RESOLVED if resolved else RiskStatus.ACTIVE)
+            )
         if query.keyword and (value := query.keyword.strip()):
             pattern = f"%{value}%"
             conditions.append(

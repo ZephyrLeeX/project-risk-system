@@ -183,8 +183,9 @@ def test_risk_list_maps_bounded_level_and_status_to_risk_query() -> None:
             *,
             detected_from: object = None,
             detected_to: object = None,
+            include_all_statuses: bool = False,
         ) -> RiskPage:
-            del detected_from, detected_to
+            del detected_from, detected_to, include_all_statuses
             captured.append(query)
             return RiskPage(items=[], page=1, pageSize=10, total=0)
 
@@ -196,8 +197,9 @@ def test_risk_list_maps_bounded_level_and_status_to_risk_query() -> None:
             *,
             detected_from: object = None,
             detected_to: object = None,
+            include_all_statuses: bool = False,
         ) -> RiskPage:
-            del detected_from, detected_to
+            del detected_from, detected_to, include_all_statuses
             captured.append(query)
             return RiskPage(items=[], page=1, pageSize=10, total=0)
 
