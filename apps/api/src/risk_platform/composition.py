@@ -200,12 +200,17 @@ def merge_worker_handlers(
 
     merged: dict[str, TaskHandler] = {}
     merged.update(import_tasks.handlers(ImportPreviewWorker(sessions, str(import_root))))
-    mailbox_runtime = ProviderV2Runtime(sessions, agent_adapter or DeepSeekOfficialAdapter(cipher))
+    # One guarded provider runtime is shared by the mailbox workers and the
+    # agent core so a single transport instance serves the whole worker.
+    # The optional adapter is an explicit composition seam for the E2E harness.
+    # Production callers omit it and therefore always use the guarded official
+    # DeepSeek transport; no environment value can select a test provider.
+    worker_runtime = ProviderV2Runtime(sessions, agent_adapter or DeepSeekOfficialAdapter(cipher))
     merged.update(
         mailbox_tasks.handlers(
             MailboxSyncService(sessions, cipher),
-            MailParseWorker(sessions, cipher, provider_runtime=mailbox_runtime),
-            MailRiskExtractionWorker(sessions, cipher, provider_runtime=mailbox_runtime),
+            MailParseWorker(sessions, cipher, provider_runtime=worker_runtime),
+            MailRiskExtractionWorker(sessions, cipher, provider_runtime=worker_runtime),
         )
     )
     merged.update(weekly_tasks.handlers(WeeklyReportService(sessions)))
@@ -218,14 +223,11 @@ def merge_worker_handlers(
             )
         )
     )
-    # The optional adapter is an explicit composition seam for the E2E harness.
-    # Production callers omit it and therefore always use the guarded official
-    # DeepSeek transport; no environment value can select a test provider.
     merged.update(
         native_agent_execution_handlers(
             sessions,
             ReadOnlyAgentCore(
-                ProviderV2Runtime(sessions, agent_adapter or DeepSeekOfficialAdapter(cipher)),
+                worker_runtime,
                 tool_registry,
             ),
         )

@@ -774,18 +774,30 @@ def test_retry_targets_ai_stage_when_only_ai_review_failed(
         service = MailSyncResultsService(factory)
         await service.retry(failed.id, _identity(seed), uuid.uuid4())
         async with transaction(factory) as session:
-            ai_tasks = (
+            # An AI-only failure re-parses from the attachment stage (the
+            # parse worker re-enqueues MAIL_AI_REVIEW_PUBLISH once the source
+            # facts are rebuilt), so the retry task is a parse task.
+            retry_tasks = (
                 (
                     await session.execute(
                         select(DurableTask).where(
-                            DurableTask.kind == DurableTaskKind.MAIL_AI_REVIEW_PUBLISH
+                            DurableTask.kind == DurableTaskKind.ATTACHMENT_PARSE
                         )
                     )
                 )
                 .scalars()
                 .all()
             )
-            assert any("mail-retry:" in (t.idempotencyKey or "") for t in ai_tasks)
+            assert any("mail-retry:" in (t.idempotencyKey or "") for t in retry_tasks)
+            refreshed = (
+                await session.scalars(
+                    select(MailSourceHandoff).where(MailSourceHandoff.imapUid == 9)
+                )
+            ).one()
+            # The succeeded parse stage is reset so the re-parse actually runs;
+            # the AI stage keeps its failure record until the AI worker reruns.
+            assert refreshed.parseStatus is MailStageStatus.PENDING
+            assert refreshed.aiReviewStatus is MailStageStatus.RETRYABLE_FAILURE
 
     asyncio.run(scenario())
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import re
 import uuid
@@ -22,13 +23,18 @@ from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from risk_platform.admin.models import Department, User
-from risk_platform.ai_providers.client import ProviderRequestError
 from risk_platform.ai_providers.models import (
     AiConnectionStatus,
     AiProviderConfig,
-    AiProviderProtocol,
 )
-from risk_platform.ai_providers.v2_adapter import ProviderChatRequest
+from risk_platform.ai_providers.v2_adapter import (
+    ProviderChatRequest,
+    ProviderChatResponse,
+    ProviderError,
+    ProviderErrorClassification,
+    ProviderFinishReason,
+    ProviderTokenUsage,
+)
 from risk_platform.ai_providers.v2_service import ProviderV2Runtime
 from risk_platform.audit.models import AuditActorType, AuditLog
 from risk_platform.audit.service import AuditService
@@ -365,35 +371,49 @@ def _fake_parsed_mail(source: bytes, fallback_id: str) -> SimpleNamespace:
     )
 
 
+def _chat_response(content: str) -> ProviderChatResponse:
+    return ProviderChatResponse(
+        content=content,
+        tool_calls=(),
+        finish_reason=ProviderFinishReason.STOP,
+        usage=ProviderTokenUsage(input_tokens=10, output_tokens=8, total_tokens=18),
+        latency_ms=1,
+    )
+
+
 class _FakeProvider:
+    """``ProviderV2Runtime`` stand-in returning canned chat responses.
+
+    The mailbox worker talks to providers through the V2 chat boundary
+    (``MailboxProviderV2`` → ``runtime.chat``), so the fake implements that
+    interface; outcome switches mirror the transport-level failure modes.
+    """
+
     def __init__(self, outcome: str = "success") -> None:
         self.outcome = outcome
         self.calls = 0
 
-    async def extract_risks(
-        self,
-        endpoint: str,
-        model: str,
-        api_key: str,
-        timeout_seconds: int,
-        payload: dict[str, object],
-        protocol: AiProviderProtocol,
-    ) -> tuple[str, dict[str, int], int]:
-        del endpoint, model, api_key, timeout_seconds, protocol
+    async def chat(self, request: ProviderChatRequest) -> ProviderChatResponse:
         self.calls += 1
+        instruction = request.messages[0].content or ""
+        assert "Extract actual risks" in instruction
+        payload = json.loads(request.messages[1].content or "{}")
         assert payload["schema_version"] == "MAIL_PROVIDER_DERIVED_CONTENT_V2"
+        assert request.response_format is not None
         if self.outcome == "timeout":
-            raise ProviderRequestError("UPSTREAM_TIMEOUT", retryable=True)
+            raise ProviderError(
+                ProviderErrorClassification.TIMEOUT,
+                retryable=True,
+                failover_allowed=True,
+            )
         if self.outcome == "invalid":
-            return "not-json", {"input": 0, "output": 0, "total": 0}, 1
+            return _chat_response("not-json")
         if self.outcome == "zero":
-            return '{"risks":[]}', {"input": 10, "output": 2, "total": 12}, 1
-        return (
+            return _chat_response('{"risks":[]}')
+        return _chat_response(
             '{"risks":[{"project_option_id":"P1","category_option_id":"C1",'
             '"level":"HIGH","description":"交付风险",'
-            '"evidence":"里程碑延期", "suggestion":"立即处理", "confidence":90}]}',
-            {"input": 10, "output": 8, "total": 18},
-            1,
+            '"evidence":"里程碑延期", "suggestion":"立即处理", "confidence":90}]}'
         )
 
 
@@ -693,7 +713,10 @@ def test_postgresql_zero_risk_success_terminalizes_message(
     ("outcome", "with_provider", "stage", "code"),
     [
         ("success", False, MailStageStatus.PERMANENT_FAILURE, "PROVIDER_UNAVAILABLE"),
-        ("timeout", True, MailStageStatus.RETRYABLE_FAILURE, "UPSTREAM_TIMEOUT"),
+        # Post-V2 the mailbox worker surfaces ProviderError.classification.value
+        # as the failure code; UPSTREAM_TIMEOUT was the old v1 client-internal
+        # code that no longer crosses this boundary.
+        ("timeout", True, MailStageStatus.RETRYABLE_FAILURE, "TIMEOUT"),
         ("invalid", True, MailStageStatus.PERMANENT_FAILURE, "PROVIDER_INVALID_OUTPUT"),
     ],
 )
@@ -739,10 +762,14 @@ def test_postgresql_fake_provider_negative_outcomes(
             )
             assert await session.scalar(select(func.count()).select_from(MailRiskCandidate)) == 0
 
+    # Without a provider (with_provider False) the extractor gets no runtime,
+    # which is what surfaces PROVIDER_UNAVAILABLE — post-V2 the runtime is
+    # constructor-injected, not discovered from the DB config row.
+    runtime: object = _FakeProvider(outcome) if with_provider else None
     extractor = MailRiskExtractionWorker(
         factory,
         cast("SecretCipher", _FakeCipher()),
-        cast(ProviderV2Runtime, _FakeProvider(outcome)),
+        cast(ProviderV2Runtime, runtime),
         cast(MailParseWorker, _FakeParser()),
     )
     with _real_t026_worker(schema, factory, extractor) as celery:

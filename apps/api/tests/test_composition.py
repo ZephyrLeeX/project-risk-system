@@ -44,6 +44,7 @@ EXPECTED_SERVICE_NAMES = frozenset(
         "retention_hold_service",
         "admin_users_service",
         "admin_roles_service",
+        "wechat_user_info_client",
         "admin_options_service",
         "ai_providers_service",
         "ai_provider_v2_service",
@@ -51,12 +52,16 @@ EXPECTED_SERVICE_NAMES = frozenset(
         "system_config_service",
         "mailbox_service",
         "mail_risk_candidate_service",
+        "mail_project_resolution_service",
         "mail_sync_results_service",
         "import_preview_service",
         "import_commit_service",
         "admin_overview_service",
     }
 )
+
+# Integrations that are legitimately None when their URL is unset.
+OPTIONAL_SERVICE_NAMES = frozenset({"wechat_user_info_client"})
 
 REPRESENTATIVE_PATHS = frozenset(
     {
@@ -231,7 +236,7 @@ def test_full_app_lifespan_boots_and_shuts_down(
 
     async def scenario() -> None:
         async with _lifespan(app):
-            for name in EXPECTED_SERVICE_NAMES:
+            for name in EXPECTED_SERVICE_NAMES - OPTIONAL_SERVICE_NAMES:
                 assert getattr(app.state, name, None) is not None, name
 
     asyncio.run(scenario())

@@ -129,6 +129,17 @@ class MailSyncResultsService:
                 )
                 or 0
             )
+            duplicate = (
+                await session.scalar(
+                    select(func.count())
+                    .select_from(MailMessage)
+                    .where(
+                        MailMessage.batchId == latest.id,
+                        MailMessage.skipReason == MailMessageSkipReason.DUPLICATE,
+                    )
+                )
+                or 0
+            )
             pending = (
                 await session.scalar(
                     select(func.count())
@@ -156,10 +167,10 @@ class MailSyncResultsService:
             return MailSyncSummary(
                 configured=True,
                 maskedEmail=masked,
-                latestBatch=self._batch_item(latest),
+                latestBatch=self._batch_item(latest, duplicate_count=int(duplicate)),
                 latestDiscoveredCount=latest.discoveredCount,
                 latestHandedOffCount=latest.handedOffCount,
-                latestDuplicateCount=max(latest.discoveredCount - latest.handedOffCount, 0),
+                latestDuplicateCount=int(duplicate),
                 latestDownstreamPendingCount=latest.downstreamPendingCount,
                 latestScannedCount=latest.scannedCount,
                 latestNewCount=latest.newCount,
@@ -297,8 +308,14 @@ class MailSyncResultsService:
                     .limit(query.pageSize)
                 )
             ).all()
+            duplicates = await self._duplicate_counts(
+                session, [batch.id for batch in rows]
+            )
         return MailSyncBatchListResponse(
-            items=[self._batch_item(batch) for batch in rows],
+            items=[
+                self._batch_item(batch, duplicate_count=duplicates.get(batch.id, 0))
+                for batch in rows
+            ],
             page=query.page,
             pageSize=query.pageSize,
             total=int(total),
@@ -333,6 +350,11 @@ class MailSyncResultsService:
             message_ids = [message.id for message, _ in message_rows]
             matches = await self._matches(session, message_ids)
             counts = await self._candidate_counts(session, message_ids)
+            duplicate_count = sum(
+                1
+                for message, _ in message_rows
+                if message.skipReason is MailMessageSkipReason.DUPLICATE
+            )
             messages = [
                 self._list_item(
                     message,
@@ -343,7 +365,7 @@ class MailSyncResultsService:
                 for message, batch_code in message_rows
             ]
         return MailSyncBatchDetail(
-            **self._batch_item(batch).model_dump(),
+            **self._batch_item(batch, duplicate_count=duplicate_count).model_dump(),
             operatorName=operator_name,
             durationMs=batch.durationMs,
             startUid=str(batch.startUid) if batch.startUid is not None else None,
@@ -592,7 +614,27 @@ class MailSyncResultsService:
         return f"{email[:2]}***@{email.split('@')[-1]}"
 
     @staticmethod
-    def _batch_item(batch: MailSyncBatch) -> MailSyncBatchItem:
+    async def _duplicate_counts(
+        session: AsyncSession, batch_ids: list[UUID]
+    ) -> dict[UUID, int]:
+        """Per-batch Message-ID-dedup skip counts for the batch list views."""
+
+        if not batch_ids:
+            return {}
+        rows = (
+            await session.execute(
+                select(MailMessage.batchId, func.count())
+                .where(
+                    MailMessage.batchId.in_(batch_ids),
+                    MailMessage.skipReason == MailMessageSkipReason.DUPLICATE,
+                )
+                .group_by(MailMessage.batchId)
+            )
+        ).all()
+        return {batch_id: int(count) for batch_id, count in rows}
+
+    @staticmethod
+    def _batch_item(batch: MailSyncBatch, *, duplicate_count: int = 0) -> MailSyncBatchItem:
         return MailSyncBatchItem(
             id=str(batch.id),
             code=batch.code,
@@ -605,7 +647,10 @@ class MailSyncResultsService:
             finishedAt=batch.finishedAt.isoformat() if batch.finishedAt else None,
             discoveredCount=batch.discoveredCount,
             handedOffCount=batch.handedOffCount,
-            duplicateCount=max(batch.discoveredCount - batch.handedOffCount, 0),
+            # Duplicates are the messages actually skipped by Message-ID dedup
+            # (skipReason == DUPLICATE), not every discovered-but-not-handed-off
+            # envelope — since the weekly-report filter those are FILTERED mail.
+            duplicateCount=duplicate_count,
             downstreamPendingCount=batch.downstreamPendingCount,
             scannedCount=batch.scannedCount,
             newCount=batch.newCount,
@@ -785,12 +830,15 @@ class MailSyncResultsService:
     def _retry_stage(
         handoff: MailSourceHandoff | None,
     ) -> tuple[DurableTaskKind, str]:
-        """ADR 0022: retry only the failed downstream stage by source identity."""
+        """ADR 0022: retry re-parses from source; parse chains back into AI."""
 
         if handoff is None:
             return DurableTaskKind.ATTACHMENT_PARSE, "parse"
         if handoff.parseStatus in _FAILURE_STAGES:
             return DurableTaskKind.ATTACHMENT_PARSE, "parse"
+        # An AI-only failure re-fetches and re-parses the source before AI
+        # review (d0eff6d): the parse worker chains back into
+        # MAIL_AI_REVIEW_PUBLISH once the source facts are rebuilt.
         if handoff.aiReviewStatus in _FAILURE_STAGES:
             return DurableTaskKind.ATTACHMENT_PARSE, "parse"
         return DurableTaskKind.ATTACHMENT_PARSE, "parse"

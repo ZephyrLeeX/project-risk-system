@@ -45,6 +45,7 @@ from risk_platform.mailbox.models import (
     MailboxEncryption,
     MailboxProvider,
     MailSourceHandoff,
+    MailStageStatus,
     MailSyncBatch,
     MailSyncStatus,
     MailSyncTrigger,
@@ -168,6 +169,52 @@ def _run[T](coro: Coroutine[Any, Any, T]) -> T:
     return asyncio.run(coro)
 
 
+async def _settle_handoffs(
+    factory: async_sessionmaker[AsyncSession],
+    batch_id: uuid.UUID,
+    *,
+    parse: MailStageStatus = MailStageStatus.SUCCEEDED,
+    ai: MailStageStatus = MailStageStatus.SUCCEEDED,
+) -> None:
+    """Set the batch's handoff stage statuses, as T025/T026 workers do."""
+
+    async with transaction(factory) as session:
+        handoffs = (
+            await session.scalars(
+                select(MailSourceHandoff).where(MailSourceHandoff.batchId == batch_id)
+            )
+        ).all()
+        for handoff in handoffs:
+            handoff.parseStatus = parse
+            handoff.aiReviewStatus = ai
+
+
+def _second_batch(
+    factory: async_sessionmaker[AsyncSession], mailbox_id: uuid.UUID
+) -> Coroutine[Any, Any, uuid.UUID]:
+    async def create() -> uuid.UUID:
+        async with transaction(factory) as session:
+            task = DurableTask(
+                kind=DurableTaskKind.MAILBOX_SYNC,
+                idempotencyKey=f"batch-{uuid.uuid4().hex}",
+                payload={},
+                maxAttempts=1,
+            )
+            session.add(task)
+            await session.flush()
+            batch = MailSyncBatch(
+                taskId=task.id,
+                code=f"B-{uuid.uuid4().hex}",
+                mailboxConfigId=mailbox_id,
+                trigger=MailSyncTrigger.SCHEDULED,
+            )
+            session.add(batch)
+            await session.flush()
+            return batch.id
+
+    return create()
+
+
 def test_sync_filters_non_weekly_mail_and_advances_cursor_past_skipped_uids(
     mailbox_postgresql: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -201,9 +248,6 @@ def test_sync_filters_non_weekly_mail_and_advances_cursor_past_skipped_uids(
         async with factory() as session:
             config = await session.get(MailboxConfig, cast("uuid.UUID", seed["mailbox"]))
             assert config is not None
-            # Scanned cursor advances to the highest *scanned* UID (10), not the
-            # highest accepted weekly-report UID (9).
-            assert config.uidCursor == 10
             handoffs = (
                 await session.scalars(
                     select(MailSourceHandoff).where(
@@ -220,6 +264,24 @@ def test_sync_filters_non_weekly_mail_and_advances_cursor_past_skipped_uids(
             assert batch.handedOffCount == 3
             assert batch.endUid == 10
             assert batch.startUid == 1
+            # ADR 0022: the parse/AI stages of the handed-off candidates are
+            # still PENDING, so the batch stays partial and the cursor must
+            # not advance past unsettled mail yet.
+            assert batch.downstreamPendingCount == 3
+            assert batch.cursorAdvanced is False
+            assert batch.status == MailSyncStatus.PARTIAL
+            assert config.uidCursor is None
+
+        # Downstream stages finish; reconciliation completes the batch and
+        # the scanned cursor advances to the highest *scanned* UID (10), not
+        # the highest accepted weekly-report UID (9).
+        await _settle_handoffs(factory, cast("uuid.UUID", seed["batch"]))
+        await service.reconcile_batch(cast("uuid.UUID", seed["batch"]))
+        async with factory() as session:
+            config = await session.get(MailboxConfig, cast("uuid.UUID", seed["mailbox"]))
+            batch = await session.get(MailSyncBatch, cast("uuid.UUID", seed["batch"]))
+            assert config is not None and batch is not None
+            assert config.uidCursor == 10
             assert batch.cursorAdvanced is True
             assert batch.status == MailSyncStatus.SUCCESS
 
@@ -248,27 +310,19 @@ def test_sync_does_not_re_scan_skipped_uids_on_next_round(
         )
         await service.run(cast("uuid.UUID", seed["batch"]))
         assert connection.discover_calls == 1
+        # The candidate's parse/AI stages settle; the batch completes and the
+        # cursor advances over every scanned UID (1..3, including the skipped
+        # non-weekly mail).
+        await _settle_handoffs(factory, cast("uuid.UUID", seed["batch"]))
+        await service.reconcile_batch(cast("uuid.UUID", seed["batch"]))
+        async with factory() as session:
+            config = await session.get(MailboxConfig, cast("uuid.UUID", seed["mailbox"]))
+            assert config is not None
+            assert config.uidCursor == 3
         # A second batch over the same config: the discover cursor is now 3, so
         # the IMAP criterion is ``UID 4:*``. With nothing new, no handoffs are
         # created and the cursor stays advanced — skipped mail is not rescanned.
-        async with transaction(factory) as session:
-            task = DurableTask(
-                kind=DurableTaskKind.MAILBOX_SYNC,
-                idempotencyKey=f"batch2-{uuid.uuid4().hex}",
-                payload={},
-                maxAttempts=1,
-            )
-            session.add(task)
-            await session.flush()
-            batch2 = MailSyncBatch(
-                taskId=task.id,
-                code=f"B2-{uuid.uuid4().hex}",
-                mailboxConfigId=cast("uuid.UUID", seed["mailbox"]),
-                trigger=MailSyncTrigger.SCHEDULED,
-            )
-            session.add(batch2)
-            await session.flush()
-            batch2_id = batch2.id
+        batch2_id = await _second_batch(factory, cast("uuid.UUID", seed["mailbox"]))
         # Second round discovers nothing past the cursor.
         connection._envelopes = ()
         await service.run(batch2_id)
@@ -354,6 +408,16 @@ def test_weekly_report_only_false_accepts_all_envelopes(
                 )
             ).all()
             assert sorted(row.imapUid for row in handoffs) == [1, 2, 3]
+            # Downstream settles, then the cursor advances past all three.
+            batch = await session.get(MailSyncBatch, cast("uuid.UUID", seed["batch"]))
+            assert batch is not None
+            assert batch.status == MailSyncStatus.PARTIAL
+            assert config.uidCursor is None
+        await _settle_handoffs(factory, cast("uuid.UUID", seed["batch"]))
+        await service.reconcile_batch(cast("uuid.UUID", seed["batch"]))
+        async with factory() as session:
+            config = await session.get(MailboxConfig, cast("uuid.UUID", seed["mailbox"]))
+            assert config is not None
             assert config.uidCursor == 3
 
     _run(scenario())
@@ -377,6 +441,14 @@ def test_keyword_change_changes_acceptance_and_hides_historical_non_weekly(
         async with factory() as session:
             config = await session.get(MailboxConfig, cast("uuid.UUID", seed["mailbox"]))
             assert config is not None
+            # The weekly report's downstream stages are still pending, so the
+            # cursor has not advanced yet.
+            assert config.uidCursor is None
+        await _settle_handoffs(factory, cast("uuid.UUID", seed["batch"]))
+        await service.reconcile_batch(cast("uuid.UUID", seed["batch"]))
+        async with factory() as session:
+            config = await session.get(MailboxConfig, cast("uuid.UUID", seed["mailbox"]))
+            assert config is not None
             assert config.uidCursor == 2
         # Operator drops "周报" from the keyword set — non-weekly behaviour.
         async with transaction(factory) as session:
@@ -386,7 +458,10 @@ def test_keyword_change_changes_acceptance_and_hides_historical_non_weekly(
             assert config is not None
             config.subjectKeywords = ["里程碑"]
         connection._envelopes = (_envelope(3, "项目里程碑汇报"),)
-        await service.run(cast("uuid.UUID", seed["batch"]))
+        # A new batch picks up the new keyword set (a finished batch is never
+        # re-run).
+        batch2_id = await _second_batch(factory, cast("uuid.UUID", seed["mailbox"]))
+        await service.run(batch2_id)
         async with factory() as session:
             config = await session.get(MailboxConfig, cast("uuid.UUID", seed["mailbox"]))
             assert config is not None
@@ -398,5 +473,106 @@ def test_keyword_change_changes_acceptance_and_hides_historical_non_weekly(
                 )
             ).all()
             assert sorted(row.imapUid for row in handoffs) == [2, 3]
+
+    _run(scenario())
+
+
+def test_sync_with_no_candidates_completes_and_advances_cursor_immediately(
+    mailbox_postgresql: async_sessionmaker[AsyncSession],
+) -> None:
+    factory = mailbox_postgresql
+
+    async def scenario() -> None:
+        seed = await _seed(factory)
+        # Every scanned envelope is non-weekly: nothing is handed off, so
+        # there is no downstream to wait for — the batch succeeds and the
+        # cursor advances in the same run (ADR 0022 "no candidates" branch).
+        connection = RecordingConnection(
+            (
+                _envelope(1, "AD密码修改到期提醒"),
+                _envelope(2, "验证码"),
+                _envelope(3, "系统通知"),
+            )
+        )
+        service = MailboxSyncService(
+            factory, cast("SecretCipher", _StubCipher()), cast("MailboxConnection", connection)
+        )
+        await service.run(cast("uuid.UUID", seed["batch"]))
+        async with factory() as session:
+            config = await session.get(MailboxConfig, cast("uuid.UUID", seed["mailbox"]))
+            batch = await session.get(MailSyncBatch, cast("uuid.UUID", seed["batch"]))
+            assert config is not None and batch is not None
+            assert batch.handedOffCount == 0
+            assert batch.skippedCount == 3
+            assert batch.cursorAdvanced is True
+            assert batch.status == MailSyncStatus.SUCCESS
+            assert config.uidCursor == 3
+
+    _run(scenario())
+
+
+def test_retryable_downstream_failure_keeps_cursor_blocked(
+    mailbox_postgresql: async_sessionmaker[AsyncSession],
+) -> None:
+    factory = mailbox_postgresql
+
+    async def scenario() -> None:
+        seed = await _seed(factory)
+        connection = RecordingConnection((_envelope(1, "项目周报"),))
+        service = MailboxSyncService(
+            factory, cast("SecretCipher", _StubCipher()), cast("MailboxConnection", connection)
+        )
+        await service.run(cast("uuid.UUID", seed["batch"]))
+        # The parse stage fails retryably; reconciliation must keep the
+        # cursor where it is so the mail is retried, not silently skipped.
+        await _settle_handoffs(
+            factory,
+            cast("uuid.UUID", seed["batch"]),
+            parse=MailStageStatus.RETRYABLE_FAILURE,
+        )
+        await service.reconcile_batch(cast("uuid.UUID", seed["batch"]))
+        async with factory() as session:
+            config = await session.get(MailboxConfig, cast("uuid.UUID", seed["mailbox"]))
+            batch = await session.get(MailSyncBatch, cast("uuid.UUID", seed["batch"]))
+            assert config is not None and batch is not None
+            assert batch.retryableFailedCount == 1
+            assert batch.cursorAdvanced is False
+            assert batch.status == MailSyncStatus.PARTIAL
+            assert config.uidCursor is None
+
+    _run(scenario())
+
+
+def test_permanent_downstream_failure_completes_batch_and_advances_cursor(
+    mailbox_postgresql: async_sessionmaker[AsyncSession],
+) -> None:
+    factory = mailbox_postgresql
+
+    async def scenario() -> None:
+        seed = await _seed(factory)
+        connection = RecordingConnection(
+            (_envelope(1, "项目周报"), _envelope(2, "AD密码修改到期提醒"))
+        )
+        service = MailboxSyncService(
+            factory, cast("SecretCipher", _StubCipher()), cast("MailboxConnection", connection)
+        )
+        await service.run(cast("uuid.UUID", seed["batch"]))
+        # The AI stage fails permanently. Per ADR 0022 a permanent failure is
+        # terminal: the batch reports "complete with permanent failures" and
+        # the cursor must not stay frozen because of one dead mail.
+        await _settle_handoffs(
+            factory,
+            cast("uuid.UUID", seed["batch"]),
+            ai=MailStageStatus.PERMANENT_FAILURE,
+        )
+        await service.reconcile_batch(cast("uuid.UUID", seed["batch"]))
+        async with factory() as session:
+            config = await session.get(MailboxConfig, cast("uuid.UUID", seed["mailbox"]))
+            batch = await session.get(MailSyncBatch, cast("uuid.UUID", seed["batch"]))
+            assert config is not None and batch is not None
+            assert batch.permanentlyFailedCount == 1
+            assert batch.cursorAdvanced is True
+            assert batch.status == MailSyncStatus.PARTIAL
+            assert config.uidCursor == 2
 
     _run(scenario())
