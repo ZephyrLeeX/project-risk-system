@@ -107,6 +107,21 @@ export const agentApi = {
     ).data;
   },
 
+  /**
+   * Hide one of the caller's own conversations from their history
+   * (`DELETE /agent/conversations/{id}`).
+   *
+   * Server-side soft delete: only terminal conversations can be hidden — a
+   * live turn answers 409 `AGENT_CONVERSATION_BUSY` and must be stopped
+   * first. The retained durable facts are never cascade-deleted.
+   */
+  async deleteConversation(conversationId: string): Promise<void> {
+    await apiRequest<null>(
+      `/agent/conversations/${encodeURIComponent(conversationId)}`,
+      { method: "DELETE" },
+    );
+  },
+
   /** A page of messages (`GET /agent/conversations/{id}/messages`). */
   async messages(
     conversationId: string,

@@ -18,12 +18,21 @@ class AgentConversationRepository:
         self._session = session
 
     async def owned(self, conversation_id: UUID, owner_id: UUID) -> AgentConversation | None:
+        """The owner's live conversation, or ``None`` when missing / foreign / hidden.
+
+        A user soft-deleted conversation (``deletedAt``) is indistinguishable
+        from a missing one at this layer: every owner-scoped read (history,
+        messages, continue, cancel) flows through here and must answer 404
+        without leaking that the row still exists for retention/audit.
+        """
+
         return cast(
             AgentConversation | None,
             await self._session.scalar(
                 select(AgentConversation).where(
                     AgentConversation.id == conversation_id,
                     AgentConversation.ownerUserId == owner_id,
+                    AgentConversation.deletedAt.is_(None),
                 )
             ),
         )

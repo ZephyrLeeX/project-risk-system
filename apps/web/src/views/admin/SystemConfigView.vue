@@ -16,9 +16,13 @@ import type {
 import { systemConfigApi } from "@/api/system-config";
 import { cloneConfigSnapshot } from "@/api/system-config-contract";
 import AdminShell from "@/components/AdminShell.vue";
+import AgentScopeRulesPanel from "@/components/admin/AgentScopeRulesPanel.vue";
 import ModalDialog from "@/components/ModalDialog.vue";
+import { useAuthStore } from "@/stores/auth";
 
-type SectionKey = "overview" | "risk" | "mail" | "alias" | "security" | "notification" | "history";
+type SectionKey = "overview" | "risk" | "mail" | "alias" | "agentScope" | "security" | "notification" | "history";
+
+const auth = useAuthStore();
 
 const activeSection = ref<SectionKey>("overview");
 const overview = ref<SystemConfigOverview | null>(null);
@@ -52,6 +56,12 @@ const directory = computed(() => [
   { key: "risk" as const, name: "风险规则", copy: "类别、等级与关键词", count: String((draft.value?.categories.length ?? 0) + (draft.value?.levels.length ?? 0)) },
   { key: "mail" as const, name: "周报与邮箱同步", copy: "周期与识别关键词", count: "3" },
   { key: "alias" as const, name: "项目别名", copy: "简称与标准项目映射", count: String(draft.value?.aliases.filter((item) => item.isActive).length ?? 0) },
+  // Agent 范围规则不是 SystemConfig 快照的一部分：独立 CRUD、保存即生效，
+  // 不参与发布流程。目录项仅对持有 agent.scope.manage 的管理员可见；
+  // 后端仍是权限权威（无权限调用一律 403）。
+  ...(auth.user?.permissions.includes("agent.scope.manage")
+    ? [{ key: "agentScope" as const, name: "Agent 范围规则", copy: "会话数据范围拦截" }]
+    : []),
   { key: "security" as const, name: "会话与登录", copy: "超时和账号保护", count: "4" },
   { key: "notification" as const, name: "后台提醒", copy: "异常与到期提醒", count: "4" },
   { key: "history" as const, name: "变更记录", copy: "版本与审计摘要" },
@@ -232,6 +242,8 @@ onMounted(load);
         <div v-else-if="activeSection==='mail'" class="config-content"><section class="config-card"><p>WEEKLY REPORT RECOGNITION</p><h3>周报与邮箱同步</h3><p>全局规则只控制同步任务；个人邮箱仍由风险管理员本人配置。</p><div class="prototype-form"><label><span>自动同步周期</span><select v-model.number="draft.mail.syncIntervalMinutes" @change="markChanged('MAIL')"><option :value="15">每15分钟</option><option :value="30">每30分钟</option><option :value="60">每1小时</option><option :value="120">每2小时</option></select></label><label><span>首次同步范围</span><select v-model.number="draft.mail.initialSyncDays" @change="markChanged('MAIL')"><option :value="30">近30天</option><option :value="90">近90天</option><option :value="180">近180天</option></select></label></div><h4>周报主题关键词</h4><div class="keyword-editor"><span v-for="(keyword,index) in draft.mail.subjectKeywords" :key="keyword" class="keyword-chip">{{ keyword }}<button type="button" :aria-label="`删除关键词“${keyword}”`" @click="draft.mail.subjectKeywords.splice(index,1);markChanged('MAIL')">×</button></span><label class="keyword-input"><input v-model="keywordInput" placeholder="输入后按回车" @keyup.enter.prevent="addKeyword('subject')"><button type="button" @click="addKeyword('subject')">添加</button></label></div><h4>正文风险显式标记</h4><div class="keyword-editor warning-keywords"><span v-for="(keyword,index) in draft.mail.riskKeywords" :key="keyword" class="keyword-chip">{{ keyword }}<button type="button" :aria-label="`删除风险关键词“${keyword}”`" @click="draft.mail.riskKeywords.splice(index,1);markChanged('MAIL')">×</button></span><label class="keyword-input"><input v-model="riskKeywordInput" placeholder="输入后按回车" @keyup.enter.prevent="addKeyword('risk')"><button type="button" @click="addKeyword('risk')">添加</button></label></div></section></div>
 
         <div v-else-if="activeSection==='alias'" class="config-content"><section class="config-card"><header><div><p>PROJECT ALIAS MAPPING</p><h3>项目名称映射</h3></div><button type="button" @click="openAlias()">＋ 新增项目别名</button></header><p>项目别名只用于匹配，不会修改Excel导入的标准项目名称。</p><input v-model="aliasSearch" class="config-search" placeholder="搜索标准项目或别名"><div class="admin-table-scroll"><table class="admin-table"><thead><tr><th>标准项目名称</th><th>项目编码</th><th>别名</th><th>来源</th><th>最近命中</th><th>操作</th></tr></thead><tbody><tr v-for="item in filteredAliases" :key="item.id ?? `${item.projectId}-${item.alias}`"><td><strong>{{ item.projectName }}</strong><small>负责人：{{ item.projectOwnerName ?? '未提供' }}</small></td><td>{{ item.projectCode ?? '未提供' }}</td><td><span class="alias-chip">{{ item.alias }}</span></td><td>{{ item.source }}</td><td>{{ item.lastHitAt ? formatTime(item.lastHitAt) : '尚未命中' }} · {{ item.hitCount }}次</td><td><button type="button" @click="openAlias(item)">编辑</button><button type="button" @click="item.isActive=!item.isActive;markChanged('ALIAS')">{{ item.isActive?'停用':'启用' }}</button></td></tr></tbody></table></div></section></div>
+
+        <div v-else-if="activeSection==='agentScope' && auth.user?.permissions.includes('agent.scope.manage')" class="config-content"><AgentScopeRulesPanel /></div>
 
         <div v-else-if="activeSection==='security'" class="config-content"><section class="config-card"><p>SESSION &amp; LOGIN PROTECTION</p><h3>会话参数</h3><p>修改后仅影响新建会话；现有会话按原到期时间结束。</p><div class="prototype-form"><label><span>登录会话有效期（小时）</span><input v-model.number="draft.security.sessionHours" type="number" min="1" max="24" @input="markChanged('SECURITY')"></label><label><span>无操作自动退出（分钟）</span><input v-model.number="draft.security.idleTimeoutMinutes" type="number" min="10" max="240" @input="markChanged('SECURITY')"></label><label><span>连续失败锁定阈值（次）</span><input v-model.number="draft.security.loginMaxAttempts" type="number" min="3" max="10" @input="markChanged('SECURITY')"></label><label><span>账号锁定时间（分钟）</span><input v-model.number="draft.security.loginLockMinutes" type="number" min="5" max="120" @input="markChanged('SECURITY')"></label><label class="full"><span>密码最小长度</span><input v-model.number="draft.security.passwordMinLength" type="number" min="8" max="128" @input="markChanged('SECURITY')"></label></div></section><section class="config-card"><p>SECURITY POLICY</p><h3>安全策略说明</h3><ul><li>前端不保存服务端会话明文 <b>HttpOnly · SameSite</b></li><li>首次登录必须修改初始密码 <b>其他会话注销</b></li><li>登录、邮箱测试和AI测试执行限流 <b>脱敏日志</b></li></ul></section></div>
 

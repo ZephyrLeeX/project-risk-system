@@ -32,8 +32,10 @@ import {
   type WeeklyReportResponse,
 } from "@/api/weekly-reports";
 import AgentMarkdown from "@/components/AgentMarkdown.vue";
+import AgentHistorySidebar from "@/components/agent/AgentHistorySidebar.vue";
 import ModalDialog from "@/components/ModalDialog.vue";
 import { agentApi, type AgentConversationListItem } from "@/api/agent";
+import { ApiError } from "@/api/http";
 import { useAgentConversation } from "@/composables/useAgentConversation";
 import { useAuthStore } from "@/stores/auth";
 import {
@@ -123,9 +125,27 @@ const agentInputDisabled = computed(
 );
 /** History switching is locked while a turn owns the conversation (RUNNING / cancelling / OPEN interaction / request in flight). */
 const agentHistoryDisabled = computed(() => agent.historySwitchDisabled.value);
-/** "My history" rows for the drawer, newest activity first. */
+/**
+ * "My history" rows for the sidebar, newest activity first — the loaded pages
+ * of the paginated `GET /agent/conversations` surface (never the full history
+ * of any conversation; that is only fetched per row on click).
+ */
 const agentHistory = ref<AgentConversationListItem[]>([]);
+const agentHistoryPage = ref(1);
+const agentHistoryTotal = ref(0);
 const agentHistoryLoading = ref(false);
+const agentHistoryLoadingMore = ref(false);
+/** Overlay-drawer open state for the history sidebar on narrow screens (<900px). */
+const agentHistoryDrawerOpen = ref(false);
+/** Conversation pending the delete confirmation modal. */
+const agentDeleteTargetId = ref<string | null>(null);
+const agentDeletingId = ref<string | null>(null);
+const agentDeleteError = ref("");
+/** One page of history per load; the sidebar grows via explicit "加载更多". */
+const AGENT_HISTORY_PAGE_SIZE = 20;
+const agentHistoryHasMore = computed(
+  () => agentHistory.value.length < agentHistoryTotal.value,
+);
 /** Submit-button label surfaces the cancelling drain as "取消中" and the in-flight send as "处理中". */
 const agentSendLabel = computed(() =>
   agent.state.status === "cancelling" ? "取消中" : agent.state.status === "loading" ? "处理中" : "发送",
@@ -419,6 +439,7 @@ function openAgent(): void {
 
 function closeAgent(): void {
   agentOpen.value = false;
+  agentHistoryDrawerOpen.value = false;
 }
 
 /** Start fresh locally; the first subsequent send lazily creates the new conversation. */
@@ -428,13 +449,15 @@ function startNewAgentConversation(): void {
   agentInput.value = "";
 }
 
-/** Load the caller's accessible conversations (newest activity first) for the history list. */
+/** Load the first page of the caller's conversations (newest activity first). */
 async function loadAgentHistory(): Promise<void> {
   if (agentHistoryLoading.value) return;
   agentHistoryLoading.value = true;
   try {
-    const page = await agentApi.listConversations(1, 20);
+    const page = await agentApi.listConversations(1, AGENT_HISTORY_PAGE_SIZE);
     agentHistory.value = page.items;
+    agentHistoryPage.value = 1;
+    agentHistoryTotal.value = page.total;
   } catch {
     // The history list is a convenience surface; a failure keeps the last
     // loaded rows (or empty) without blocking the drawer.
@@ -442,6 +465,42 @@ async function loadAgentHistory(): Promise<void> {
     agentHistoryLoading.value = false;
   }
 }
+
+/** Append the next history page; never duplicates an already-loaded row. */
+async function loadMoreAgentHistory(): Promise<void> {
+  if (agentHistoryLoadingMore.value || !agentHistoryHasMore.value) return;
+  agentHistoryLoadingMore.value = true;
+  try {
+    const page = await agentApi.listConversations(
+      agentHistoryPage.value + 1,
+      AGENT_HISTORY_PAGE_SIZE,
+    );
+    const loaded = new Set(agentHistory.value.map((item) => item.id));
+    const fresh = page.items.filter((item) => !loaded.has(item.id));
+    agentHistory.value = [...agentHistory.value, ...fresh];
+    agentHistoryPage.value = page.page;
+    agentHistoryTotal.value = page.total;
+  } catch {
+    // "加载更多" is best-effort; a failed page can be retried by clicking again.
+  } finally {
+    agentHistoryLoadingMore.value = false;
+  }
+}
+
+/**
+ * Refresh the first page quietly after a turn completes (or a conversation is
+ * created) so `updatedAt` ordering and titles stay current — without
+ * re-fetching the list on every SSE frame.
+ */
+watch(
+  () => agent.state.status,
+  (status, previous) => {
+    if (status !== "completed") return;
+    if (previous === "streaming" || previous === "cancelling" || previous === null) {
+      void loadAgentHistory();
+    }
+  },
+);
 
 /**
  * Switch the visible conversation to the clicked history row.
@@ -454,6 +513,53 @@ async function loadAgentHistory(): Promise<void> {
 function switchAgentConversation(conversationId: string): void {
   if (agent.historySwitchDisabled.value) return;
   void agent.switchToConversation(conversationId).then(loadAgentHistory);
+}
+
+function requestAgentConversationDelete(conversationId: string): void {
+  agentDeleteError.value = "";
+  agentDeleteTargetId.value = conversationId;
+}
+
+function cancelAgentConversationDelete(): void {
+  agentDeleteTargetId.value = null;
+  agentDeleteError.value = "";
+}
+
+/**
+ * Hide the confirmed conversation from the caller's history (server-side soft
+ * delete). Deleting the currently-viewed terminal conversation returns the UI
+ * to a fresh new-conversation state so no state points at the hidden row.
+ */
+async function confirmAgentConversationDelete(): Promise<void> {
+  const conversationId = agentDeleteTargetId.value;
+  if (!conversationId || agentDeletingId.value) return;
+  agentDeletingId.value = conversationId;
+  agentDeleteError.value = "";
+  try {
+    await agentApi.deleteConversation(conversationId);
+  } catch (reason) {
+    if (
+      reason instanceof ApiError &&
+      reason.status === 409 &&
+      reason.code === "AGENT_CONVERSATION_BUSY"
+    ) {
+      agentDeleteError.value = "当前会话仍在执行，请先停止后再删除。";
+    } else {
+      agentDeleteError.value =
+        reason instanceof Error ? reason.message : "删除历史会话失败，请稍后重试。";
+    }
+    return;
+  } finally {
+    agentDeletingId.value = null;
+  }
+  agentHistory.value = agentHistory.value.filter((item) => item.id !== conversationId);
+  agentHistoryTotal.value = Math.max(0, agentHistoryTotal.value - 1);
+  if (conversationId === agent.state.conversationId) {
+    // The visible conversation is gone; drop every reference to it and start
+    // a fresh one (same path as 新建会话 — no reload, no stale id).
+    startNewAgentConversation();
+  }
+  agentDeleteTargetId.value = null;
 }
 
 function sendAgent(prompt?: string): void {
@@ -2246,6 +2352,21 @@ onUnmounted(() => {
       :class="{ 'has-no-messages': !agent.state.messages.length && !agent.state.streamingText && agent.state.status === 'idle' }"
       aria-label="Agent智能对话"
     >
+      <AgentHistorySidebar
+        :conversations="agentHistory"
+        :current-conversation-id="agent.state.conversationId"
+        :disabled="agentHistoryDisabled"
+        :loading="agentHistoryLoading"
+        :has-more="agentHistoryHasMore"
+        :loading-more="agentHistoryLoadingMore"
+        :deleting-id="agentDeletingId"
+        v-model:mobile-open="agentHistoryDrawerOpen"
+        @new-conversation="startNewAgentConversation"
+        @select="switchAgentConversation"
+        @delete="requestAgentConversationDelete"
+        @load-more="loadMoreAgentHistory"
+      />
+      <div class="agent-main">
       <header>
         <div>
           <p>AGENT ASSISTANT</p>
@@ -2255,6 +2376,15 @@ onUnmounted(() => {
         <div class="agent-header-actions">
           <button
             type="button"
+            class="agent-history-toggle"
+            aria-label="打开历史会话"
+            @click="agentHistoryDrawerOpen = true"
+          >
+            历史
+          </button>
+          <button
+            type="button"
+            class="text-button"
             :disabled="agentInputDisabled"
             @click="startNewAgentConversation"
           >
@@ -2263,32 +2393,6 @@ onUnmounted(() => {
           <button type="button" aria-label="关闭" @click="closeAgent">×</button>
         </div>
       </header>
-
-      <section
-        v-if="agentHistory.length"
-        class="agent-history"
-        aria-label="历史会话"
-      >
-        <h3>历史会话</h3>
-        <ul>
-          <li
-            v-for="item in agentHistory"
-            :key="item.id"
-            :class="{ 'is-current': item.id === agent.state.conversationId }"
-          >
-            <button
-              type="button"
-              :disabled="agentHistoryDisabled"
-              :aria-disabled="agentHistoryDisabled"
-              :title="agentHistoryDisabled ? '当前有进行中的执行，请先完成或取消' : undefined"
-              @click="switchAgentConversation(item.id)"
-            >
-              <span class="agent-history-title">{{ item.title }}</span>
-              <span class="agent-history-time">{{ formatDateTime(item.updatedAt) }}</span>
-            </button>
-          </li>
-        </ul>
-      </section>
 
       <div v-if="!agent.state.messages.length && agent.state.status === 'idle'" class="agent-suggestions">
         <button
@@ -2425,6 +2529,28 @@ onUnmounted(() => {
           {{ agentSendLabel }}
         </button>
       </form>
+      </div>
+
+      <ModalDialog
+        v-if="agentDeleteTargetId"
+        eyebrow="DELETE CONVERSATION"
+        title="删除历史会话？"
+        @close="cancelAgentConversationDelete"
+      >
+        <p class="modal-copy">删除后该会话将不再出现在历史记录中。</p>
+        <p v-if="agentDeleteError" class="agent-form-error" role="alert">{{ agentDeleteError }}</p>
+        <template #footer>
+          <button type="button" :disabled="agentDeletingId !== null" @click="cancelAgentConversationDelete">取消</button>
+          <button
+            class="admin-danger-button"
+            type="button"
+            :disabled="agentDeletingId !== null"
+            @click="confirmAgentConversationDelete"
+          >
+            {{ agentDeletingId ? "删除中…" : "删除" }}
+          </button>
+        </template>
+      </ModalDialog>
     </aside>
     <button
       v-if="agentOpen"
