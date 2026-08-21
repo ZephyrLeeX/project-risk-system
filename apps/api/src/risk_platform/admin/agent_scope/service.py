@@ -37,6 +37,7 @@ from risk_platform.agent.scope_rules import (
     compile_scope_rule,
     compose_preview_snapshot,
     evaluate_with_snapshot,
+    validate_scope_rule_pattern,
 )
 from risk_platform.audit.models import AuditActorType
 from risk_platform.audit.service import AuditService
@@ -87,7 +88,7 @@ class AdminAgentScopeRulesService:
                 name=name,
                 decision=AgentScopeRuleDecision(payload.decision),
                 matchType=ScopeRuleMatchType(payload.matchType),
-                pattern=payload.pattern.strip(),
+                pattern=_validated_pattern(payload.pattern),
                 priority=payload.priority,
                 enabled=payload.enabled,
                 description=_normalize_optional(payload.description),
@@ -126,12 +127,14 @@ class AdminAgentScopeRulesService:
             if payload.matchType is not None:
                 rule.matchType = ScopeRuleMatchType(payload.matchType)
             if payload.pattern is not None:
-                rule.pattern = payload.pattern.strip()
+                rule.pattern = _validated_pattern(payload.pattern)
             if payload.priority is not None:
                 rule.priority = payload.priority
             if payload.enabled is not None:
                 rule.enabled = payload.enabled
-            if payload.description is not None:
+            # ``description`` is tri-state: omitted keeps the current value,
+            # explicit null or blank clears it, any other text is saved.
+            if "description" in payload.model_fields_set:
                 rule.description = _normalize_optional(payload.description)
             rule.version += 1
             await self._bump_revision(session)
@@ -296,15 +299,40 @@ class AdminAgentScopeRulesService:
             raise
 
 
+def _invalid_pattern_error(error: ValueError) -> ApiError:
+    return ApiError(422, "VALIDATION_ERROR", "规则模式无效：规范化后为空或超过长度上限")
+
+
+def _validated_pattern(pattern: str) -> str:
+    """Run the exact runtime validation before any database write.
+
+    NFKC can expand one character into many, so a raw pattern within the
+    request's 200-character limit may still normalize past the compile limit;
+    without this check such a rule would save successfully and then be
+    silently skipped by ``ScopeRuleStore.refresh``.
+    """
+
+    try:
+        return validate_scope_rule_pattern(pattern)
+    except ValueError as error:
+        raise _invalid_pattern_error(error) from error
+
+
 def _compile_row(rule: AgentScopeRule) -> CompiledScopeRule:
-    return compile_scope_rule(
-        rule_id=str(rule.id),
-        name=rule.name,
-        decision=ScopeDecision(rule.decision.value),
-        match_type=rule.matchType,
-        priority=rule.priority,
-        pattern=rule.pattern,
-    )
+    try:
+        return compile_scope_rule(
+            rule_id=str(rule.id),
+            name=rule.name,
+            decision=ScopeDecision(rule.decision.value),
+            match_type=rule.matchType,
+            priority=rule.priority,
+            pattern=rule.pattern,
+        )
+    except ValueError as error:
+        # Historical rows written before unified validation (or edited
+        # out-of-band) may persist an unusable pattern; a preview must fail
+        # with a controlled 422, never a 500.
+        raise _invalid_pattern_error(error) from error
 
 
 def _compile_candidate(candidate: ScopeRuleCandidateRule) -> CompiledScopeRule:
@@ -318,7 +346,7 @@ def _compile_candidate(candidate: ScopeRuleCandidateRule) -> CompiledScopeRule:
             pattern=candidate.pattern,
         )
     except ValueError as error:
-        raise ApiError(422, "VALIDATION_ERROR", "规则模式无效") from error
+        raise _invalid_pattern_error(error) from error
 
 
 def _rule_warnings(

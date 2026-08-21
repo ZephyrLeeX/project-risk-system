@@ -91,6 +91,23 @@ def _rule_sort_key(rule: CompiledScopeRule) -> tuple[int, int, int, str]:
     )
 
 
+def validate_scope_rule_pattern(pattern: str) -> str:
+    """Validate one pattern with the exact runtime rules; returns the normal form.
+
+    Single source of truth shared by the admin write paths (create/update/
+    preview) and the runtime compile: NFKC → trim → whitespace collapse, then
+    the normalized form must be non-empty and within ``MAX_RULE_PATTERN_LENGTH``.
+    Raises ``ValueError`` otherwise — so a pattern the API accepted can never
+    be silently skipped by ``ScopeRuleStore.refresh`` (NFKC can expand one
+    character into many, making the raw-length request check insufficient).
+    """
+
+    normalized = normalize_scope_text(pattern)
+    if not normalized or len(normalized) > MAX_RULE_PATTERN_LENGTH:
+        raise ValueError(f"invalid scope rule pattern: {pattern!r}")
+    return normalized
+
+
 def compile_scope_rule(
     *,
     rule_id: str,
@@ -106,16 +123,13 @@ def compile_scope_rule(
     admin /test preview so both compile rules identically.
     """
 
-    normalized = normalize_scope_text(pattern)
-    if not normalized or len(normalized) > MAX_RULE_PATTERN_LENGTH:
-        raise ValueError(f"invalid scope rule pattern: {pattern!r}")
     return CompiledScopeRule(
         rule_id=rule_id,
         name=name,
         decision=decision,
         match_type=match_type,
         priority=priority,
-        pattern=normalized,
+        pattern=validate_scope_rule_pattern(pattern),
     )
 
 
@@ -483,4 +497,5 @@ __all__ = [
     "compile_scope_rule",
     "compose_preview_snapshot",
     "evaluate_with_snapshot",
+    "validate_scope_rule_pattern",
 ]

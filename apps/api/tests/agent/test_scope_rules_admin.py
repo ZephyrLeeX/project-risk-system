@@ -9,7 +9,7 @@ import uuid
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import httpx2
 import pytest
@@ -36,6 +36,12 @@ from risk_platform.seed import SeedSettings, seed_reference_data
 
 ROOT = Path(__file__).resolve().parents[2]
 ORIGIN = {"origin": "https://web.internal"}
+
+# U+FDFA (ARABIC LIGATURE SALLALLAHOU ALAYHE WASALLAM) expands under NFKC
+# from one character to eighteen, so this pattern passes the raw 200-character
+# request check (length 12) but its normalized form (216 characters) exceeds
+# the runtime compile limit.
+NFKC_EXPANDING_PATTERN = "ﷺ" * 12
 
 
 @pytest.fixture(scope="module")
@@ -105,9 +111,11 @@ async def _identity(
 
 
 async def _client(
-    factory: async_sessionmaker[AsyncSession], identity: SessionIdentity
+    factory: async_sessionmaker[AsyncSession],
+    identity: SessionIdentity,
+    store: ScopeRuleStore | None = None,
 ) -> tuple[httpx2.AsyncClient, ScopeRuleStore]:
-    store = ScopeRuleStore(factory)  # poll-only; notify_changed refreshes locally
+    store = store or ScopeRuleStore(factory)  # poll-only; notify_changed refreshes locally
     service = AdminAgentScopeRulesService(factory, store)
 
     async def override_identity() -> SessionIdentity:
@@ -128,6 +136,38 @@ async def _client(
         httpx2.AsyncClient(transport=transport, base_url="https://testserver"),
         store,
     )
+
+
+async def _revision(factory: async_sessionmaker[AsyncSession]) -> int:
+    async with factory() as session:
+        revision = cast(
+            int,
+            (
+                await session.execute(
+                    text('SELECT "revision" FROM agent_scope_rule_revision WHERE id = 1')
+                )
+            ).scalar_one(),
+        )
+    return revision
+
+
+class _PublishProbe:
+    """Notifier double that records every published invalidation revision."""
+
+    def __init__(self) -> None:
+        self.published: list[int] = []
+
+    def subscribe(self, callback: object) -> None:
+        return None
+
+    async def publish(self, revision: int) -> None:
+        self.published.append(revision)
+
+    async def run(self) -> None:
+        return None
+
+    async def aclose(self) -> None:
+        return None
 
 
 def test_scope_rule_crud_lifecycle_audits_and_takes_effect(
@@ -430,6 +470,225 @@ def test_scope_rule_rejects_regex_match_type_and_invalid_payloads(
                 assert response.status_code == 422, payload
             listing = (await client.get("/api/admin/agent/scope-rules")).json()["data"]
             assert [item["name"] for item in listing if item["name"] == "正则规则"] == []
+        finally:
+            await client.aclose()
+
+    asyncio.run(scenario())
+
+
+def test_pattern_valid_only_after_nfkc_normalization_is_rejected_everywhere(
+    scope_rules_database: async_sessionmaker[AsyncSession],
+) -> None:
+    """A pattern within the raw 200-char limit but past it after NFKC never
+    reaches PG (create/update), and previews fail with 422, never 500."""
+
+    async def scenario() -> None:
+        identity = await _identity(scope_rules_database, ["agent.scope.manage"])
+        probe = _PublishProbe()
+        store = ScopeRuleStore(scope_rules_database, probe)
+        client, _ = await _client(scope_rules_database, identity, store)
+        try:
+            revision_before = await _revision(scope_rules_database)
+
+            # (A) create → 422, no row, revision unchanged, nothing published.
+            created = await client.post(
+                "/api/admin/agent/scope-rules",
+                headers=ORIGIN,
+                json={
+                    "name": "规范化超长规则",
+                    "decision": "BLOCK",
+                    "matchType": "PHRASE",
+                    "pattern": NFKC_EXPANDING_PATTERN,
+                },
+            )
+            assert created.status_code == 422
+            assert created.json()["code"] == "VALIDATION_ERROR"
+            async with scope_rules_database() as session:
+                count = (
+                    await session.execute(
+                        text(
+                            "SELECT COUNT(*) FROM agent_scope_rules "
+                            "WHERE name = '规范化超长规则'"
+                        )
+                    )
+                ).scalar_one()
+            assert count == 0
+            assert await _revision(scope_rules_database) == revision_before
+            assert probe.published == []
+
+            # (B) PATCH of a healthy rule to the same pattern → 422, the row
+            # (pattern, version) and the revision stay untouched.
+            healthy = await client.post(
+                "/api/admin/agent/scope-rules",
+                headers=ORIGIN,
+                json={
+                    "name": "正常短语规则",
+                    "decision": "BLOCK",
+                    "matchType": "PHRASE",
+                    "pattern": "预检短语",
+                },
+            )
+            assert healthy.status_code == 200
+            rule_id = healthy.json()["data"]["id"]
+            revision_after_create = await _revision(scope_rules_database)
+            patched = await client.patch(
+                f"/api/admin/agent/scope-rules/{rule_id}",
+                headers=ORIGIN,
+                json={"pattern": NFKC_EXPANDING_PATTERN, "version": 1},
+            )
+            assert patched.status_code == 422
+            assert patched.json()["code"] == "VALIDATION_ERROR"
+            listed = (await client.get("/api/admin/agent/scope-rules")).json()["data"]
+            untouched = next(item for item in listed if item["id"] == rule_id)
+            assert untouched["pattern"] == "预检短语"
+            assert untouched["version"] == 1
+            assert await _revision(scope_rules_database) == revision_after_create
+            assert probe.published == [revision_after_create]
+
+            # (C) an unsaved candidate with the same pattern → 422, not 500.
+            candidate = await client.post(
+                "/api/admin/agent/scope-rules/test",
+                headers=ORIGIN,
+                json={
+                    "message": "任意消息",
+                    "candidateRule": {
+                        "decision": "BLOCK",
+                        "matchType": "PHRASE",
+                        "pattern": NFKC_EXPANDING_PATTERN,
+                    },
+                },
+            )
+            assert candidate.status_code == 422
+            assert candidate.json()["code"] == "VALIDATION_ERROR"
+        finally:
+            await client.aclose()
+
+    asyncio.run(scenario())
+
+
+def test_legacy_invalid_persisted_pattern_previews_with_422_not_500(
+    scope_rules_database: async_sessionmaker[AsyncSession],
+) -> None:
+    """A row whose pattern predates unified validation (or was edited
+    out-of-band) is defensively skipped at runtime, and its ruleId preview
+    returns a controlled 422 instead of crashing."""
+
+    async def scenario() -> None:
+        identity = await _identity(scope_rules_database, ["agent.scope.manage"])
+        client, store = await _client(scope_rules_database, identity)
+        try:
+            created = await client.post(
+                "/api/admin/agent/scope-rules",
+                headers=ORIGIN,
+                json={
+                    "name": "历史脏数据规则",
+                    "decision": "BLOCK",
+                    "matchType": "PHRASE",
+                    "pattern": "历史专用短语",
+                },
+            )
+            assert created.status_code == 200
+            rule_id = created.json()["data"]["id"]
+
+            # Simulate a legacy row: an out-of-band edit writes a pattern that
+            # passes the DB checks (non-blank, within String(200)) but fails
+            # the runtime compile after NFKC expansion; the revision moves so
+            # caches see the edit.
+            async with transaction(scope_rules_database) as session:
+                await session.execute(
+                    text(
+                        "UPDATE agent_scope_rules SET pattern = :pattern, "
+                        '"enabled" = true, "version" = "version" + 1 '
+                        "WHERE id = CAST(:rule_id AS uuid)"
+                    ).bindparams(pattern=NFKC_EXPANDING_PATTERN, rule_id=rule_id)
+                )
+                await session.execute(
+                    text('UPDATE agent_scope_rule_revision SET "revision" = "revision" + 1')
+                )
+            await store.probe()
+            snapshot = store.get_snapshot()
+            assert all(rule.rule_id != rule_id for rule in snapshot.rules)
+
+            preview = await client.post(
+                "/api/admin/agent/scope-rules/test",
+                headers=ORIGIN,
+                json={"message": "任意消息", "ruleId": rule_id},
+            )
+            assert preview.status_code == 422
+            assert preview.json()["code"] == "VALIDATION_ERROR"
+        finally:
+            await client.aclose()
+
+    asyncio.run(scenario())
+
+
+def test_update_description_field_semantics(
+    scope_rules_database: async_sessionmaker[AsyncSession],
+) -> None:
+    """PATCH description is tri-state: omitted keeps the value, explicit null
+    or blank clears it, and a non-blank value is saved."""
+
+    async def scenario() -> None:
+        identity = await _identity(scope_rules_database, ["agent.scope.manage"])
+        client, _ = await _client(scope_rules_database, identity)
+        try:
+            created = await client.post(
+                "/api/admin/agent/scope-rules",
+                headers=ORIGIN,
+                json={
+                    "name": "描述语义规则",
+                    "decision": "BLOCK",
+                    "matchType": "PHRASE",
+                    "pattern": "描述专用短语",
+                    "description": "初始描述",
+                },
+            )
+            assert created.status_code == 200
+            rule_id = created.json()["data"]["id"]
+
+            # Omitted → keeps the current description.
+            kept = await client.patch(
+                f"/api/admin/agent/scope-rules/{rule_id}",
+                headers=ORIGIN,
+                json={"version": 1},
+            )
+            assert kept.status_code == 200
+            assert kept.json()["data"]["description"] == "初始描述"
+
+            # Explicit null → clears to NULL (distinct from "not provided").
+            cleared = await client.patch(
+                f"/api/admin/agent/scope-rules/{rule_id}",
+                headers=ORIGIN,
+                json={"version": 2, "description": None},
+            )
+            assert cleared.status_code == 200
+            assert cleared.json()["data"]["description"] is None
+
+            # A value → saved (trimmed by the existing normalization).
+            saved = await client.patch(
+                f"/api/admin/agent/scope-rules/{rule_id}",
+                headers=ORIGIN,
+                json={"version": 3, "description": "abc"},
+            )
+            assert saved.status_code == 200
+            assert saved.json()["data"]["description"] == "abc"
+
+            # Blank / whitespace-only → clears to NULL.
+            blanked = await client.patch(
+                f"/api/admin/agent/scope-rules/{rule_id}",
+                headers=ORIGIN,
+                json={"version": 4, "description": "   "},
+            )
+            assert blanked.status_code == 200
+            assert blanked.json()["data"]["description"] is None
+
+            async with scope_rules_database() as session:
+                row = await session.scalar(
+                    select(AgentScopeRule).where(AgentScopeRule.id == uuid.UUID(rule_id))
+                )
+            assert row is not None
+            assert row.description is None
+            assert row.version == 5
         finally:
             await client.aclose()
 
