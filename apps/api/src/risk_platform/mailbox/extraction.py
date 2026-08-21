@@ -390,6 +390,30 @@ class MailRiskExtractionWorker:
                     )
                 ).all()
             )
+            # Fetched inside the session block: querying on the session after
+            # its context manager exits would open a new transaction that is
+            # never committed or closed, leaking an idle-in-transaction
+            # connection (observed blocking schema teardown and holding locks).
+            resolved_matches = (
+                []
+                if message is None
+                else matches
+                if message.resolvedProjectId is None
+                else [
+                    item for item in matches if item.projectId == message.resolvedProjectId
+                ]
+            )
+            projects = (
+                []
+                if not resolved_matches
+                else (
+                    await session.scalars(
+                        select(Project).where(
+                            Project.id.in_(item.projectId for item in resolved_matches)
+                        )
+                    )
+                ).all()
+            )
         if (
             message is not None
             and message.projectResolutionStatus is MailProjectResolutionStatus.WAITING_CONFIRMATION
@@ -411,13 +435,9 @@ class MailRiskExtractionWorker:
             )
             for i, x in enumerate(categories, 1)
         ]
-        if message.resolvedProjectId is not None:
-            matches = [item for item in matches if item.projectId == message.resolvedProjectId]
+        matches = resolved_matches
         project_map = {f"P{i}": item.projectId for i, item in enumerate(matches, 1)}
         request = _provider_payload(body, attachments, source_date, options)
-        projects = (
-            await session.scalars(select(Project).where(Project.id.in_(project_map.values())))
-        ).all()
         project_names = {project.id: project.name for project in projects}
         request["project_options"] = [
             {"option_id": option_id, "name": project_names[project_id]}

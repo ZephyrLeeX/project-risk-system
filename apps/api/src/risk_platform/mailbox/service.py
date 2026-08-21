@@ -19,6 +19,8 @@ from risk_platform.mailbox.models import (
     MailboxConnectionStatus,
     MailboxEncryption,
     MailboxProvider,
+    MailMessage,
+    MailMessageSkipReason,
     MailSyncBatch,
     MailSyncStatus,
     MailSyncTrigger,
@@ -241,7 +243,18 @@ class MailboxService:
                 )
             )
             if running is not None:
-                return self._batch_response(running)
+                running_duplicates = (
+                    await session.scalar(
+                        select(func.count())
+                        .select_from(MailMessage)
+                        .where(
+                            MailMessage.batchId == running.id,
+                            MailMessage.skipReason == MailMessageSkipReason.DUPLICATE,
+                        )
+                    )
+                    or 0
+                )
+                return self._batch_response(running, duplicate_count=int(running_duplicates))
             code = f"MAIL-{datetime.now(UTC):%Y%m%d%H%M%S}-{uuid4().hex[:8].upper()}"
             task = await enqueue_task(
                 session,
@@ -418,7 +431,9 @@ class MailboxService:
         )
 
     @staticmethod
-    def _batch_response(batch: MailSyncBatch) -> MailSyncBatchResponse:
+    def _batch_response(
+        batch: MailSyncBatch, *, duplicate_count: int = 0
+    ) -> MailSyncBatchResponse:
         return MailSyncBatchResponse(
             id=str(batch.id),
             code=batch.code,
@@ -431,7 +446,9 @@ class MailboxService:
             finishedAt=batch.finishedAt.isoformat() if batch.finishedAt else None,
             discoveredCount=batch.discoveredCount,
             handedOffCount=batch.handedOffCount,
-            duplicateCount=max(batch.discoveredCount - batch.handedOffCount, 0),
+            # Real Message-ID-dedup skips, not the discovered-minus-handed-off
+            # heuristic (which the weekly-report filter turned into FILTERED mail).
+            duplicateCount=duplicate_count,
             downstreamPendingCount=batch.downstreamPendingCount,
             scannedCount=batch.scannedCount,
             newCount=batch.newCount,

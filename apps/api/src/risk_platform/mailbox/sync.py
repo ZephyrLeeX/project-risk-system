@@ -139,6 +139,13 @@ class MailboxSyncService:
                     batch.startUid = min(scanned_uids)
                     batch.endUid = max(scanned_uids)
                 batch.skippedCount = len(skipped_uids)
+                # The session factory runs with autoflush=False, so the
+                # handoff facts added above are not yet visible to queries.
+                # Flush them explicitly: _refresh_batch must count every
+                # handoff created in this transaction, otherwise the batch
+                # statistics and the cursor decision would depend on which
+                # rows a later enqueue_task happened to flush.
+                await session.flush()
                 await self._refresh_batch(session, batch, current)
         except MailSyncError as exc:
             await self._fail_batch(batch_id, exc)
