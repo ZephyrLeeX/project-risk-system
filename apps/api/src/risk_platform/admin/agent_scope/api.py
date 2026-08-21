@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 
 from risk_platform.admin.agent_scope.schemas import (
     CreateScopeRuleRequest,
@@ -92,12 +92,16 @@ async def update_scope_rule(
 async def delete_scope_rule(
     request: Request,
     rule_id: UUID,
+    # Optimistic-lock token (query param — DELETE carries no body): a delete
+    # built from a stale read must 409 instead of clobbering another admin's
+    # change.  The rule itself is soft-deleted, never hard-deleted.
+    version: Annotated[int, Query(ge=1)],
     identity: Annotated[SessionIdentity, Depends(require_permissions("agent.scope.manage"))],
     service: Annotated[
         AdminAgentScopeRulesService, Depends(get_admin_agent_scope_service)
     ],
 ) -> ApiResponse[None]:
-    await service.remove(rule_id, identity, UUID(get_trace_id(request)))
+    await service.remove(rule_id, version, identity, UUID(get_trace_id(request)))
     return ok(request, None, "范围规则已删除")
 
 
@@ -115,7 +119,7 @@ async def test_scope_rule(
     ],
 ) -> ApiResponse[ScopeRuleTestResponse]:
     del identity
-    return ok(request, await service.test(payload.message))
+    return ok(request, await service.test(payload))
 
 
 __all__ = ["get_admin_agent_scope_service", "router"]

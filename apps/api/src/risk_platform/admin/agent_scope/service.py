@@ -8,24 +8,36 @@ from datetime import UTC, datetime
 from typing import cast
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from risk_platform.admin.agent_scope.schemas import (
+    PREVIEW_CANDIDATE_LABEL,
     CreateScopeRuleRequest,
+    ScopeRuleCandidateRule,
     ScopeRuleDecisionValue,
     ScopeRuleResponse,
     ScopeRuleTestMatch,
+    ScopeRuleTestRequest,
     ScopeRuleTestResponse,
+    ScopeRuleWarning,
     UpdateScopeRuleRequest,
 )
+from risk_platform.admin.agent_scope.warnings import analyze_scope_rule_warnings
 from risk_platform.agent.models import (
     AgentScopeRule,
     AgentScopeRuleDecision,
     AgentScopeRuleRevision,
 )
-from risk_platform.agent.scope import ScopeEvaluation, ScopeRuleMatchType
-from risk_platform.agent.scope_rules import ScopeRuleStore, evaluate_with_snapshot
+from risk_platform.agent.scope import ScopeDecision, ScopeEvaluation, ScopeRuleMatchType
+from risk_platform.agent.scope_rules import (
+    CompiledScopeRule,
+    ScopeRuleStore,
+    compile_scope_rule,
+    compose_preview_snapshot,
+    evaluate_with_snapshot,
+)
 from risk_platform.audit.models import AuditActorType
 from risk_platform.audit.service import AuditService
 from risk_platform.auth.service import SessionIdentity
@@ -130,11 +142,19 @@ class AdminAgentScopeRulesService:
         assert response is not None
         return response
 
-    async def remove(self, rule_id: UUID, identity: SessionIdentity, trace_id: UUID) -> None:
+    async def remove(
+        self,
+        rule_id: UUID,
+        version: int,
+        identity: SessionIdentity,
+        trace_id: UUID,
+    ) -> None:
         async with self._mutation_transaction(
             identity, trace_id, "ADMIN_SCOPE_RULE_DELETED", rule_id
         ) as session:
             rule = await self._rule_or_error(session, rule_id)
+            if rule.version != version:
+                raise ApiError(409, "CONFLICT", "规则已被他人修改，请刷新后重试")
             rule.deletedAt = datetime.now(UTC)
             rule.version += 1
             await self._bump_revision(session)
@@ -142,15 +162,58 @@ class AdminAgentScopeRulesService:
             await session.flush()
         await self._store.notify_changed()
 
-    async def test(self, message: str) -> ScopeRuleTestResponse:
-        """Evaluate a message against live runtime rules plus the builtin baseline."""
+    async def test(self, payload: ScopeRuleTestRequest) -> ScopeRuleTestResponse:
+        """Evaluate a message, optionally previewing one non-live rule.
+
+        Read-only: no row is written, no ``enabled``/``version``/revision
+        changes, no cache swap, no invalidation publish.  A preview combines
+        the live snapshot with the candidate using the exact production
+        ordering (``compose_preview_snapshot``), so the result is what Layer 1
+        *would* decide if the rule were enabled.
+        """
 
         with suppress(Exception):
             # Freshest rules without waiting for the TTL; a PG hiccup here
             # must not break testing — the last good snapshot still evaluates.
             await self._store.probe()
-        evaluation = evaluate_with_snapshot(message, self._store.get_snapshot())
-        return _map_evaluation(evaluation)
+        snapshot = self._store.get_snapshot()
+        preview_rule_id: str | None = None
+        warnings: list[ScopeRuleWarning] = []
+        if payload.ruleId is not None:
+            rule = await self._previewable_rule(payload.ruleId)
+            candidate = _compile_row(rule)
+            preview_rule_id = str(rule.id)
+            snapshot = compose_preview_snapshot(
+                snapshot, candidate, exclude_rule_id=str(rule.id)
+            )
+            warnings = _rule_warnings(rule.decision.value, rule.matchType.value, rule.pattern)
+        elif payload.candidateRule is not None:
+            candidate_rule = payload.candidateRule
+            candidate = _compile_candidate(candidate_rule)
+            snapshot = compose_preview_snapshot(snapshot, candidate)
+            warnings = _rule_warnings(
+                candidate_rule.decision, candidate_rule.matchType, candidate_rule.pattern
+            )
+        evaluation = evaluate_with_snapshot(payload.message, snapshot)
+        return _map_evaluation(
+            evaluation,
+            preview=payload.ruleId is not None or payload.candidateRule is not None,
+            preview_rule_id=preview_rule_id,
+            warnings=warnings,
+        )
+
+    async def _previewable_rule(self, rule_id: UUID) -> AgentScopeRule:
+        """Load one non-deleted rule for preview; ``enabled`` may be false."""
+
+        async with self._session_factory() as session:
+            rule = await session.scalar(
+                select(AgentScopeRule).where(
+                    AgentScopeRule.id == rule_id, AgentScopeRule.deletedAt.is_(None)
+                )
+            )
+        if rule is None:
+            raise ApiError(404, "NOT_FOUND", "范围规则不存在")
+        return rule
 
     async def _rule_or_error(self, session: AsyncSession, rule_id: UUID) -> AgentScopeRule:
         rule = await session.scalar(
@@ -172,10 +235,21 @@ class AdminAgentScopeRulesService:
             raise ApiError(409, "CONFLICT", "同名范围规则已存在")
 
     async def _bump_revision(self, session: AsyncSession) -> None:
+        """Atomically bump the single-row revision, self-healing a missing row.
+
+        A plain ``UPDATE ... SET revision = revision + 1`` silently affects
+        zero rows when the revision row is missing, after which every cache
+        stops noticing changes forever.  The upsert guarantees the row exists
+        and moves monotonically within the caller's mutation transaction.
+        """
+
         await session.execute(
-            update(AgentScopeRuleRevision)
-            .where(AgentScopeRuleRevision.id == 1)
-            .values(revision=AgentScopeRuleRevision.revision + 1)
+            pg_insert(AgentScopeRuleRevision)
+            .values(id=1, revision=1)
+            .on_conflict_do_update(
+                index_elements=[AgentScopeRuleRevision.id],
+                set_={"revision": AgentScopeRuleRevision.revision + 1},
+            )
         )
 
     async def _audit(
@@ -222,6 +296,37 @@ class AdminAgentScopeRulesService:
             raise
 
 
+def _compile_row(rule: AgentScopeRule) -> CompiledScopeRule:
+    return compile_scope_rule(
+        rule_id=str(rule.id),
+        name=rule.name,
+        decision=ScopeDecision(rule.decision.value),
+        match_type=rule.matchType,
+        priority=rule.priority,
+        pattern=rule.pattern,
+    )
+
+
+def _compile_candidate(candidate: ScopeRuleCandidateRule) -> CompiledScopeRule:
+    try:
+        return compile_scope_rule(
+            rule_id="",
+            name=PREVIEW_CANDIDATE_LABEL,
+            decision=ScopeDecision(candidate.decision),
+            match_type=ScopeRuleMatchType(candidate.matchType),
+            priority=candidate.priority,
+            pattern=candidate.pattern,
+        )
+    except ValueError as error:
+        raise ApiError(422, "VALIDATION_ERROR", "规则模式无效") from error
+
+
+def _rule_warnings(
+    decision: str, match_type: str, pattern: str
+) -> list[ScopeRuleWarning]:
+    return analyze_scope_rule_warnings(decision, match_type, pattern)
+
+
 def _map_rule(rule: AgentScopeRule) -> ScopeRuleResponse:
     if rule.createdAt is None or rule.updatedAt is None:
         raise RuntimeError("agent scope rule timestamps were not populated")
@@ -242,10 +347,17 @@ def _map_rule(rule: AgentScopeRule) -> ScopeRuleResponse:
         updatedAt=rule.updatedAt.astimezone(UTC)
         .isoformat(timespec="milliseconds")
         .replace("+00:00", "Z"),
+        warnings=_rule_warnings(rule.decision.value, rule.matchType.value, rule.pattern),
     )
 
 
-def _map_evaluation(evaluation: ScopeEvaluation) -> ScopeRuleTestResponse:
+def _map_evaluation(
+    evaluation: ScopeEvaluation,
+    *,
+    preview: bool = False,
+    preview_rule_id: str | None = None,
+    warnings: list[ScopeRuleWarning] | None = None,
+) -> ScopeRuleTestResponse:
     matched: ScopeRuleTestMatch | None = None
     if evaluation.source.value == "RUNTIME_RULE" and evaluation.match is not None:
         match = evaluation.match
@@ -260,6 +372,9 @@ def _map_evaluation(evaluation: ScopeEvaluation) -> ScopeRuleTestResponse:
         decision=evaluation.decision.value,
         source=evaluation.source.value,
         matchedRule=matched,
+        preview=preview,
+        previewRuleId=preview_rule_id,
+        warnings=warnings or [],
     )
 
 

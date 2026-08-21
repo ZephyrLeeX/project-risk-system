@@ -309,4 +309,4 @@ def test_openapi_surface_contains_provider_v2_additive_paths() -> None:
     (and its ApiResponse wrapper)."""
     schema = build_openapi()
     assert len(schema["paths"]) == 111
-    assert len(schema["components"]["schemas"]) == 284
+    assert len(schema["components"]["schemas"]) == 286

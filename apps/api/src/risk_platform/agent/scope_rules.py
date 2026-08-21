@@ -91,6 +91,34 @@ def _rule_sort_key(rule: CompiledScopeRule) -> tuple[int, int, int, str]:
     )
 
 
+def compile_scope_rule(
+    *,
+    rule_id: str,
+    name: str,
+    decision: ScopeDecision,
+    match_type: ScopeRuleMatchType,
+    priority: int,
+    pattern: str,
+) -> CompiledScopeRule:
+    """Normalize and compile one rule; raises ``ValueError`` on an unusable pattern.
+
+    Shared by the live snapshot load (``ScopeRuleStore.refresh``) and the
+    admin /test preview so both compile rules identically.
+    """
+
+    normalized = normalize_scope_text(pattern)
+    if not normalized or len(normalized) > MAX_RULE_PATTERN_LENGTH:
+        raise ValueError(f"invalid scope rule pattern: {pattern!r}")
+    return CompiledScopeRule(
+        rule_id=rule_id,
+        name=name,
+        decision=decision,
+        match_type=match_type,
+        priority=priority,
+        pattern=normalized,
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class ScopeRuleSnapshot:
     """Immutable compiled view of all enabled, non-deleted rules."""
@@ -103,7 +131,14 @@ EMPTY_SNAPSHOT = ScopeRuleSnapshot(rules=(), revision=_EMPTY_SNAPSHOT_REVISION)
 
 
 def evaluate_with_snapshot(message: str, snapshot: ScopeRuleSnapshot) -> ScopeEvaluation:
-    """Runtime rules first (first match in sort order wins), then the builtin baseline."""
+    """Runtime rules first (first match in sort order wins), then the builtin baseline.
+
+    Runtime rules are administrative overrides: a runtime hit — including a
+    BLOCK rule — always wins over the builtin baseline, so an admin can
+    deliberately override builtin ALLOW.  This is intended behaviour, not a
+    bug; the admin /test preview surface and the broad-BLOCK warnings make the
+    override power visible before a rule goes live.
+    """
 
     text = normalize_scope_text(message)
     if not text:
@@ -116,6 +151,31 @@ def evaluate_with_snapshot(message: str, snapshot: ScopeRuleSnapshot) -> ScopeEv
                 ScopeMatch(rule.rule_id, rule.name, rule.match_type, rule.priority),
             )
     return ScopePolicy().evaluate_normalized(text)
+
+
+def compose_preview_snapshot(
+    snapshot: ScopeRuleSnapshot,
+    candidate: CompiledScopeRule,
+    *,
+    exclude_rule_id: str | None = None,
+) -> ScopeRuleSnapshot:
+    """Combine the live snapshot with one preview candidate for /test.
+
+    Uses exactly the production ``_rule_sort_key`` ordering (priority desc →
+    specificity → BLOCK > ALLOW → stable name tie breaker), so the preview
+    shows what Layer 1 *would* decide if the candidate were enabled —
+    including losing to or overriding an existing live rule.  Pure function:
+    it never mutates the store's live snapshot.
+    """
+
+    rules = [
+        rule
+        for rule in snapshot.rules
+        if exclude_rule_id is None or rule.rule_id != exclude_rule_id
+    ]
+    rules.append(candidate)
+    rules.sort(key=_rule_sort_key)
+    return ScopeRuleSnapshot(tuple(rules), snapshot.revision)
 
 
 class ScopeRuleNotifier(Protocol):
@@ -303,22 +363,22 @@ class ScopeRuleStore:
                 rows = list(result.scalars().all())
             rules: list[CompiledScopeRule] = []
             for row in rows:
-                pattern = normalize_scope_text(row.pattern)
-                if not pattern or len(pattern) > MAX_RULE_PATTERN_LENGTH:
+                try:
+                    rules.append(
+                        compile_scope_rule(
+                            rule_id=str(row.id),
+                            name=row.name,
+                            decision=ScopeDecision(row.decision.value),
+                            match_type=row.matchType,
+                            priority=row.priority,
+                            pattern=row.pattern,
+                        )
+                    )
+                except ValueError:
                     logger.warning(
                         "agent scope rule skipped rule_id=%s reason=invalid_pattern", row.id
                     )
                     continue
-                rules.append(
-                    CompiledScopeRule(
-                        rule_id=str(row.id),
-                        name=row.name,
-                        decision=ScopeDecision(row.decision.value),
-                        match_type=row.matchType,
-                        priority=row.priority,
-                        pattern=pattern,
-                    )
-                )
             rules.sort(key=_rule_sort_key)
             self._snapshot = ScopeRuleSnapshot(tuple(rules), revision)
             self._last_probe = self._clock()
@@ -420,5 +480,7 @@ __all__ = [
     "ScopeRuleNotifier",
     "ScopeRuleSnapshot",
     "ScopeRuleStore",
+    "compile_scope_rule",
+    "compose_preview_snapshot",
     "evaluate_with_snapshot",
 ]

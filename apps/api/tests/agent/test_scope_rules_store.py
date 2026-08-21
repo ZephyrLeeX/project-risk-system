@@ -362,6 +362,42 @@ def test_pg_failure_serves_stale_snapshot(
     asyncio.run(scenario())
 
 
+def test_runtime_block_rule_overrides_builtin_allow(
+    database: async_sessionmaker[AsyncSession],
+) -> None:
+    """Frozen semantics: runtime rules are administrative overrides.
+
+    A runtime BLOCK hit wins over the builtin ALLOW baseline (a domain term
+    in the message is irrelevant once the override matches).  This is
+    intentional admin power, not a bug; the /test preview surface and the
+    broad-BLOCK warnings exist to make it visible.
+    """
+
+    async def scenario() -> None:
+        await _insert(
+            database,
+            _rule("override-block", _BLOCK, ScopeRuleMatchType.PHRASE, "项目", priority=50),
+        )
+        store = ScopeRuleStore(database, poll_interval=0)
+        await store.refresh()
+
+        # "当前项目有哪些风险" would be builtin ALLOW; the runtime override
+        # blocks it because runtime rules run before the builtin baseline.
+        evaluation = evaluate_with_snapshot("当前项目有哪些风险", store.get_snapshot())
+        assert evaluation.decision is ScopeDecision.BLOCK
+        assert evaluation.source is ScopeDecisionSource.RUNTIME_RULE
+        assert evaluation.match is not None
+        assert evaluation.match.rule_name == "override-block"
+
+        # Without the override the same text is builtin ALLOW.
+        empty = ScopeRuleStore(database, poll_interval=0)
+        baseline = evaluate_with_snapshot("当前项目有哪些风险", empty.get_snapshot())
+        assert baseline.decision is ScopeDecision.ALLOW
+        assert baseline.source is ScopeDecisionSource.BUILTIN
+
+    asyncio.run(scenario())
+
+
 def test_redis_notifier_delivers_invalidation_to_real_redis(
     database: async_sessionmaker[AsyncSession],
 ) -> None:

@@ -6047,6 +6047,32 @@ export interface components {
             /** Title */
             title: string;
         };
+        /**
+         * ScopeRuleCandidateRule
+         * @description An unsaved rule to preview with /test before writing anything to PG.
+         *
+         *     Identity fields (id, name, enabled, version) are deliberately absent:
+         *     a candidate is ephemeral and produces no runtime side effects.
+         */
+        ScopeRuleCandidateRule: {
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "ALLOW" | "BLOCK";
+            /**
+             * Matchtype
+             * @enum {string}
+             */
+            matchType: "EXACT" | "PHRASE";
+            /** Pattern */
+            pattern: string;
+            /**
+             * Priority
+             * @default 0
+             */
+            priority: number;
+        };
         /** ScopeRuleResponse */
         ScopeRuleResponse: {
             /** Createdat */
@@ -6079,6 +6105,8 @@ export interface components {
             updatedAt: string;
             /** Version */
             version: number;
+            /** Warnings */
+            warnings?: components["schemas"]["ScopeRuleWarning"][];
         };
         /** ScopeRuleTestMatch */
         ScopeRuleTestMatch: {
@@ -6099,12 +6127,31 @@ export interface components {
             /** Priority */
             priority: number;
         };
-        /** ScopeRuleTestRequest */
+        /**
+         * ScopeRuleTestRequest
+         * @description Evaluate a message against the live policy, optionally plus one candidate.
+         *
+         *     ``ruleId`` (a saved rule — may be disabled) and ``candidateRule`` (an
+         *     unsaved draft) are mutually exclusive.  Without either, the message is
+         *     evaluated against the current live policy only.
+         */
         ScopeRuleTestRequest: {
+            candidateRule?: components["schemas"]["ScopeRuleCandidateRule"] | null;
             /** Message */
             message: string;
+            /** Ruleid */
+            ruleId?: string | null;
         };
-        /** ScopeRuleTestResponse */
+        /**
+         * ScopeRuleTestResponse
+         * @description Layer-1 result of a /test evaluation.
+         *
+         *     ``preview`` is true when the evaluation included a rule that is *not*
+         *     live (a disabled saved rule or an unsaved candidate).  A previewed
+         *     ``RUNTIME_RULE`` match on a candidate has ``matchedRule.id == ""`` and
+         *     ``matchedRule.name == "(预览规则)"``; it must not be mistaken for an
+         *     already-effective rule.
+         */
         ScopeRuleTestResponse: {
             /**
              * Decision
@@ -6113,10 +6160,35 @@ export interface components {
             decision: "ALLOW" | "BLOCK" | "DEFER";
             matchedRule: components["schemas"]["ScopeRuleTestMatch"] | null;
             /**
+             * Preview
+             * @default false
+             */
+            preview: boolean;
+            /** Previewruleid */
+            previewRuleId?: string | null;
+            /**
              * Source
              * @enum {string}
              */
             source: "BUILTIN" | "RUNTIME_RULE" | "DEFAULT";
+            /** Warnings */
+            warnings?: components["schemas"]["ScopeRuleWarning"][];
+        };
+        /**
+         * ScopeRuleWarning
+         * @description Advisory notice that a rule may override normal business traffic.
+         *
+         *     Warnings never block a save; they exist because runtime rules are
+         *     administrative overrides evaluated before the builtin ALLOW baseline.
+         */
+        ScopeRuleWarning: {
+            /**
+             * Code
+             * @enum {string}
+             */
+            code: "BROAD_BLOCK_RULE" | "SHORT_BLOCK_PATTERN";
+            /** Message */
+            message: string;
         };
         /** SecuritySettings */
         SecuritySettings: {
@@ -6749,7 +6821,9 @@ export interface operations {
     };
     delete_scope_rule_api_admin_agent_scope_rules__rule_id__delete: {
         parameters: {
-            query?: never;
+            query: {
+                version: number;
+            };
             header?: never;
             path: {
                 rule_id: string;

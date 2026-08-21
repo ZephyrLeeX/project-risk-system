@@ -11847,6 +11847,48 @@
         "title": "SameProjectRisk",
         "type": "object"
       },
+      "ScopeRuleCandidateRule": {
+        "additionalProperties": false,
+        "description": "An unsaved rule to preview with /test before writing anything to PG.\n\nIdentity fields (id, name, enabled, version) are deliberately absent:\na candidate is ephemeral and produces no runtime side effects.",
+        "properties": {
+          "decision": {
+            "enum": [
+              "ALLOW",
+              "BLOCK"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "matchType": {
+            "enum": [
+              "EXACT",
+              "PHRASE"
+            ],
+            "title": "Matchtype",
+            "type": "string"
+          },
+          "pattern": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Pattern",
+            "type": "string"
+          },
+          "priority": {
+            "default": 0,
+            "maximum": 1000.0,
+            "minimum": 0.0,
+            "title": "Priority",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "decision",
+          "matchType",
+          "pattern"
+        ],
+        "title": "ScopeRuleCandidateRule",
+        "type": "object"
+      },
       "ScopeRuleResponse": {
         "additionalProperties": false,
         "properties": {
@@ -11919,6 +11961,13 @@
           "version": {
             "title": "Version",
             "type": "integer"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ScopeRuleWarning"
+            },
+            "title": "Warnings",
+            "type": "array"
           }
         },
         "required": [
@@ -11982,12 +12031,35 @@
       },
       "ScopeRuleTestRequest": {
         "additionalProperties": false,
+        "description": "Evaluate a message against the live policy, optionally plus one candidate.\n\n``ruleId`` (a saved rule — may be disabled) and ``candidateRule`` (an\nunsaved draft) are mutually exclusive.  Without either, the message is\nevaluated against the current live policy only.",
         "properties": {
+          "candidateRule": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScopeRuleCandidateRule"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "message": {
             "maxLength": 500,
             "minLength": 1,
             "title": "Message",
             "type": "string"
+          },
+          "ruleId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ruleid"
           }
         },
         "required": [
@@ -11998,6 +12070,7 @@
       },
       "ScopeRuleTestResponse": {
         "additionalProperties": false,
+        "description": "Layer-1 result of a /test evaluation.\n\n``preview`` is true when the evaluation included a rule that is *not*\nlive (a disabled saved rule or an unsaved candidate).  A previewed\n``RUNTIME_RULE`` match on a candidate has ``matchedRule.id == \"\"`` and\n``matchedRule.name == \"(预览规则)\"``; it must not be mistaken for an\nalready-effective rule.",
         "properties": {
           "decision": {
             "enum": [
@@ -12018,6 +12091,22 @@
               }
             ]
           },
+          "preview": {
+            "default": false,
+            "title": "Preview",
+            "type": "boolean"
+          },
+          "previewRuleId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previewruleid"
+          },
           "source": {
             "enum": [
               "BUILTIN",
@@ -12026,6 +12115,13 @@
             ],
             "title": "Source",
             "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ScopeRuleWarning"
+            },
+            "title": "Warnings",
+            "type": "array"
           }
         },
         "required": [
@@ -12034,6 +12130,30 @@
           "matchedRule"
         ],
         "title": "ScopeRuleTestResponse",
+        "type": "object"
+      },
+      "ScopeRuleWarning": {
+        "additionalProperties": false,
+        "description": "Advisory notice that a rule may override normal business traffic.\n\nWarnings never block a save; they exist because runtime rules are\nadministrative overrides evaluated before the builtin ALLOW baseline.",
+        "properties": {
+          "code": {
+            "enum": [
+              "BROAD_BLOCK_RULE",
+              "SHORT_BLOCK_PATTERN"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ScopeRuleWarning",
         "type": "object"
       },
       "SecuritySettings": {
@@ -14224,6 +14344,16 @@
               "format": "uuid",
               "title": "Rule Id",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "Version",
+              "type": "integer"
             }
           }
         ],

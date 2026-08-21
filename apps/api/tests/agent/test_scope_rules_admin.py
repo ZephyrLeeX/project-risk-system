@@ -9,6 +9,7 @@ import uuid
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import httpx2
 import pytest
@@ -18,17 +19,19 @@ from sqlalchemy import create_engine, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from risk_platform.admin.agent_scope.api import get_admin_agent_scope_service, router
+from risk_platform.admin.agent_scope.schemas import ScopeRuleCandidateRule, ScopeRuleTestRequest
 from risk_platform.admin.agent_scope.service import AdminAgentScopeRulesService
 from risk_platform.admin.models import User
 from risk_platform.agent.models import AgentScopeRule
-from risk_platform.agent.scope_rules import ScopeRuleStore
+from risk_platform.agent.scope import ScopeDecision, ScopeDecisionSource
+from risk_platform.agent.scope_rules import ScopeRuleStore, evaluate_with_snapshot
 from risk_platform.app import AppComposition, create_app
 from risk_platform.audit.models import AuditLog
 from risk_platform.auth.api import current_identity
 from risk_platform.auth.schemas import AuthenticatedUser
 from risk_platform.auth.service import SessionIdentity
 from risk_platform.config import Settings
-from risk_platform.db import create_database_engine, create_session_factory
+from risk_platform.db import create_database_engine, create_session_factory, transaction
 from risk_platform.seed import SeedSettings, seed_reference_data
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -103,7 +106,7 @@ async def _identity(
 
 async def _client(
     factory: async_sessionmaker[AsyncSession], identity: SessionIdentity
-) -> httpx2.AsyncClient:
+) -> tuple[httpx2.AsyncClient, ScopeRuleStore]:
     store = ScopeRuleStore(factory)  # poll-only; notify_changed refreshes locally
     service = AdminAgentScopeRulesService(factory, store)
 
@@ -121,7 +124,10 @@ async def _client(
         ),
     )
     transport = httpx2.ASGITransport(app=app)
-    return httpx2.AsyncClient(transport=transport, base_url="https://testserver")
+    return (
+        httpx2.AsyncClient(transport=transport, base_url="https://testserver"),
+        store,
+    )
 
 
 def test_scope_rule_crud_lifecycle_audits_and_takes_effect(
@@ -129,7 +135,7 @@ def test_scope_rule_crud_lifecycle_audits_and_takes_effect(
 ) -> None:
     async def scenario() -> None:
         identity = await _identity(scope_rules_database, ["agent.scope.manage"])
-        client = await _client(scope_rules_database, identity)
+        client, _ = await _client(scope_rules_database, identity)
         try:
             assert (await client.get("/api/admin/agent/scope-rules")).json()["data"] == []
 
@@ -152,12 +158,26 @@ def test_scope_rule_crud_lifecycle_audits_and_takes_effect(
             assert rule["version"] == 1
             assert rule["createdBy"] == identity.user.id
 
-            # A disabled rule must not affect evaluation yet.
+            # A disabled rule must not affect evaluation yet...
             dormant = await client.post(
                 "/api/admin/agent/scope-rules/test", headers=ORIGIN, json={"message": "早上好"}
             )
             assert dormant.status_code == 200
             assert dormant.json()["data"]["source"] != "RUNTIME_RULE"
+
+            # ... but it can be previewed by id before being enabled.
+            preview = await client.post(
+                "/api/admin/agent/scope-rules/test",
+                headers=ORIGIN,
+                json={"message": "早上好呀", "ruleId": rule_id},
+            )
+            assert preview.status_code == 200
+            preview_data = preview.json()["data"]
+            assert preview_data["preview"] is True
+            assert preview_data["previewRuleId"] == rule_id
+            assert preview_data["decision"] == "BLOCK"
+            assert preview_data["source"] == "RUNTIME_RULE"
+            assert preview_data["matchedRule"]["id"] == rule_id
 
             # Enabling takes effect on the next evaluation without a restart.
             enabled = await client.patch(
@@ -209,10 +229,23 @@ def test_scope_rule_crud_lifecycle_audits_and_takes_effect(
             )
             assert missing.status_code == 404
 
-            # DELETE soft-deletes: hidden from the list, no longer evaluated,
+            # DELETE requires the current optimistic-lock version and
+            # soft-deletes: hidden from the list, no longer evaluated,
             # row retained, and the name becomes reusable.
-            deleted = await client.delete(
+            stale_delete = await client.delete(
                 f"/api/admin/agent/scope-rules/{rule_id}", headers=ORIGIN
+            )
+            assert stale_delete.status_code == 422  # version is required
+            stale_delete = await client.delete(
+                f"/api/admin/agent/scope-rules/{rule_id}",
+                headers=ORIGIN,
+                params={"version": 1},  # version moved to 2 by the PATCH above
+            )
+            assert stale_delete.status_code == 409
+            deleted = await client.delete(
+                f"/api/admin/agent/scope-rules/{rule_id}",
+                headers=ORIGIN,
+                params={"version": 2},
             )
             assert deleted.status_code == 200
             listing = (await client.get("/api/admin/agent/scope-rules")).json()["data"]
@@ -268,7 +301,7 @@ def test_scope_rule_test_endpoint_reports_builtin_and_default_sources(
 ) -> None:
     async def scenario() -> None:
         identity = await _identity(scope_rules_database, ["agent.scope.manage"])
-        client = await _client(scope_rules_database, identity)
+        client, _ = await _client(scope_rules_database, identity)
         try:
             builtin_allow = await client.post(
                 "/api/admin/agent/scope-rules/test",
@@ -279,6 +312,9 @@ def test_scope_rule_test_endpoint_reports_builtin_and_default_sources(
                 "decision": "ALLOW",
                 "source": "BUILTIN",
                 "matchedRule": None,
+                "preview": False,
+                "previewRuleId": None,
+                "warnings": [],
             }
             builtin_block = await client.post(
                 "/api/admin/agent/scope-rules/test",
@@ -296,6 +332,9 @@ def test_scope_rule_test_endpoint_reports_builtin_and_default_sources(
                 "decision": "DEFER",
                 "source": "DEFAULT",
                 "matchedRule": None,
+                "preview": False,
+                "previewRuleId": None,
+                "warnings": [],
             }
         finally:
             await client.aclose()
@@ -307,7 +346,7 @@ def test_scope_rule_endpoints_require_permission(
     scope_rules_database: async_sessionmaker[AsyncSession],
 ) -> None:
     async def scenario() -> None:
-        client = await _client(scope_rules_database, await _identity(scope_rules_database, []))
+        client, _ = await _client(scope_rules_database, await _identity(scope_rules_database, []))
         try:
             rule_id = uuid.uuid4()
             assert (await client.get("/api/admin/agent/scope-rules")).status_code == 403
@@ -332,7 +371,9 @@ def test_scope_rule_endpoints_require_permission(
             ).status_code == 403
             assert (
                 await client.delete(
-                    f"/api/admin/agent/scope-rules/{rule_id}", headers=ORIGIN
+                    f"/api/admin/agent/scope-rules/{rule_id}",
+                    headers=ORIGIN,
+                    params={"version": 1},
                 )
             ).status_code == 403
             assert (
@@ -353,7 +394,7 @@ def test_scope_rule_rejects_regex_match_type_and_invalid_payloads(
 ) -> None:
     async def scenario() -> None:
         identity = await _identity(scope_rules_database, ["agent.scope.manage"])
-        client = await _client(scope_rules_database, identity)
+        client, _ = await _client(scope_rules_database, identity)
         try:
             payloads = [
                 {  # REGEX is not a V1 match type.
@@ -448,3 +489,366 @@ def test_migration_grants_system_admin_on_deployed_database() -> None:
         with engine.begin() as connection:
             connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
         engine.dispose()
+
+
+def test_scope_rule_preview_candidate_resolves_conflict_with_live_rules(
+    scope_rules_database: async_sessionmaker[AsyncSession],
+) -> None:
+    """A candidate is placed into the real production ordering, not tested alone."""
+
+    async def scenario() -> None:
+        identity = await _identity(scope_rules_database, ["agent.scope.manage"])
+        client, _ = await _client(scope_rules_database, identity)
+        try:
+            # Live: broad BLOCK PHRASE "大足" at priority 100.
+            created = await client.post(
+                "/api/admin/agent/scope-rules",
+                headers=ORIGIN,
+                json={
+                    "name": "大足白名单外拦截",
+                    "decision": "BLOCK",
+                    "matchType": "PHRASE",
+                    "pattern": "大足",
+                    "priority": 100,
+                },
+            )
+            rule_id = created.json()["data"]["id"]
+            await client.patch(
+                f"/api/admin/agent/scope-rules/{rule_id}",
+                headers=ORIGIN,
+                json={"enabled": True, "version": 1},
+            )
+
+            # Without a candidate the live rule blocks the business question.
+            plain = await client.post(
+                "/api/admin/agent/scope-rules/test",
+                headers=ORIGIN,
+                json={"message": "大足有哪些项目"},
+            )
+            plain_data = plain.json()["data"]
+            assert plain_data["decision"] == "BLOCK"
+            assert plain_data["source"] == "RUNTIME_RULE"
+            assert plain_data["matchedRule"]["id"] == rule_id
+
+            # Candidate ALLOW EXACT at the same priority wins by specificity.
+            winner = await client.post(
+                "/api/admin/agent/scope-rules/test",
+                headers=ORIGIN,
+                json={
+                    "message": "大足有哪些项目",
+                    "candidateRule": {
+                        "decision": "ALLOW",
+                        "matchType": "EXACT",
+                        "pattern": "大足有哪些项目",
+                        "priority": 100,
+                    },
+                },
+            )
+            assert winner.status_code == 200
+            winner_data = winner.json()["data"]
+            assert winner_data["preview"] is True
+            assert winner_data["previewRuleId"] is None
+            assert winner_data["decision"] == "ALLOW"
+            assert winner_data["source"] == "RUNTIME_RULE"
+            assert winner_data["matchedRule"] == {
+                "id": "",
+                "name": "(预览规则)",
+                "matchType": "EXACT",
+                "decision": "ALLOW",
+                "priority": 100,
+            }
+
+            # A lower-priority candidate loses to the live rule and the
+            # response still names the *live* rule as the winner.
+            loser = await client.post(
+                "/api/admin/agent/scope-rules/test",
+                headers=ORIGIN,
+                json={
+                    "message": "大足有哪些项目",
+                    "candidateRule": {
+                        "decision": "ALLOW",
+                        "matchType": "EXACT",
+                        "pattern": "大足有哪些项目",
+                        "priority": 10,
+                    },
+                },
+            )
+            loser_data = loser.json()["data"]
+            assert loser_data["decision"] == "BLOCK"
+            assert loser_data["matchedRule"]["id"] == rule_id
+        finally:
+            await client.aclose()
+
+    asyncio.run(scenario())
+
+
+def test_scope_rule_preview_is_read_only(
+    scope_rules_database: async_sessionmaker[AsyncSession],
+) -> None:
+    """ruleId / candidateRule previews change nothing: no cache swap, no row
+    update, no revision bump, no invalidation publish."""
+
+    async def scenario() -> None:
+        identity = await _identity(scope_rules_database, ["agent.scope.manage"])
+        client, store = await _client(scope_rules_database, identity)
+        try:
+            created = await client.post(
+                "/api/admin/agent/scope-rules",
+                headers=ORIGIN,
+                json={
+                    "name": "预览只读规则",
+                    "decision": "BLOCK",
+                    "matchType": "PHRASE",
+                    "pattern": "预览专用短语",
+                },
+            )
+            rule_id = created.json()["data"]["id"]
+            snapshot_before = store.get_snapshot()
+
+            async with scope_rules_database() as session:
+                revision_before = (
+                    await session.execute(
+                        text('SELECT "revision" FROM agent_scope_rule_revision WHERE id = 1')
+                    )
+                ).scalar_one()
+
+            by_id = await client.post(
+                "/api/admin/agent/scope-rules/test",
+                headers=ORIGIN,
+                json={"message": "预览专用短语", "ruleId": rule_id},
+            )
+            assert by_id.json()["data"]["decision"] == "BLOCK"
+            by_candidate = await client.post(
+                "/api/admin/agent/scope-rules/test",
+                headers=ORIGIN,
+                json={
+                    "message": "预览专用短语",
+                    "candidateRule": {
+                        "decision": "BLOCK",
+                        "matchType": "PHRASE",
+                        "pattern": "预览专用短语",
+                    },
+                },
+            )
+            assert by_candidate.json()["data"]["decision"] == "BLOCK"
+
+            # (D) the live snapshot object is untouched.
+            assert store.get_snapshot() is snapshot_before
+            # (E) the saved rule row is untouched.
+            async with scope_rules_database() as session:
+                row = (
+                    await session.execute(
+                        text(
+                            f'SELECT "enabled", "version" FROM agent_scope_rules '
+                            f"WHERE id = '{rule_id}'"
+                        )
+                    )
+                ).one()
+                # (F) the revision did not move.
+                revision_after = (
+                    await session.execute(
+                        text('SELECT "revision" FROM agent_scope_rule_revision WHERE id = 1')
+                    )
+                ).scalar_one()
+            assert row.enabled is False
+            assert row.version == 1
+            assert revision_after == revision_before
+
+            # (G) no invalidation was published for either preview.
+            published: list[int] = []
+
+            class _PublishProbe:
+                def subscribe(self, callback: object) -> None:
+                    return None
+
+                async def publish(self, revision: int) -> None:
+                    published.append(revision)
+
+                async def run(self) -> None:
+                    return None
+
+                async def aclose(self) -> None:
+                    return None
+
+            probe_store = ScopeRuleStore(scope_rules_database, _PublishProbe())
+            await probe_store.refresh()
+            service = AdminAgentScopeRulesService(scope_rules_database, probe_store)
+            await service.test(
+                ScopeRuleTestRequest(message="预览专用短语", ruleId=uuid.UUID(rule_id))
+            )
+            await service.test(
+                ScopeRuleTestRequest(
+                    message="预览专用短语",
+                    candidateRule=ScopeRuleCandidateRule(
+                        decision="BLOCK", matchType="PHRASE", pattern="预览专用短语"
+                    ),
+                )
+            )
+            assert published == []
+        finally:
+            await client.aclose()
+
+    asyncio.run(scenario())
+
+
+def test_scope_rule_test_rejects_both_preview_targets(
+    scope_rules_database: async_sessionmaker[AsyncSession],
+) -> None:
+    async def scenario() -> None:
+        identity = await _identity(scope_rules_database, ["agent.scope.manage"])
+        client, _ = await _client(scope_rules_database, identity)
+        try:
+            both = await client.post(
+                "/api/admin/agent/scope-rules/test",
+                headers=ORIGIN,
+                json={
+                    "message": "任意消息",
+                    "ruleId": str(uuid.uuid4()),
+                    "candidateRule": {
+                        "decision": "BLOCK",
+                        "matchType": "PHRASE",
+                        "pattern": "项目",
+                    },
+                },
+            )
+            assert both.status_code == 422
+            missing = await client.post(
+                "/api/admin/agent/scope-rules/test",
+                headers=ORIGIN,
+                json={"message": "任意消息", "ruleId": str(uuid.uuid4())},
+            )
+            assert missing.status_code == 404
+        finally:
+            await client.aclose()
+
+    asyncio.run(scenario())
+
+
+def test_broad_block_rules_carry_warnings_but_still_save(
+    scope_rules_database: async_sessionmaker[AsyncSession],
+) -> None:
+    async def scenario() -> None:
+        identity = await _identity(scope_rules_database, ["agent.scope.manage"])
+        client, _ = await _client(scope_rules_database, identity)
+        try:
+            def codes(data: dict[str, Any]) -> list[str]:
+                return [str(item["code"]) for item in data["warnings"]]
+
+            broad = await client.post(
+                "/api/admin/agent/scope-rules",
+                headers=ORIGIN,
+                json={
+                    "name": "过宽拦截项目",
+                    "decision": "BLOCK",
+                    "matchType": "PHRASE",
+                    "pattern": "项目",
+                },
+            )
+            assert broad.status_code == 200  # warning never blocks the save
+            broad_rule = broad.json()["data"]
+            assert codes(broad_rule) == ["BROAD_BLOCK_RULE"]
+            assert "项目" in broad_rule["warnings"][0]["message"]
+
+            narrow = await client.post(
+                "/api/admin/agent/scope-rules",
+                headers=ORIGIN,
+                json={
+                    "name": "正常拦截问候",
+                    "decision": "BLOCK",
+                    "matchType": "PHRASE",
+                    "pattern": "早上好",
+                },
+            )
+            assert narrow.json()["data"]["warnings"] == []
+
+            # Warnings follow updates and appear on /test previews too.
+            updated = await client.patch(
+                f"/api/admin/agent/scope-rules/{narrow.json()['data']['id']}",
+                headers=ORIGIN,
+                json={"pattern": "风险", "version": 1},
+            )
+            assert codes(updated.json()["data"]) == ["BROAD_BLOCK_RULE"]
+
+            previewed = await client.post(
+                "/api/admin/agent/scope-rules/test",
+                headers=ORIGIN,
+                json={
+                    "message": "当前风险有哪些",
+                    "candidateRule": {
+                        "decision": "BLOCK",
+                        "matchType": "PHRASE",
+                        "pattern": "风险",
+                    },
+                },
+            )
+            assert codes(previewed.json()["data"]) == ["BROAD_BLOCK_RULE"]
+
+            # A single-character BLOCK pattern is flagged as too short.
+            short = await client.post(
+                "/api/admin/agent/scope-rules/test",
+                headers=ORIGIN,
+                json={
+                    "message": "项",
+                    "candidateRule": {
+                        "decision": "BLOCK",
+                        "matchType": "PHRASE",
+                        "pattern": "项",
+                    },
+                },
+            )
+            assert codes(short.json()["data"]) == ["BROAD_BLOCK_RULE", "SHORT_BLOCK_PATTERN"]
+        finally:
+            await client.aclose()
+
+    asyncio.run(scenario())
+
+
+def test_revision_row_self_heals_after_deletion(
+    scope_rules_database: async_sessionmaker[AsyncSession],
+) -> None:
+    """A mutation on a database whose revision row vanished recreates it."""
+
+    async def scenario() -> None:
+        identity = await _identity(scope_rules_database, ["agent.scope.manage"])
+        client, store = await _client(scope_rules_database, identity)
+        try:
+            async with transaction(scope_rules_database) as session:
+                await session.execute(text("DELETE FROM agent_scope_rule_revision"))
+
+            created = await client.post(
+                "/api/admin/agent/scope-rules",
+                headers=ORIGIN,
+                json={
+                    "name": "自愈验证规则",
+                    "decision": "ALLOW",
+                    "matchType": "PHRASE",
+                    "pattern": "自愈专用短语",
+                },
+            )
+            assert created.status_code == 200
+            rule_id = created.json()["data"]["id"]
+
+            async with scope_rules_database() as session:
+                revision = (
+                    await session.execute(
+                        text('SELECT "revision" FROM agent_scope_rule_revision WHERE id = 1')
+                    )
+                ).scalar_one()
+            assert revision >= 1
+
+            # The store notices the healed revision and reloads the rule.
+            enabled = await client.patch(
+                f"/api/admin/agent/scope-rules/{rule_id}",
+                headers=ORIGIN,
+                json={"enabled": True, "version": 1},
+            )
+            assert enabled.status_code == 200
+            await store.probe()
+            evaluation = evaluate_with_snapshot("自愈专用短语", store.get_snapshot())
+            assert evaluation.decision is ScopeDecision.ALLOW
+            assert evaluation.source is ScopeDecisionSource.RUNTIME_RULE
+            assert store.get_snapshot().revision == revision + 1
+        finally:
+            await client.aclose()
+
+    asyncio.run(scenario())

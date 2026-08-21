@@ -12,10 +12,13 @@ Layer 1 classifies a user message as one of three states:
   layer 1 must never hard-reject a message merely because it lacks a domain
   keyword.
 
-Runtime (admin-managed) rules are evaluated before the builtin baseline by
-``DynamicScopePolicy`` (see ``scope_rules.py``); this module only owns the
-small, code-reviewed builtin baseline.  Authorization (RBAC, DataScope, tool
-catalogue, proposal confirmation) is deliberately out of scope here.
+Runtime (admin-managed) rules are *administrative overrides*: they are
+evaluated before the builtin baseline by ``DynamicScopePolicy`` (see
+``scope_rules.py``), so an admin-managed rule — including a BLOCK rule — can
+deliberately override the builtin baseline (e.g. force-BLOCK a message that
+carries a domain term).  This module only owns the small, code-reviewed
+builtin baseline; authorization (RBAC, DataScope, tool catalogue, proposal
+confirmation) is deliberately out of scope here.
 """
 
 from __future__ import annotations
@@ -26,6 +29,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 __all__ = [
+    "BUILTIN_DOMAIN_TERMS",
     "OUT_OF_SCOPE_MESSAGE",
     "ScopeDecision",
     "ScopeDecisionSource",
@@ -63,6 +67,11 @@ class ScopeDecisionSource(StrEnum):
 
 
 OUT_OF_SCOPE_MESSAGE = "我只能协助查询和分析当前系统中的项目、风险、待办、周报和看板数据。"
+
+# Core business-domain vocabulary of the builtin ALLOW baseline.  Public so the
+# admin warning analysis (``admin/agent_scope/warnings.py``) can flag runtime
+# BLOCK rules that would override this baseline too broadly.
+BUILTIN_DOMAIN_TERMS: tuple[str, ...] = ("项目", "风险", "待办", "周报", "看板")
 
 
 def normalize_scope_text(message: str) -> str:
@@ -106,12 +115,17 @@ class ScopePolicy:
     4. builtin non-business intent → ``BLOCK`` / ``BUILTIN``
     5. anything else → ``DEFER`` / ``DEFAULT``
 
-    The builtin ALLOW baseline runs *before* the BLOCK baseline, so a message
-    carrying any domain term ("天气原因导致项目延期有什么风险",
-    "项目周报邮件为什么没有识别") can never be hard-rejected by a non-business
-    pattern.  BLOCK patterns express clear non-business *intents* (translation,
-    weather small talk, writing mail/code/essays, physics, jokes) — never bare
-    topic keywords, because "天气"/"邮件"/"代码" alone are legitimate inside
+    Frozen semantics: *in the absence of a runtime-rule hit*, builtin ALLOW
+    takes precedence over builtin BLOCK, so a message carrying any domain term
+    ("天气原因导致项目延期有什么风险", "项目周报邮件为什么没有识别") is not
+    hard-rejected by a builtin non-business pattern.  Runtime rules are
+    administrative overrides evaluated *before* this baseline, so an
+    admin-managed BLOCK rule may deliberately override builtin ALLOW (see
+    ``DynamicScopePolicy``); the /test preview surface and the broad-BLOCK
+    warnings exist to make that override power visible.  Builtin BLOCK
+    patterns express clear non-business *intents* (translation, weather small
+    talk, writing mail/code/essays, physics, jokes) — never bare topic
+    keywords, because "天气"/"邮件"/"代码" alone are legitimate inside
     business sentences.  The baseline is deliberately tiny: new business or
     non-business vocabulary belongs in admin-managed runtime rules, not here.
 
@@ -121,7 +135,7 @@ class ScopePolicy:
     safety.
     """
 
-    _DOMAIN_TERMS = ("项目", "风险", "待办", "周报", "看板")
+    _DOMAIN_TERMS = BUILTIN_DOMAIN_TERMS
     _WEEKLY_ADVICE_INTENTS = (
         "给出本周处理建议",
         "本周处理建议",
