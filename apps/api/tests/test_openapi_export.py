@@ -308,5 +308,5 @@ def test_openapi_surface_contains_provider_v2_additive_paths() -> None:
     POST /conversations/{id}/cancel path plus the AgentConversationRuntime schema
     (and its ApiResponse wrapper)."""
     schema = build_openapi()
-    assert len(schema["paths"]) == 108
-    assert len(schema["components"]["schemas"]) == 275
+    assert len(schema["paths"]) == 111
+    assert len(schema["components"]["schemas"]) == 286

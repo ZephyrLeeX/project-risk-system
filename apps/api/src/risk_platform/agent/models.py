@@ -7,11 +7,14 @@ from enum import StrEnum
 from uuid import UUID
 
 from sqlalchemy import (
+    BigInteger,
+    Boolean,
     CheckConstraint,
     Enum,
     ForeignKey,
     Index,
     Integer,
+    SmallInteger,
     String,
     Text,
     text,
@@ -22,6 +25,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from risk_platform.model_types import JSONValue, new_uuid, utc_now
 from risk_platform.models import Base
+
+from .scope import ScopeRuleMatchType
 
 UUIDType = PG_UUID
 
@@ -495,6 +500,94 @@ class AgentConfirmationToken(Base):
     resultResourceId: Mapped[UUID | None] = mapped_column(UUIDType(as_uuid=True))
 
 
+class AgentScopeRuleDecision(StrEnum):
+    """Runtime scope rules only ever force-admit or force-reject.
+
+    DEFER is the default for unmatched text and is deliberately not a rule
+    decision: rules exist to encode *certain* business / non-business intent.
+    """
+
+    ALLOW = "ALLOW"
+    BLOCK = "BLOCK"
+
+
+class AgentScopeRule(Base):
+    """Admin-managed runtime layer-1 scope rule (PG is the source of truth).
+
+    New rules are created disabled (``enabled = false``) so an admin can
+    verify them with the /test endpoint before enforcement.  Deletion is
+    soft (``deletedAt``) to keep the security-configuration history.
+    """
+
+    __tablename__ = "agent_scope_rules"
+    __table_args__ = (
+        Index("agent_scope_rules_enabled_idx", "enabled"),
+        Index("agent_scope_rules_deletedAt_idx", "deletedAt"),
+        # Name uniqueness only among live (non-deleted) rows so a soft-deleted
+        # rule's name can be reused later.
+        Index(
+            "agent_scope_rules_name_active_key",
+            "name",
+            unique=True,
+            postgresql_where=text('"deletedAt" IS NULL'),
+        ),
+        CheckConstraint('"priority" BETWEEN 0 AND 1000', name="agent_scope_rules_priority_range"),
+        CheckConstraint('"version" >= 1', name="agent_scope_rules_version_positive"),
+        CheckConstraint("btrim(\"pattern\") <> ''", name="agent_scope_rules_pattern_nonempty"),
+    )
+
+    id: Mapped[UUID] = mapped_column(UUIDType(as_uuid=True), primary_key=True, default=new_uuid)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    decision: Mapped[AgentScopeRuleDecision] = mapped_column(
+        Enum(AgentScopeRuleDecision, name="AgentScopeRuleDecision", native_enum=True),
+        nullable=False,
+    )
+    matchType: Mapped[ScopeRuleMatchType] = mapped_column(
+        Enum(ScopeRuleMatchType, name="AgentScopeRuleMatchType", native_enum=True),
+        nullable=False,
+    )
+    pattern: Mapped[str] = mapped_column(String(200), nullable=False)
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("FALSE"))
+    description: Mapped[str | None] = mapped_column(String(500))
+    createdBy: Mapped[UUID | None] = mapped_column(
+        UUIDType(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("1"))
+    deletedAt: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True, precision=3))
+    createdAt: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True, precision=3),
+        nullable=False,
+        server_default=text("CURRENT_TIMESTAMP"),
+    )
+    updatedAt: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True, precision=3),
+        nullable=False,
+        default=utc_now,
+        onupdate=utc_now,
+    )
+
+
+class AgentScopeRuleRevision(Base):
+    """Single-row monotonically increasing revision for the rule cache.
+
+    Every rule mutation increments ``revision`` inside its own transaction;
+    API/worker caches compare this cheap single-row value to decide whether
+    to reload, and the Redis invalidation event carries it as its payload.
+    """
+
+    __tablename__ = "agent_scope_rule_revision"
+    __table_args__ = (
+        CheckConstraint('"id" = 1', name="agent_scope_rule_revision_single_row"),
+        CheckConstraint('"revision" >= 0', name="agent_scope_rule_revision_nonnegative"),
+    )
+
+    id: Mapped[int] = mapped_column(SmallInteger, primary_key=True)
+    revision: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, server_default=text("0")
+    )
+
+
 __all__ = [
     "AgentConfirmationOperation",
     "AgentConfirmationToken",
@@ -504,6 +597,9 @@ __all__ = [
     "AgentExecutionConfig",
     "AgentMessage",
     "AgentMessageRole",
+    "AgentScopeRule",
+    "AgentScopeRuleDecision",
+    "AgentScopeRuleRevision",
     "MutationDraft",
     "MutationDraftOperation",
     "MutationDraftStatus",

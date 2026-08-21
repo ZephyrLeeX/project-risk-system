@@ -4,6 +4,59 @@
  */
 
 export interface paths {
+    "/api/admin/agent/scope-rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Scope Rules */
+        get: operations["list_scope_rules_api_admin_agent_scope_rules_get"];
+        put?: never;
+        /** Create Scope Rule */
+        post: operations["create_scope_rule_api_admin_agent_scope_rules_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/agent/scope-rules/{rule_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Scope Rule */
+        delete: operations["delete_scope_rule_api_admin_agent_scope_rules__rule_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Scope Rule */
+        patch: operations["update_scope_rule_api_admin_agent_scope_rules__rule_id__patch"];
+        trace?: never;
+    };
+    "/api/admin/agent/scope-rules/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Scope Rule */
+        post: operations["test_scope_rule_api_admin_agent_scope_rules_test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/ai-provider-v2/accounts": {
         parameters: {
             query?: never;
@@ -2629,6 +2682,17 @@ export interface components {
             /** Traceid */
             traceId: string;
         };
+        /** ApiResponse[list[ScopeRuleResponse]] */
+        ApiResponse_list_ScopeRuleResponse__: {
+            /** Code */
+            code: string;
+            /** Data */
+            data: components["schemas"]["ScopeRuleResponse"][];
+            /** Message */
+            message: string;
+            /** Traceid */
+            traceId: string;
+        };
         /** ApiResponse[list[UserAuditRecordResponse]] */
         ApiResponse_list_UserAuditRecordResponse__: {
             /** Code */
@@ -2986,6 +3050,26 @@ export interface components {
             /** Code */
             code: string;
             data: components["schemas"]["risk_platform__admin__roles__schemas__RoleResponse"];
+            /** Message */
+            message: string;
+            /** Traceid */
+            traceId: string;
+        };
+        /** ApiResponse[ScopeRuleResponse] */
+        ApiResponse_ScopeRuleResponse_: {
+            /** Code */
+            code: string;
+            data: components["schemas"]["ScopeRuleResponse"];
+            /** Message */
+            message: string;
+            /** Traceid */
+            traceId: string;
+        };
+        /** ApiResponse[ScopeRuleTestResponse] */
+        ApiResponse_ScopeRuleTestResponse_: {
+            /** Code */
+            code: string;
+            data: components["schemas"]["ScopeRuleTestResponse"];
             /** Message */
             message: string;
             /** Traceid */
@@ -3655,6 +3739,35 @@ export interface components {
             name: string;
             /** Permissioncodes */
             permissionCodes: string[];
+        };
+        /** CreateScopeRuleRequest */
+        CreateScopeRuleRequest: {
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "ALLOW" | "BLOCK";
+            /** Description */
+            description?: string | null;
+            /**
+             * Enabled
+             * @default false
+             */
+            enabled: boolean;
+            /**
+             * Matchtype
+             * @enum {string}
+             */
+            matchType: "EXACT" | "PHRASE";
+            /** Name */
+            name: string;
+            /** Pattern */
+            pattern: string;
+            /**
+             * Priority
+             * @default 0
+             */
+            priority: number;
         };
         /** DashboardSummary */
         DashboardSummary: {
@@ -5934,6 +6047,149 @@ export interface components {
             /** Title */
             title: string;
         };
+        /**
+         * ScopeRuleCandidateRule
+         * @description An unsaved rule to preview with /test before writing anything to PG.
+         *
+         *     Identity fields (id, name, enabled, version) are deliberately absent:
+         *     a candidate is ephemeral and produces no runtime side effects.
+         */
+        ScopeRuleCandidateRule: {
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "ALLOW" | "BLOCK";
+            /**
+             * Matchtype
+             * @enum {string}
+             */
+            matchType: "EXACT" | "PHRASE";
+            /** Pattern */
+            pattern: string;
+            /**
+             * Priority
+             * @default 0
+             */
+            priority: number;
+        };
+        /** ScopeRuleResponse */
+        ScopeRuleResponse: {
+            /** Createdat */
+            createdAt: string;
+            /** Createdby */
+            createdBy: string | null;
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "ALLOW" | "BLOCK";
+            /** Description */
+            description: string | null;
+            /** Enabled */
+            enabled: boolean;
+            /** Id */
+            id: string;
+            /**
+             * Matchtype
+             * @enum {string}
+             */
+            matchType: "EXACT" | "PHRASE";
+            /** Name */
+            name: string;
+            /** Pattern */
+            pattern: string;
+            /** Priority */
+            priority: number;
+            /** Updatedat */
+            updatedAt: string;
+            /** Version */
+            version: number;
+            /** Warnings */
+            warnings?: components["schemas"]["ScopeRuleWarning"][];
+        };
+        /** ScopeRuleTestMatch */
+        ScopeRuleTestMatch: {
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "ALLOW" | "BLOCK";
+            /** Id */
+            id: string;
+            /**
+             * Matchtype
+             * @enum {string}
+             */
+            matchType: "EXACT" | "PHRASE";
+            /** Name */
+            name: string;
+            /** Priority */
+            priority: number;
+        };
+        /**
+         * ScopeRuleTestRequest
+         * @description Evaluate a message against the live policy, optionally plus one candidate.
+         *
+         *     ``ruleId`` (a saved rule — may be disabled) and ``candidateRule`` (an
+         *     unsaved draft) are mutually exclusive.  Without either, the message is
+         *     evaluated against the current live policy only.
+         */
+        ScopeRuleTestRequest: {
+            candidateRule?: components["schemas"]["ScopeRuleCandidateRule"] | null;
+            /** Message */
+            message: string;
+            /** Ruleid */
+            ruleId?: string | null;
+        };
+        /**
+         * ScopeRuleTestResponse
+         * @description Layer-1 result of a /test evaluation.
+         *
+         *     ``preview`` is true when the evaluation included a rule that is *not*
+         *     live (a disabled saved rule or an unsaved candidate).  A previewed
+         *     ``RUNTIME_RULE`` match on a candidate has ``matchedRule.id == ""`` and
+         *     ``matchedRule.name == "(预览规则)"``; it must not be mistaken for an
+         *     already-effective rule.
+         */
+        ScopeRuleTestResponse: {
+            /**
+             * Decision
+             * @enum {string}
+             */
+            decision: "ALLOW" | "BLOCK" | "DEFER";
+            matchedRule: components["schemas"]["ScopeRuleTestMatch"] | null;
+            /**
+             * Preview
+             * @default false
+             */
+            preview: boolean;
+            /** Previewruleid */
+            previewRuleId?: string | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "BUILTIN" | "RUNTIME_RULE" | "DEFAULT";
+            /** Warnings */
+            warnings?: components["schemas"]["ScopeRuleWarning"][];
+        };
+        /**
+         * ScopeRuleWarning
+         * @description Advisory notice that a rule may override normal business traffic.
+         *
+         *     Warnings never block a save; they exist because runtime rules are
+         *     administrative overrides evaluated before the builtin ALLOW baseline.
+         */
+        ScopeRuleWarning: {
+            /**
+             * Code
+             * @enum {string}
+             */
+            code: "BROAD_BLOCK_RULE" | "SHORT_BLOCK_PATTERN";
+            /** Message */
+            message: string;
+        };
         /** SecuritySettings */
         SecuritySettings: {
             /** Idletimeoutminutes */
@@ -6259,6 +6515,25 @@ export interface components {
             /** Permissioncodes */
             permissionCodes: string[];
         };
+        /** UpdateScopeRuleRequest */
+        UpdateScopeRuleRequest: {
+            /** Decision */
+            decision?: ("ALLOW" | "BLOCK") | null;
+            /** Description */
+            description?: string | null;
+            /** Enabled */
+            enabled?: boolean | null;
+            /** Matchtype */
+            matchType?: ("EXACT" | "PHRASE") | null;
+            /** Name */
+            name?: string | null;
+            /** Pattern */
+            pattern?: string | null;
+            /** Priority */
+            priority?: number | null;
+            /** Version */
+            version: number;
+        };
         /** UpdateTodoRequest */
         UpdateTodoRequest: {
             /** Assigneename */
@@ -6491,6 +6766,160 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    list_scope_rules_api_admin_agent_scope_rules_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_list_ScopeRuleResponse__"];
+                };
+            };
+        };
+    };
+    create_scope_rule_api_admin_agent_scope_rules_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateScopeRuleRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ScopeRuleResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_scope_rule_api_admin_agent_scope_rules__rule_id__delete: {
+        parameters: {
+            query: {
+                version: number;
+            };
+            header?: never;
+            path: {
+                rule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_NoneType_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_scope_rule_api_admin_agent_scope_rules__rule_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rule_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateScopeRuleRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ScopeRuleResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_scope_rule_api_admin_agent_scope_rules_test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScopeRuleTestRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiResponse_ScopeRuleTestResponse_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_accounts_api_admin_ai_provider_v2_accounts_get: {
         parameters: {
             query?: never;

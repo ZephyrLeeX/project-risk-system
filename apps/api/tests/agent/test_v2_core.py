@@ -18,7 +18,13 @@ from risk_platform.agent.core import (
     ReadOnlyAgentCore,
 )
 from risk_platform.agent.schemas import AgentToolResult, CandidateRisk, CandidateRiskBasisType
-from risk_platform.agent.scope import OUT_OF_SCOPE_MESSAGE, ScopeDecision, ScopePolicy
+from risk_platform.agent.scope import (
+    OUT_OF_SCOPE_MESSAGE,
+    ScopeDecision,
+    ScopeDecisionSource,
+    ScopeEvaluation,
+    ScopePolicy,
+)
 from risk_platform.agent.tools import AgentToolRegistry
 from risk_platform.agent.v2_execution import _project_selection_resume_context
 from risk_platform.ai_providers.v2_adapter import (
@@ -156,7 +162,7 @@ def test_out_of_scope_never_calls_provider_or_tool() -> None:
     runtime, tools = _Runtime([]), _Tools()
     result = asyncio.run(
         ReadOnlyAgentCore(cast(ProviderV2Runtime, runtime), cast(AgentToolRegistry, tools)).run(
-            _identity(), "帮我写 Python"
+            _identity(), "帮我写 Python 程序"
         )
     )
     assert result.out_of_scope is True
@@ -174,12 +180,17 @@ def test_out_of_scope_never_calls_provider_or_tool() -> None:
     ),
 )
 def test_mutation_intent_stays_in_system_data_scope(message: str) -> None:
-    assert ScopePolicy().decide(message).value == "ALLOWED"
+    assert ScopePolicy().decide(message).value == "ALLOW"
 
 
 @pytest.mark.parametrize("message", ("帮我写 Python", "写一篇文章", "创建一个网页"))
-def test_general_chat_stays_out_of_scope(message: str) -> None:
-    assert ScopePolicy().decide(message).value == "OUT_OF_SCOPE"
+def test_general_chat_defers_to_model_scope_rule(message: str) -> None:
+    # Layer 1 no longer hard-rejects on a missing domain keyword: undeterminable
+    # general chat DEFERs and the model-level AGENT_SCOPE_POLICY (layer 2)
+    # refuses it.
+    evaluation = ScopePolicy().evaluate(message)
+    assert evaluation.decision.value == "DEFER"
+    assert evaluation.source is ScopeDecisionSource.DEFAULT
 
 
 @pytest.mark.parametrize(
@@ -187,11 +198,11 @@ def test_general_chat_stays_out_of_scope(message: str) -> None:
     ("给出本周处理建议", "本周处理建议", "根据本周风险给出建议", "本周重点风险和建议"),
 )
 def test_weekly_advice_intent_is_in_scope(message: str) -> None:
-    assert ScopePolicy().decide(message).value == "ALLOWED"
+    assert ScopePolicy().decide(message).value == "ALLOW"
 
 
 def test_unrelated_weekly_question_stays_out_of_scope() -> None:
-    assert ScopePolicy().decide("本周天气怎么样").value == "OUT_OF_SCOPE"
+    assert ScopePolicy().decide("本周天气怎么样").value == "BLOCK"
 
 
 def test_weekly_advice_guidance_requires_grounding_and_fact_advice_split() -> None:
@@ -581,23 +592,43 @@ def test_continuation_followup_resumes_cancelled_domain_turn(message: str) -> No
     assert history[-1] == message
 
 
-def test_continuation_without_domain_history_stays_out_of_scope() -> None:
-    runtime, tools = _Runtime([]), _Tools()
+def test_continuation_without_domain_history_defers_and_layer2_refuses() -> None:
+    # "继续上一个问题" with no conversation memory carries no business signal;
+    # layer 1 DEFERs it (no whitelist kill) and the model-level scope rule
+    # (layer 2) refuses with the fixed message — without granting any data
+    # access.
+    runtime, tools = _ScopeAwareRuntime(), _Tools()
     result = asyncio.run(
         ReadOnlyAgentCore(cast(ProviderV2Runtime, runtime), cast(AgentToolRegistry, tools)).run(
-            _identity(), "继续上一个问题"
+            _identity(), "继续上一个问题", candidate_snapshot=()
         )
     )
-    assert result.out_of_scope is True
+    assert runtime.calls == 1  # DEFER reached the provider
     assert result.text == OUT_OF_SCOPE_MESSAGE
-    assert runtime.calls == 0
     assert tools.invocations == 0
 
 
+def test_deferred_message_reaches_provider_with_layer2_policy() -> None:
+    # A colloquial business question without domain keywords DEFERs at layer 1
+    # and reaches the provider with the AGENT_SCOPE_POLICY system rule intact.
+    runtime, tools = _Runtime([_response(text="大足项目近期风险平稳")]), _Tools()
+    result = asyncio.run(
+        ReadOnlyAgentCore(cast(ProviderV2Runtime, runtime), cast(AgentToolRegistry, tools)).run(
+            _identity(), "大足这边最近怎么样", candidate_snapshot=()
+        )
+    )
+    assert result.out_of_scope is False
+    assert runtime.calls == 1
+    request = cast(ProviderChatRequest, runtime.requests[0])
+    system = request.messages[0].content
+    assert system is not None
+    assert "AGENT_SCOPE_POLICY" in system
+
+
 def test_contextual_followup_inherits_domain_context_and_reaches_provider() -> None:
-    # "第二个展开说一下" is out-of-scope by the static policy, but with a recent
-    # domain turn it is a contextually-ambiguous anchored shorthand: layer 1
-    # defers it to the provider (CONTEXTUAL_AMBIGUOUS) instead of hard-rejecting.
+    # "第二个展开说一下" carries no domain keyword, so layer 1 DEFERs it to the
+    # provider instead of hard-rejecting; the recent domain turn keeps layer 2
+    # well-grounded.
     runtime, tools = _Runtime([_response(text="已展开第二项")]), _Tools()
     result = asyncio.run(
         ReadOnlyAgentCore(cast(ProviderV2Runtime, runtime), cast(AgentToolRegistry, tools)).run(
@@ -630,8 +661,8 @@ def test_bare_correction_reaches_provider_without_project_keyword() -> None:
 
 def test_non_domain_anchored_shorthand_defers_to_model_scope_rule() -> None:
     # Guarantee 2: "这个帮我翻译成英文" is an anchored shorthand (recent 风险
-    # turn) that is genuinely non-domain.  Layer 1 still defers it to the
-    # provider (CONTEXTUAL_AMBIGUOUS) rather than guessing via a blacklist;
+    # turn) whose text alone reads as non-business.  Layer 1 downgrades the
+    # BLOCK to DEFER for an anchored in-memory correction instead of guessing;
     # the model-level AGENT_SCOPE_POLICY (layer 2) then refuses with the fixed
     # OUT_OF_SCOPE_MESSAGE and no tool call.
     runtime, tools = _ScopeAwareRuntime(), _Tools()
@@ -652,8 +683,8 @@ def test_non_domain_anchored_shorthand_defers_to_model_scope_rule() -> None:
 class _AlwaysAllowScope(ScopePolicy):
     """A deliberately broken ScopePolicy that lets everything past layer 1."""
 
-    def decide(self, message: str) -> ScopeDecision:
-        return ScopeDecision.ALLOWED
+    def evaluate(self, message: str) -> ScopeEvaluation:
+        return ScopeEvaluation(ScopeDecision.ALLOW, ScopeDecisionSource.DEFAULT, None)
 
 
 _OUT_OF_SCOPE_PROMPTS = (

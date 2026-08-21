@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from time import monotonic
@@ -37,6 +38,8 @@ from .context import (
 from .schemas import AgentToolResult, CandidateRisk
 from .scope import OUT_OF_SCOPE_MESSAGE, ScopeDecision, ScopePolicy
 from .tools import AgentToolRegistry
+
+logger = logging.getLogger(__name__)
 
 
 class AgentLoopError(RuntimeError):
@@ -215,20 +218,38 @@ class ReadOnlyAgentCore:
         has_memory = conversation_context is not None and bool(
             conversation_context.summary or conversation_context.recent_messages
         )
-        # Three-state scope gate.  ``ScopePolicy.decide`` is the context-free
-        # first layer: ALLOWED (clear domain signal) or OUT_OF_SCOPE.  An
-        # otherwise out-of-scope message that is an anchored short
-        # reference/correction ("不是 A，我说的是 B", "第二个", "这个…") is
-        # *contextually ambiguous* — deterministic text cannot confirm the
-        # domain without an ever-expanding blacklist, so it is deferred to the
-        # model-level AGENT_SCOPE_POLICY (layer 2) in the system instruction
-        # below rather than hard-rejected here.  Anything else stays
-        # OUT_OF_SCOPE and never reaches the provider.
-        if self._scope.decide(message) is ScopeDecision.OUT_OF_SCOPE and not (
-            has_memory
+        # Three-state scope gate.  ``ScopePolicy.evaluate`` is the
+        # context-free first layer: BLOCK (clear non-business intent) is
+        # rejected with the fixed message; ALLOW (clear domain signal) and
+        # DEFER (undeterminable — natural follow-ups, colloquial shorthand,
+        # bare project names) both proceed to the provider, where the
+        # model-level AGENT_SCOPE_POLICY (layer 2, see the system instruction
+        # below) re-refuses anything genuinely out of scope.  DEFER is the
+        # default for unrecognized text: layer 1 must never hard-reject a
+        # message merely because it lacks a domain keyword.
+        await self._scope.prepare()
+        evaluation = self._scope.evaluate(message)
+        # A BLOCK-class message that is an anchored short reference/correction
+        # ("这个帮我翻译成英文" over risk memory) stays contextually ambiguous:
+        # downgrade it to the model-level policy rather than hard-rejecting an
+        # in-conversation correction.
+        contextual = (
+            evaluation.decision is ScopeDecision.BLOCK
+            and has_memory
             and conversation_context is not None
             and is_contextual_shorthand(message, conversation_context)
-        ):
+        )
+        logger.info(
+            "agent scope decision=%s source=%s rule_id=%s rule_name=%s "
+            "conversation_id=%s user_id=%s",
+            evaluation.decision.value,
+            evaluation.source.value,
+            evaluation.match.rule_id if evaluation.match else None,
+            evaluation.match.rule_name if evaluation.match else None,
+            conversation_id,
+            identity.user.id,
+        )
+        if evaluation.decision is ScopeDecision.BLOCK and not contextual:
             return AgentCoreOutcome(OUT_OF_SCOPE_MESSAGE, out_of_scope=True)
         started, calls, total = monotonic(), 0, 0
         repeated: dict[tuple[str, str], int] = {}

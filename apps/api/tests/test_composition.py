@@ -44,6 +44,8 @@ EXPECTED_SERVICE_NAMES = frozenset(
         "retention_hold_service",
         "admin_users_service",
         "admin_roles_service",
+        "agent_scope_rule_store",
+        "admin_agent_scope_rule_service",
         "wechat_user_info_client",
         "admin_options_service",
         "ai_providers_service",

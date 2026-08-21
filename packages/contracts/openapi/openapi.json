@@ -2548,6 +2548,62 @@
         "title": "ApiResponse[RoleResponse]",
         "type": "object"
       },
+      "ApiResponse_ScopeRuleResponse_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ScopeRuleResponse"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "traceId": {
+            "title": "Traceid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ],
+        "title": "ApiResponse[ScopeRuleResponse]",
+        "type": "object"
+      },
+      "ApiResponse_ScopeRuleTestResponse_": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ScopeRuleTestResponse"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "traceId": {
+            "title": "Traceid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ],
+        "title": "ApiResponse[ScopeRuleTestResponse]",
+        "type": "object"
+      },
       "ApiResponse_SessionResponse_": {
         "additionalProperties": false,
         "properties": {
@@ -3186,6 +3242,38 @@
           "traceId"
         ],
         "title": "ApiResponse[list[RoleResponse]]",
+        "type": "object"
+      },
+      "ApiResponse_list_ScopeRuleResponse__": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/ScopeRuleResponse"
+            },
+            "title": "Data",
+            "type": "array"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "traceId": {
+            "title": "Traceid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ],
+        "title": "ApiResponse[list[ScopeRuleResponse]]",
         "type": "object"
       },
       "ApiResponse_list_UserAuditRecordResponse__": {
@@ -4870,6 +4958,71 @@
           "permissionCodes"
         ],
         "title": "CreateRoleRequest",
+        "type": "object"
+      },
+      "CreateScopeRuleRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "decision": {
+            "enum": [
+              "ALLOW",
+              "BLOCK"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "matchType": {
+            "enum": [
+              "EXACT",
+              "PHRASE"
+            ],
+            "title": "Matchtype",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 100,
+            "minLength": 2,
+            "title": "Name",
+            "type": "string"
+          },
+          "pattern": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Pattern",
+            "type": "string"
+          },
+          "priority": {
+            "default": 0,
+            "maximum": 1000.0,
+            "minimum": 0.0,
+            "title": "Priority",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "decision",
+          "matchType",
+          "pattern"
+        ],
+        "title": "CreateScopeRuleRequest",
         "type": "object"
       },
       "DashboardSummary": {
@@ -11694,6 +11847,315 @@
         "title": "SameProjectRisk",
         "type": "object"
       },
+      "ScopeRuleCandidateRule": {
+        "additionalProperties": false,
+        "description": "An unsaved rule to preview with /test before writing anything to PG.\n\nIdentity fields (id, name, enabled, version) are deliberately absent:\na candidate is ephemeral and produces no runtime side effects.",
+        "properties": {
+          "decision": {
+            "enum": [
+              "ALLOW",
+              "BLOCK"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "matchType": {
+            "enum": [
+              "EXACT",
+              "PHRASE"
+            ],
+            "title": "Matchtype",
+            "type": "string"
+          },
+          "pattern": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Pattern",
+            "type": "string"
+          },
+          "priority": {
+            "default": 0,
+            "maximum": 1000.0,
+            "minimum": 0.0,
+            "title": "Priority",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "decision",
+          "matchType",
+          "pattern"
+        ],
+        "title": "ScopeRuleCandidateRule",
+        "type": "object"
+      },
+      "ScopeRuleResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "title": "Createdat",
+            "type": "string"
+          },
+          "createdBy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdby"
+          },
+          "decision": {
+            "enum": [
+              "ALLOW",
+              "BLOCK"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "matchType": {
+            "enum": [
+              "EXACT",
+              "PHRASE"
+            ],
+            "title": "Matchtype",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "pattern": {
+            "title": "Pattern",
+            "type": "string"
+          },
+          "priority": {
+            "title": "Priority",
+            "type": "integer"
+          },
+          "updatedAt": {
+            "title": "Updatedat",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ScopeRuleWarning"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "decision",
+          "matchType",
+          "pattern",
+          "priority",
+          "enabled",
+          "description",
+          "version",
+          "createdBy",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "ScopeRuleResponse",
+        "type": "object"
+      },
+      "ScopeRuleTestMatch": {
+        "additionalProperties": false,
+        "properties": {
+          "decision": {
+            "enum": [
+              "ALLOW",
+              "BLOCK"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "matchType": {
+            "enum": [
+              "EXACT",
+              "PHRASE"
+            ],
+            "title": "Matchtype",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "priority": {
+            "title": "Priority",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "matchType",
+          "decision",
+          "priority"
+        ],
+        "title": "ScopeRuleTestMatch",
+        "type": "object"
+      },
+      "ScopeRuleTestRequest": {
+        "additionalProperties": false,
+        "description": "Evaluate a message against the live policy, optionally plus one candidate.\n\n``ruleId`` (a saved rule — may be disabled) and ``candidateRule`` (an\nunsaved draft) are mutually exclusive.  Without either, the message is\nevaluated against the current live policy only.",
+        "properties": {
+          "candidateRule": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScopeRuleCandidateRule"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Message",
+            "type": "string"
+          },
+          "ruleId": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ruleid"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "title": "ScopeRuleTestRequest",
+        "type": "object"
+      },
+      "ScopeRuleTestResponse": {
+        "additionalProperties": false,
+        "description": "Layer-1 result of a /test evaluation.\n\n``preview`` is true when the evaluation included a rule that is *not*\nlive (a disabled saved rule or an unsaved candidate).  A previewed\n``RUNTIME_RULE`` match on a candidate has ``matchedRule.id == \"\"`` and\n``matchedRule.name == \"(预览规则)\"``; it must not be mistaken for an\nalready-effective rule.",
+        "properties": {
+          "decision": {
+            "enum": [
+              "ALLOW",
+              "BLOCK",
+              "DEFER"
+            ],
+            "title": "Decision",
+            "type": "string"
+          },
+          "matchedRule": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScopeRuleTestMatch"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "preview": {
+            "default": false,
+            "title": "Preview",
+            "type": "boolean"
+          },
+          "previewRuleId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previewruleid"
+          },
+          "source": {
+            "enum": [
+              "BUILTIN",
+              "RUNTIME_RULE",
+              "DEFAULT"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ScopeRuleWarning"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "decision",
+          "source",
+          "matchedRule"
+        ],
+        "title": "ScopeRuleTestResponse",
+        "type": "object"
+      },
+      "ScopeRuleWarning": {
+        "additionalProperties": false,
+        "description": "Advisory notice that a rule may override normal business traffic.\n\nWarnings never block a save; they exist because runtime rules are\nadministrative overrides evaluated before the builtin ALLOW baseline.",
+        "properties": {
+          "code": {
+            "enum": [
+              "BROAD_BLOCK_RULE",
+              "SHORT_BLOCK_PATTERN"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ScopeRuleWarning",
+        "type": "object"
+      },
       "SecuritySettings": {
         "additionalProperties": false,
         "properties": {
@@ -12703,6 +13165,113 @@
         "title": "UpdateRoleRequest",
         "type": "object"
       },
+      "UpdateScopeRuleRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "decision": {
+            "anyOf": [
+              {
+                "enum": [
+                  "ALLOW",
+                  "BLOCK"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "matchType": {
+            "anyOf": [
+              {
+                "enum": [
+                  "EXACT",
+                  "PHRASE"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Matchtype"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "minLength": 2,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "pattern": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pattern"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "maximum": 1000.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "title": "UpdateScopeRuleRequest",
+        "type": "object"
+      },
       "UpdateTodoRequest": {
         "additionalProperties": false,
         "properties": {
@@ -13662,6 +14231,211 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/api/admin/agent/scope-rules": {
+      "get": {
+        "operationId": "list_scope_rules_api_admin_agent_scope_rules_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_ScopeRuleResponse__"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Scope Rules",
+        "tags": [
+          "admin-agent-scope"
+        ]
+      },
+      "post": {
+        "operationId": "create_scope_rule_api_admin_agent_scope_rules_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateScopeRuleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ScopeRuleResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Scope Rule",
+        "tags": [
+          "admin-agent-scope"
+        ]
+      }
+    },
+    "/api/admin/agent/scope-rules/test": {
+      "post": {
+        "operationId": "test_scope_rule_api_admin_agent_scope_rules_test_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScopeRuleTestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ScopeRuleTestResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Test Scope Rule",
+        "tags": [
+          "admin-agent-scope"
+        ]
+      }
+    },
+    "/api/admin/agent/scope-rules/{rule_id}": {
+      "delete": {
+        "operationId": "delete_scope_rule_api_admin_agent_scope_rules__rule_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rule_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Rule Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_NoneType_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Scope Rule",
+        "tags": [
+          "admin-agent-scope"
+        ]
+      },
+      "patch": {
+        "operationId": "update_scope_rule_api_admin_agent_scope_rules__rule_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rule_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Rule Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateScopeRuleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ScopeRuleResponse_"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Scope Rule",
+        "tags": [
+          "admin-agent-scope"
+        ]
+      }
+    },
     "/api/admin/ai-provider-v2/accounts": {
       "get": {
         "operationId": "list_accounts_api_admin_ai_provider_v2_accounts_get",
