@@ -128,6 +128,23 @@ async def history(
     return ok(request, await service.history(identity, conversation_id))
 
 
+@router.delete(
+    "/conversations/{conversation_id}",
+    response_model=ApiResponse[None],
+)
+async def delete_conversation(
+    request: Request,
+    conversation_id: UUID,
+    identity: Annotated[SessionIdentity, Depends(require_permissions("agent.use"))],
+    service: Annotated[AgentConversationService, Depends(get_agent_service)],
+) -> ApiResponse[None]:
+    # User-initiated soft delete (hide from "my history"): the durable fact
+    # graph stays retained (ADR 0012); a live turn answers 409 instead of
+    # being implicitly cancelled.
+    await service.delete(identity, conversation_id, UUID(get_trace_id(request)))
+    return ok(request, None, "会话已删除")
+
+
 @router.get(
     "/conversations/{conversation_id}/messages",
     response_model=ApiResponse[AgentMessagePage],

@@ -9,6 +9,8 @@ from uuid import UUID, uuid4
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from risk_platform.audit.models import AuditActorType
+from risk_platform.audit.service import AuditService
 from risk_platform.auth.service import SessionIdentity
 from risk_platform.db import transaction
 from risk_platform.reliability.core import enqueue_task
@@ -297,6 +299,7 @@ class AgentConversationService:
                     .where(
                         AgentConversation.ownerUserId == owner_id,
                         AgentConversation.expiresAt > now,
+                        AgentConversation.deletedAt.is_(None),
                     )
                     .order_by(
                         AgentConversation.updatedAt.desc(),
@@ -313,6 +316,7 @@ class AgentConversationService:
                     .where(
                         AgentConversation.ownerUserId == owner_id,
                         AgentConversation.expiresAt > now,
+                        AgentConversation.deletedAt.is_(None),
                     )
                 )
                 or 0
@@ -334,8 +338,92 @@ class AgentConversationService:
             total=total,
         )
 
-    async def message_page(
-        self,
+    async def delete(
+        self, identity: SessionIdentity, conversation_id: UUID, trace_id: UUID
+    ) -> None:
+        """Hide one of the caller's own conversations from their history.
+
+        User-initiated soft delete only: the row gets ``deletedAt`` and every
+        owner-scoped surface (list, history, messages, continue, cancel, events)
+        subsequently answers 404 as if the conversation never existed — no
+        response leaks that a retained row is behind it. The durable fact graph
+        (messages, events, executions, interactions, drafts, tasks) is NOT
+        touched; the retention cleanup worker still owns the physical lifecycle
+        via ``expiresAt`` (ADR 0012).
+
+        A conversation with a live turn (RUNNING execution with an active
+        durable task, WAITING_FOR_USER, or any OPEN interaction) cannot be
+        hidden — the user must stop the turn first. This never cancels the
+        execution implicitly: cancelling and deleting are separate user
+        actions.
+        """
+
+        owner_id = UUID(identity.user.id)
+        async with transaction(self._sessions) as session:
+            # Owner + not-deleted gate first (404, not 403, so a foreign id is
+            # indistinguishable from a missing one), then lock the row so a
+            # concurrent worker transition to WAITING_FOR_USER serializes with
+            # the busy check below.
+            conversation = await AgentConversationRepository(session).owned(
+                conversation_id, owner_id
+            )
+            if conversation is None:
+                raise ApiError(
+                    404, "AGENT_CONVERSATION_NOT_FOUND", "Agent 会话不存在或不属于当前用户"
+                )
+            conversation = await session.scalar(
+                select(AgentConversation)
+                .where(AgentConversation.id == conversation.id)
+                .with_for_update()
+            )
+            if conversation is None:
+                raise ApiError(
+                    404, "AGENT_CONVERSATION_NOT_FOUND", "Agent 会话不存在或不属于当前用户"
+                )
+            if conversation.deletedAt is not None:
+                return
+            active_execution = await session.scalar(
+                select(AgentExecution)
+                .join(DurableTask, DurableTask.id == AgentExecution.taskId)
+                .where(
+                    AgentExecution.conversationId == conversation.id,
+                    (AgentExecution.status == AgentExecutionStatus.WAITING_FOR_USER)
+                    | (
+                        (AgentExecution.status == AgentExecutionStatus.RUNNING)
+                        & DurableTask.status.in_(
+                            (
+                                DurableTaskStatus.QUEUED,
+                                DurableTaskStatus.RUNNING,
+                                DurableTaskStatus.RETRY_WAIT,
+                            )
+                        )
+                    ),
+                )
+            )
+            open_interaction = await session.scalar(
+                select(AgentInteraction.id).where(
+                    AgentInteraction.conversationId == conversation.id,
+                    AgentInteraction.status == AgentInteractionStatus.OPEN,
+                )
+            )
+            if active_execution is not None or open_interaction is not None:
+                raise ApiError(
+                    409,
+                    "AGENT_CONVERSATION_BUSY",
+                    "当前会话仍在执行，请先停止后再删除",
+                )
+            conversation.deletedAt = datetime.now(UTC)
+            await AuditService(session).record_success(
+                actor_id=owner_id,
+                actor_type=AuditActorType.USER,
+                module="AGENT",
+                action="AGENT_CONVERSATION_DELETED",
+                resource_type="AGENT_CONVERSATION",
+                resource_id=str(conversation.id),
+                trace_id=trace_id,
+            )
+
+    async def message_page(        self,
         identity: SessionIdentity,
         conversation_id: UUID,
         *,

@@ -154,6 +154,11 @@ class AgentConversation(Base):
         UUIDType(as_uuid=True), ForeignKey("projects.id", ondelete="SET NULL")
     )
     activeProjectName: Mapped[str | None] = mapped_column(String(255))
+    # User-initiated "remove from my history" hide marker (ADR 0012/0018):
+    # soft delete only — the durable fact graph (messages, events, executions,
+    # interactions, drafts, tasks) stays intact for retention/audit, and the
+    # retention cleanup worker still owns the physical lifecycle via expiresAt.
+    deletedAt: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True, precision=3))
 
 
 class AgentExecution(Base):

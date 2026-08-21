@@ -148,7 +148,9 @@ async def open_event_stream(
     async with sessions() as session:
         conversation = await session.scalar(
             select(AgentConversation).where(
-                AgentConversation.id == conversation_id, AgentConversation.ownerUserId == owner_id
+                AgentConversation.id == conversation_id,
+                AgentConversation.ownerUserId == owner_id,
+                AgentConversation.deletedAt.is_(None),
             )
         )
         if conversation is None:
