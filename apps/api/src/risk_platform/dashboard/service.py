@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
@@ -34,6 +34,7 @@ from risk_platform.risks.models import (
 )
 from risk_platform.risks.schemas import RiskItem, RiskQuery
 from risk_platform.risks.service import RisksService
+from risk_platform.shared.time_ranges import current_week_start
 
 from .schemas import (
     ActiveCollectionRisk,
@@ -81,9 +82,12 @@ class DashboardService:
     async def summary(self, identity: SessionIdentity) -> DashboardSummary:
         scope = self._scope(identity)
         now = datetime.now(UTC)
-        week_start = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(
-            days=now.weekday()
-        )
+        # "本周新增" boundary: the shared Asia/Shanghai Monday-00:00 authority
+        # (``shared.time_ranges``), the same instant the Agent risk_list
+        # CURRENT_WEEK preset resolves to — previously this was a UTC-midnight
+        # Monday, which disagreed with the weekly-report week convention by
+        # eight hours and with the Agent time-range presets.
+        week_start = current_week_start(now)
         async with self._session_factory() as session:
             project_stats = (
                 await session.execute(
@@ -99,32 +103,54 @@ class DashboardService:
                 )
             ).one()
             active_conditions = [scope, Risk.status == RiskStatus.ACTIVE]
+            # Stock metrics stay ACTIVE-only, but "本周新增" is a historical
+            # creation fact on Risk.detectedAt: a risk must stay in the
+            # week's new-total after it is resolved.  SQL aggregate FILTER
+            # only sees rows passing the outer WHERE, so the status
+            # constraint lives inside each stock-metric filter and the
+            # weekly filters count every status — the same authority as the
+            # Agent risk_list CURRENT_WEEK preset.
+            active = Risk.status == RiskStatus.ACTIVE
             risk_stats = (
                 await session.execute(
                     select(
-                        func.count(Risk.id),
-                        func.count(Risk.id).filter(Risk.level == ProjectRiskLevel.HIGH),
-                        func.count(Risk.id).filter(Risk.level == ProjectRiskLevel.MEDIUM),
-                        func.count(Risk.id).filter(Risk.level == ProjectRiskLevel.LOW),
-                        func.count(Risk.id).filter(Risk.level == ProjectRiskLevel.UNKNOWN),
-                        func.count(func.distinct(Risk.projectId)),
+                        func.count(Risk.id).filter(active),
+                        func.count(Risk.id).filter(
+                            active, Risk.level == ProjectRiskLevel.HIGH
+                        ),
+                        func.count(Risk.id).filter(
+                            active, Risk.level == ProjectRiskLevel.MEDIUM
+                        ),
+                        func.count(Risk.id).filter(active, Risk.level == ProjectRiskLevel.LOW),
+                        func.count(Risk.id).filter(
+                            active, Risk.level == ProjectRiskLevel.UNKNOWN
+                        ),
+                        func.count(func.distinct(Risk.projectId)).filter(active),
                         func.count(func.distinct(Risk.projectId)).filter(
-                            Risk.level == ProjectRiskLevel.HIGH
+                            active, Risk.level == ProjectRiskLevel.HIGH
                         ),
                         func.count(Risk.id).filter(Risk.detectedAt >= week_start),
                         func.count(Risk.id).filter(
                             Risk.level == ProjectRiskLevel.HIGH,
                             Risk.detectedAt >= week_start,
                         ),
-                        func.count(Risk.id).filter(Risk.sourceType == RiskSourceType.MAIL_AI),
-                        func.count(Risk.id).filter(Risk.sourceType == RiskSourceType.MANUAL),
-                        func.count(Risk.id).filter(Risk.sourceType == RiskSourceType.EXCEL),
-                        func.count(Risk.id).filter(Risk.sourceType == RiskSourceType.LITIGATION),
-                        func.max(Risk.updatedAt),
+                        func.count(Risk.id).filter(
+                            active, Risk.sourceType == RiskSourceType.MAIL_AI
+                        ),
+                        func.count(Risk.id).filter(
+                            active, Risk.sourceType == RiskSourceType.MANUAL
+                        ),
+                        func.count(Risk.id).filter(
+                            active, Risk.sourceType == RiskSourceType.EXCEL
+                        ),
+                        func.count(Risk.id).filter(
+                            active, Risk.sourceType == RiskSourceType.LITIGATION
+                        ),
+                        func.max(Risk.updatedAt).filter(active),
                     )
                     .select_from(Risk)
                     .join(Project, Project.id == Risk.projectId)
-                    .where(*active_conditions)
+                    .where(scope)
                 )
             ).one()
             active_project_ids = (

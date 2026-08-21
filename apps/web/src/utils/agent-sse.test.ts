@@ -172,6 +172,45 @@ describe("agent event reducer", () => {
     });
   });
 
+  it("keeps the provider label when a provider error carries no message", () => {
+    const state = applyFrame(
+      initialAgentState(),
+      frame("error", "e1", { code: "AGENT_PROVIDER_UNAVAILABLE", retryable: true }),
+    );
+    expect(state.error?.message).toBe("AI服务暂时不可用，请稍后重试");
+  });
+
+  it("does not disguise a message-less internal error as a provider outage", () => {
+    const state = applyFrame(
+      initialAgentState(),
+      frame("error", "e1", { code: "AGENT_INTERNAL_ERROR", retryable: false }),
+    );
+    expect(state.error?.message).not.toContain("AI服务");
+    expect(state.error?.message).toBe("Agent执行失败，请稍后重试");
+  });
+
+  it("uses the neutral Agent fallback for an unknown error code without a message", () => {
+    const state = applyFrame(
+      initialAgentState(),
+      frame("error", "e1", { code: "SOMETHING_UNEXPECTED", retryable: false }),
+    );
+    expect(state.error?.message).toBe("Agent执行失败，请稍后重试");
+  });
+
+  it("shows the safe server-authored message for tool errors verbatim", () => {
+    const state = applyFrame(
+      initialAgentState(),
+      frame("error", "e1", {
+        code: "AGENT_TOOL_ERROR",
+        message: "周报汇总正在重建, 请稍后重试",
+        detailCode: "WEEKLY_REPORT_STALE",
+        retryable: false,
+      }),
+    );
+    expect(state.error?.code).toBe("AGENT_TOOL_ERROR");
+    expect(state.error?.message).toBe("周报汇总正在重建, 请稍后重试");
+  });
+
   it("treats heartbeat as a no-op that still advances the cursor", () => {
     let state = initialAgentState();
     state = applyFrame(state, frame("heartbeat", "e1", {}));
@@ -217,6 +256,9 @@ describe("agent display labels", () => {
       agentErrorLabel("AGENT_TOTAL_TOOL_RESULT_TOO_LARGE", "fallback"),
     ).toBe("查询结果过多，请缩小查询范围后重试");
     expect(agentErrorLabel("UNKNOWN_CODE", "fallback")).toBe("fallback");
+    expect(agentErrorLabel("AGENT_INTERNAL_ERROR", "fallback")).toBe(
+      "Agent执行失败，请稍后重试",
+    );
   });
 
 });

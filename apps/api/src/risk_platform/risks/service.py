@@ -467,10 +467,31 @@ class RisksService:
         *,
         resolved: bool = False,
         project_id: UUID | None = None,
+        detected_from: datetime | None = None,
+        detected_to: datetime | None = None,
+        include_all_statuses: bool = False,
     ) -> RiskPage | ResolvedRiskPage:
+        """Scoped risk list; ``detected_from``/``detected_to`` filter on the
+        risk-added authority ``Risk.detectedAt`` as a half-open
+        ``[detected_from, detected_to)`` window (both bounds optional).
+
+        ``include_all_statuses`` is the explicit historical-intent switch:
+        by default a ``query.status`` of ``None`` means "current risks"
+        (ACTIVE, or RESOLVED for the resolved page); with the switch set,
+        no implicit status condition is applied, so a creation-window
+        query also sees risks that were resolved later.  An explicit
+        ``query.status`` always wins over both defaults.
+        """
+
         async with self._session_factory() as session:
             conditions = self._risk_conditions(
-                identity, query, resolved=resolved, project_id=project_id
+                identity,
+                query,
+                resolved=resolved,
+                project_id=project_id,
+                detected_from=detected_from,
+                detected_to=detected_to,
+                include_all_statuses=include_all_statuses,
             )
             rows = (
                 await session.execute(
@@ -534,9 +555,23 @@ class RisksService:
             )
 
     async def list_for_project(
-        self, identity: SessionIdentity, project_id: UUID, query: RiskQuery
+        self,
+        identity: SessionIdentity,
+        project_id: UUID,
+        query: RiskQuery,
+        *,
+        detected_from: datetime | None = None,
+        detected_to: datetime | None = None,
+        include_all_statuses: bool = False,
     ) -> RiskPage:
-        page = await self.list(identity, query, project_id=project_id)
+        page = await self.list(
+            identity,
+            query,
+            project_id=project_id,
+            detected_from=detected_from,
+            detected_to=detected_to,
+            include_all_statuses=include_all_statuses,
+        )
         assert isinstance(page, RiskPage)
         return page
 
@@ -703,15 +738,23 @@ class RisksService:
         *,
         resolved: bool,
         project_id: UUID | None = None,
+        detected_from: datetime | None = None,
+        detected_to: datetime | None = None,
+        include_all_statuses: bool = False,
     ) -> Sequence[Any]:
         conditions: list[Any] = [
-            project_scope_predicate(UUID(identity.user.id), DataScopeType(identity.user.dataScope)),
-            Risk.status == (
-                query.status
-                if query.status is not None
-                else (RiskStatus.RESOLVED if resolved else RiskStatus.ACTIVE)
-            ),
+            project_scope_predicate(UUID(identity.user.id), DataScopeType(identity.user.dataScope))
         ]
+        # "新增时间范围" is a historical fact on Risk.detectedAt: a risk stays
+        # in the window's answer after it is resolved.  Callers opt in with
+        # include_all_statuses; every default caller keeps the "current
+        # risks" (ACTIVE / resolved-page RESOLVED) semantics.
+        if query.status is not None:
+            conditions.append(Risk.status == query.status)
+        elif not include_all_statuses:
+            conditions.append(
+                Risk.status == (RiskStatus.RESOLVED if resolved else RiskStatus.ACTIVE)
+            )
         if query.keyword and (value := query.keyword.strip()):
             pattern = f"%{value}%"
             conditions.append(
@@ -731,6 +774,13 @@ class RisksService:
             conditions.append(Project.deliveryOwnerName == query.owner.strip())
         if query.sourceType:
             conditions.append(Risk.sourceType == query.sourceType)
+        # Half-open [detected_from, detected_to) window on the risk-added
+        # authority; the end bound is exclusive so no fuzzy 23:59:59.999999
+        # boundary is ever needed.
+        if detected_from is not None:
+            conditions.append(Risk.detectedAt >= detected_from)
+        if detected_to is not None:
+            conditions.append(Risk.detectedAt < detected_to)
         return conditions
 
     @staticmethod
