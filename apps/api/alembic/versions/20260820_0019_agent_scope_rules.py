@@ -45,7 +45,12 @@ def upgrade() -> None:
         name="AgentScopeRuleDecision",
         create_type=False,
     )
-    match_type = postgresql.ENUM("EXACT", "PHRASE", name="AgentScopeRuleMatchType", create_type=False)
+    match_type = postgresql.ENUM(
+        "EXACT",
+        "PHRASE",
+        name="AgentScopeRuleMatchType",
+        create_type=False,
+    )
     for enum in (decision, match_type):
         enum.create(op.get_bind(), checkfirst=True)
     op.create_table(
@@ -72,11 +77,16 @@ def upgrade() -> None:
             postgresql.TIMESTAMP(timezone=True, precision=3),
             nullable=False,
         ),
-        sa.CheckConstraint('"priority" BETWEEN 0 AND 1000', name="agent_scope_rules_priority_range"),
+        sa.CheckConstraint(
+            '"priority" BETWEEN 0 AND 1000', name="agent_scope_rules_priority_range"
+        ),
         sa.CheckConstraint('"version" >= 1', name="agent_scope_rules_version_positive"),
         sa.CheckConstraint("btrim(\"pattern\") <> ''", name="agent_scope_rules_pattern_nonempty"),
         sa.ForeignKeyConstraint(
-            ["createdBy"], ["users.id"], name="agent_scope_rules_createdBy_fkey", ondelete="SET NULL"
+            ["createdBy"],
+            ["users.id"],
+            name="agent_scope_rules_createdBy_fkey",
+            ondelete="SET NULL",
         ),
     )
     op.execute(
